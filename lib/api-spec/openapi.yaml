@@ -3,20 +3,34 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Gestão de Carteira de Investimentos API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: assets
+    description: Portfolio assets
+  - name: portfolio
+    description: Portfolio summaries and analytics
+  - name: alerts
+    description: Radar intelligent alerts
+  - name: opportunities
+    description: Investment opportunities
+  - name: transactions
+    description: Dividend transactions
+  - name: analysis
+    description: AI-powered asset analysis
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +38,866 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ─── AUTH ────────────────────────────────────────────────────────────────────
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRegisterInput"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserLoginInput"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── ASSETS ──────────────────────────────────────────────────────────────────
+  /assets:
+    get:
+      operationId: listAssets
+      tags: [assets]
+      summary: List portfolio assets
+      responses:
+        "200":
+          description: List of assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Asset"
+    post:
+      operationId: createAsset
+      tags: [assets]
+      summary: Add an asset to portfolio
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssetInput"
+      responses:
+        "201":
+          description: Asset created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /assets/{id}:
+    get:
+      operationId: getAsset
+      tags: [assets]
+      summary: Get single asset
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateAsset
+      tags: [assets]
+      summary: Update an asset
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssetUpdate"
+      responses:
+        "200":
+          description: Updated asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteAsset
+      tags: [assets]
+      summary: Remove an asset from portfolio
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── PORTFOLIO SUMMARIES ─────────────────────────────────────────────────────
+  /portfolio/summary:
+    get:
+      operationId: getPortfolioSummary
+      tags: [portfolio]
+      summary: Get portfolio overview summary
+      responses:
+        "200":
+          description: Portfolio summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioSummary"
+
+  /portfolio/distribution:
+    get:
+      operationId: getPortfolioDistribution
+      tags: [portfolio]
+      summary: Portfolio distribution by sector, asset class, and risk
+      responses:
+        "200":
+          description: Distribution breakdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioDistribution"
+
+  /portfolio/evolution:
+    get:
+      operationId: getPortfolioEvolution
+      tags: [portfolio]
+      summary: Portfolio value evolution over time
+      responses:
+        "200":
+          description: Evolution data points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EvolutionPoint"
+
+  /portfolio/health:
+    get:
+      operationId: getPortfolioHealth
+      tags: [portfolio]
+      summary: Portfolio health score and breakdown
+      responses:
+        "200":
+          description: Health score
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioHealth"
+
+  /portfolio/benchmarks:
+    get:
+      operationId: getPortfolioBenchmarks
+      tags: [portfolio]
+      summary: Portfolio vs benchmark comparison (CDI, IBOV, IFIX)
+      responses:
+        "200":
+          description: Benchmark comparison
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkComparison"
+
+  # ─── ALERTS ──────────────────────────────────────────────────────────────────
+  /alerts:
+    get:
+      operationId: listAlerts
+      tags: [alerts]
+      summary: List radar alerts
+      responses:
+        "200":
+          description: List of alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Alert"
+
+  /alerts/{id}/read:
+    patch:
+      operationId: markAlertRead
+      tags: [alerts]
+      summary: Mark an alert as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Alert marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alert"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /alerts/{id}:
+    delete:
+      operationId: deleteAlert
+      tags: [alerts]
+      summary: Dismiss/delete an alert
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Alert deleted
+
+  # ─── OPPORTUNITIES ───────────────────────────────────────────────────────────
+  /opportunities:
+    get:
+      operationId: listOpportunities
+      tags: [opportunities]
+      summary: Top 10 investment opportunities
+      responses:
+        "200":
+          description: List of opportunities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Opportunity"
+
+  # ─── TRANSACTIONS ────────────────────────────────────────────────────────────
+  /transactions:
+    get:
+      operationId: listTransactions
+      tags: [transactions]
+      summary: List dividend transactions
+      responses:
+        "200":
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+    post:
+      operationId: createTransaction
+      tags: [transactions]
+      summary: Record a dividend received
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransactionInput"
+      responses:
+        "201":
+          description: Transaction created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /transactions/{id}:
+    delete:
+      operationId: deleteTransaction
+      tags: [transactions]
+      summary: Delete a transaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── ANALYSIS ────────────────────────────────────────────────────────────────
+  /analysis/assets:
+    get:
+      operationId: listAssetAnalyses
+      tags: [analysis]
+      summary: Get analysis (status + score) for all portfolio assets
+      responses:
+        "200":
+          description: List of analyses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssetAnalysis"
+
+  /analysis/assets/{ticker}:
+    get:
+      operationId: getAssetAnalysis
+      tags: [analysis]
+      summary: Get detailed analysis for a specific asset ticker
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Asset analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetAnalysis"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /analysis/generate:
+    post:
+      operationId: generatePortfolioAnalysis
+      tags: [analysis]
+      summary: Trigger AI analysis for the entire portfolio
+      responses:
+        "200":
+          description: Analysis generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioReport"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    SuccessResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+
+    # ─── AUTH SCHEMAS ─────────────────────────────────────────────────────────
+    User:
+      type: object
+      required: [id, name, email, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    UserRegisterInput:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        email:
+          type: string
+        password:
+          type: string
+          minLength: 6
+
+    UserLoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+
+    # ─── ASSET SCHEMAS ────────────────────────────────────────────────────────
+    Asset:
+      type: object
+      required: [id, userId, ticker, quantity, averagePrice, category, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        ticker:
+          type: string
+        quantity:
+          type: number
+        averagePrice:
+          type: number
+        purchaseDate:
+          type: ["string", "null"]
+          format: date
+        category:
+          type: string
+          enum: [acoes, fiis, etfs, bdrs, fundos, renda_fixa]
+        sector:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        currentPrice:
+          type: ["number", "null"]
+        totalValue:
+          type: ["number", "null"]
+        profitLoss:
+          type: ["number", "null"]
+        profitLossPercent:
+          type: ["number", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    AssetInput:
+      type: object
+      required: [ticker, quantity, averagePrice, category]
+      properties:
+        ticker:
+          type: string
+          minLength: 1
+        quantity:
+          type: number
+        averagePrice:
+          type: number
+        purchaseDate:
+          type: ["string", "null"]
+          format: date
+        category:
+          type: string
+          enum: [acoes, fiis, etfs, bdrs, fundos, renda_fixa]
+        sector:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+
+    AssetUpdate:
+      type: object
+      properties:
+        ticker:
+          type: string
+        quantity:
+          type: number
+        averagePrice:
+          type: number
+        purchaseDate:
+          type: ["string", "null"]
+          format: date
+        category:
+          type: string
+          enum: [acoes, fiis, etfs, bdrs, fundos, renda_fixa]
+        sector:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+
+    # ─── PORTFOLIO SCHEMAS ────────────────────────────────────────────────────
+    PortfolioSummary:
+      type: object
+      required: [totalPatrimony, totalProfitLoss, totalProfitLossPercent, totalDividends, portfolioYield, assetCount]
+      properties:
+        totalPatrimony:
+          type: number
+        totalProfitLoss:
+          type: number
+        totalProfitLossPercent:
+          type: number
+        totalDividends:
+          type: number
+        portfolioYield:
+          type: number
+        assetCount:
+          type: integer
+
+    DistributionItem:
+      type: object
+      required: [label, value, percent]
+      properties:
+        label:
+          type: string
+        value:
+          type: number
+        percent:
+          type: number
+
+    PortfolioDistribution:
+      type: object
+      required: [bySector, byCategory, byRisk]
+      properties:
+        bySector:
+          type: array
+          items:
+            $ref: "#/components/schemas/DistributionItem"
+        byCategory:
+          type: array
+          items:
+            $ref: "#/components/schemas/DistributionItem"
+        byRisk:
+          type: array
+          items:
+            $ref: "#/components/schemas/DistributionItem"
+
+    EvolutionPoint:
+      type: object
+      required: [date, value]
+      properties:
+        date:
+          type: string
+        value:
+          type: number
+        cdi:
+          type: ["number", "null"]
+        ibov:
+          type: ["number", "null"]
+
+    PortfolioHealth:
+      type: object
+      required: [score, classification, diversification, risk, dividends, growth, concentration]
+      properties:
+        score:
+          type: number
+        classification:
+          type: string
+          enum: [Excelente, Boa, Regular, Ruim]
+        diversification:
+          type: number
+        risk:
+          type: number
+        dividends:
+          type: number
+        growth:
+          type: number
+        concentration:
+          type: number
+
+    BenchmarkPoint:
+      type: object
+      required: [label, portfolio, cdi, ibov, ifix]
+      properties:
+        label:
+          type: string
+        portfolio:
+          type: number
+        cdi:
+          type: number
+        ibov:
+          type: number
+        ifix:
+          type: number
+
+    BenchmarkComparison:
+      type: object
+      required: [points, portfolioTotal, cdiTotal, ibovTotal, ifixTotal]
+      properties:
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/BenchmarkPoint"
+        portfolioTotal:
+          type: number
+        cdiTotal:
+          type: number
+        ibovTotal:
+          type: number
+        ifixTotal:
+          type: number
+
+    # ─── ALERTS SCHEMAS ───────────────────────────────────────────────────────
+    Alert:
+      type: object
+      required: [id, userId, type, severity, title, message, isRead, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        type:
+          type: string
+          enum: [preco, fundamentos, dividendos, noticias, macroeconomico, concentracao, substituicao]
+        severity:
+          type: string
+          enum: [Critico, Alto, Medio, Baixo]
+        title:
+          type: string
+        message:
+          type: string
+        ticker:
+          type: ["string", "null"]
+        isRead:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    # ─── OPPORTUNITY SCHEMAS ──────────────────────────────────────────────────
+    Opportunity:
+      type: object
+      required: [id, ticker, name, category, score, potentialReturn, dividendYield, riskLevel, reason, positives, risks, horizon]
+      properties:
+        id:
+          type: integer
+        ticker:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        score:
+          type: number
+        potentialReturn:
+          type: number
+        dividendYield:
+          type: number
+        riskLevel:
+          type: string
+          enum: [Baixo, Medio, Alto]
+        reason:
+          type: string
+        positives:
+          type: array
+          items:
+            type: string
+        risks:
+          type: array
+          items:
+            type: string
+        horizon:
+          type: string
+
+    # ─── TRANSACTION SCHEMAS ──────────────────────────────────────────────────
+    Transaction:
+      type: object
+      required: [id, userId, ticker, amount, type, date, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        ticker:
+          type: string
+        amount:
+          type: number
+        type:
+          type: string
+          enum: [dividendo, jcp, rendimento, amortizacao]
+        date:
+          type: string
+          format: date
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    TransactionInput:
+      type: object
+      required: [ticker, amount, type, date]
+      properties:
+        ticker:
+          type: string
+        amount:
+          type: number
+        type:
+          type: string
+          enum: [dividendo, jcp, rendimento, amortizacao]
+        date:
+          type: string
+          format: date
+        notes:
+          type: ["string", "null"]
+
+    # ─── ANALYSIS SCHEMAS ─────────────────────────────────────────────────────
+    AssetAnalysis:
+      type: object
+      required: [ticker, status, score, scoreClassification, positives, risks, newsItems, alerts, monitoringRecommendation, updatedAt]
+      properties:
+        ticker:
+          type: string
+        status:
+          type: string
+          enum: [MANTER, ATENCAO, REAVALIAR, POSSIVEL_SAIDA]
+        score:
+          type: number
+        scoreClassification:
+          type: string
+          enum: [Excelente, Forte, Estavel, Atencao, Critico]
+        positives:
+          type: array
+          items:
+            type: string
+        risks:
+          type: array
+          items:
+            type: string
+        newsItems:
+          type: array
+          items:
+            type: string
+        alerts:
+          type: array
+          items:
+            type: string
+        monitoringRecommendation:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    PortfolioReport:
+      type: object
+      required: [generatedAt, summary, analyses, topAlerts, opportunities]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        summary:
+          $ref: "#/components/schemas/PortfolioSummary"
+        analyses:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssetAnalysis"
+        topAlerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Alert"
+        opportunities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Opportunity"

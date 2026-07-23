@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "Gestão de Carteira"
+version = "1.0.0"
+id = "artifacts/carteira"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25214
+
+[services.development]
+run = "pnpm --filter @workspace/carteira run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/carteira", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/carteira/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25214"
+BASE_PATH = "/"
