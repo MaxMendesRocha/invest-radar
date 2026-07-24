@@ -204,6 +204,48 @@ export const DeleteAssetResponse = zod.void()
 
 
 /**
+ * @summary Get the current user's investor risk profile, if set
+ */
+export const GetInvestorProfileResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "horizon": zod.enum(['curto', 'medio', 'longo']),
+  "lossTolerance": zod.enum(['baixa', 'media', 'alta']),
+  "objective": zod.enum(['preservar', 'renda', 'crescimento']),
+  "experience": zod.enum(['iniciante', 'intermediario', 'avancado']),
+  "liquidityNeed": zod.enum(['sim', 'nao']),
+  "score": zod.number(),
+  "classification": zod.enum(['Conservador', 'Moderado', 'Arrojado']),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Create or update the current user's investor risk profile
+ */
+export const UpdateInvestorProfileBody = zod.object({
+  "horizon": zod.enum(['curto', 'medio', 'longo']),
+  "lossTolerance": zod.enum(['baixa', 'media', 'alta']),
+  "objective": zod.enum(['preservar', 'renda', 'crescimento']),
+  "experience": zod.enum(['iniciante', 'intermediario', 'avancado']),
+  "liquidityNeed": zod.enum(['sim', 'nao'])
+})
+
+export const UpdateInvestorProfileResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "horizon": zod.enum(['curto', 'medio', 'longo']),
+  "lossTolerance": zod.enum(['baixa', 'media', 'alta']),
+  "objective": zod.enum(['preservar', 'renda', 'crescimento']),
+  "experience": zod.enum(['iniciante', 'intermediario', 'avancado']),
+  "liquidityNeed": zod.enum(['sim', 'nao']),
+  "score": zod.number(),
+  "classification": zod.enum(['Conservador', 'Moderado', 'Arrojado']),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Get portfolio overview summary
  */
 export const GetPortfolioSummaryResponse = zod.object({

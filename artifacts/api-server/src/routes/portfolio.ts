@@ -2,16 +2,21 @@ import { Router, type IRouter } from "express";
 import { db, assetsTable, transactionsTable } from "@workspace/db";
 import { eq, sum } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
+import { getQuotes } from "../lib/market-data";
 
 const router: IRouter = Router();
 
-const MOCK_PRICES: Record<string, number> = {
-  PETR4: 38.50, VALE3: 62.10, ITUB4: 32.80, BBDC4: 15.20, ABEV3: 12.90,
-  WEGE3: 52.40, RENT3: 68.30, MGLU3: 6.80, LREN3: 18.40, EGIE3: 43.20,
-  HGLG11: 165.20, MXRF11: 10.45, XPML11: 102.30, KNRI11: 145.60, HSRE11: 10.80,
-  BOVA11: 118.50, SMAL11: 85.40, IVVB11: 310.20, HASH11: 45.60,
-  AAPL34: 58.90, AMZO34: 65.40, MSFT34: 112.30,
-};
+// Categories traded on B3 and covered by brapi.dev quotes; renda_fixa/fundos have no ticker quote.
+const QUOTED_CATEGORIES = new Set(["acoes", "fiis", "etfs", "bdrs"]);
+
+async function getPricesForAssets(assets: { ticker: string; category: string }[]): Promise<Map<string, number>> {
+  const tickers = assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker);
+  const prices = new Map<string, number>();
+  if (tickers.length === 0) return prices;
+  const quotes = await getQuotes(tickers);
+  for (const [ticker, quote] of quotes) prices.set(ticker, quote.price);
+  return prices;
+}
 
 const SECTOR_MAP: Record<string, string> = {
   PETR4: "Petróleo & Gás", VALE3: "Mineração", ITUB4: "Bancos", BBDC4: "Bancos",
@@ -22,13 +27,10 @@ const SECTOR_MAP: Record<string, string> = {
   AAPL34: "Tecnologia", AMZO34: "Tecnologia", MSFT34: "Tecnologia",
 };
 
-function getPrice(ticker: string): number | null {
-  return MOCK_PRICES[ticker.toUpperCase()] ?? null;
-}
-
 router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
   const txRows = await db.select({ total: sum(transactionsTable.amount) }).from(transactionsTable).where(eq(transactionsTable.userId, req.session.userId!));
+  const prices = await getPricesForAssets(assets);
 
   let totalPatrimony = 0;
   let totalCost = 0;
@@ -36,7 +38,7 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
     const avgPrice = parseFloat(a.averagePrice);
-    const price = getPrice(a.ticker) ?? avgPrice;
+    const price = prices.get(a.ticker.toUpperCase()) ?? avgPrice;
     totalPatrimony += qty * price;
     totalCost += qty * avgPrice;
   }
@@ -58,6 +60,7 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
 
 router.get("/portfolio/distribution", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
+  const prices = await getPricesForAssets(assets);
 
   const byCategoryMap: Record<string, number> = {};
   const bySectorMap: Record<string, number> = {};
@@ -67,7 +70,7 @@ router.get("/portfolio/distribution", requireAuth, async (req, res): Promise<voi
 
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
-    const price = getPrice(a.ticker) ?? parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
     const value = qty * price;
     total += value;
 
@@ -95,14 +98,17 @@ router.get("/portfolio/distribution", requireAuth, async (req, res): Promise<voi
 
 router.get("/portfolio/evolution", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
+  const prices = await getPricesForAssets(assets);
 
   let currentValue = 0;
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
-    const price = getPrice(a.ticker) ?? parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
     currentValue += qty * price;
   }
 
+  // NOTE: only the current-value baseline above uses real quotes; the trailing 11 points are
+  // still simulated around it — real historical evolution needs a price-history table (backlog).
   const points = [];
   const now = new Date();
   for (let i = 11; i >= 0; i--) {

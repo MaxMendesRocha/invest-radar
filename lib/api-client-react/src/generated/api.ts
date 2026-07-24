@@ -30,6 +30,8 @@ import type {
   ErrorResponse,
   EvolutionPoint,
   HealthStatus,
+  InvestorProfile,
+  InvestorProfileInput,
   Opportunity,
   PortfolioDistribution,
   PortfolioHealth,
@@ -803,6 +805,154 @@ export const useDeleteAsset = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteAssetMutationOptions(options));
+    }
+
+export const getGetInvestorProfileUrl = () => {
+
+
+
+
+  return `/api/profile`
+}
+
+/**
+ * @summary Get the current user's investor risk profile, if set
+ */
+export const getInvestorProfile = async ( options?: RequestInit): Promise<InvestorProfile> => {
+
+  return customFetch<InvestorProfile>(getGetInvestorProfileUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetInvestorProfileQueryKey = () => {
+    return [
+    `/api/profile`
+    ] as const;
+    }
+
+
+export const getGetInvestorProfileQueryOptions = <TData = Awaited<ReturnType<typeof getInvestorProfile>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInvestorProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInvestorProfileQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInvestorProfile>>> = ({ signal }) => getInvestorProfile({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInvestorProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetInvestorProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getInvestorProfile>>>
+export type GetInvestorProfileQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the current user's investor risk profile, if set
+ */
+
+export function useGetInvestorProfile<TData = Awaited<ReturnType<typeof getInvestorProfile>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInvestorProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetInvestorProfileQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateInvestorProfileUrl = () => {
+
+
+
+
+  return `/api/profile`
+}
+
+/**
+ * @summary Create or update the current user's investor risk profile
+ */
+export const updateInvestorProfile = async (investorProfileInput: InvestorProfileInput, options?: RequestInit): Promise<InvestorProfile> => {
+
+  return customFetch<InvestorProfile>(getUpdateInvestorProfileUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(investorProfileInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateInvestorProfileMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInvestorProfile>>, TError,{data: BodyType<InvestorProfileInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateInvestorProfile>>, TError,{data: BodyType<InvestorProfileInput>}, TContext> => {
+
+const mutationKey = ['updateInvestorProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateInvestorProfile>>, {data: BodyType<InvestorProfileInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateInvestorProfile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateInvestorProfileMutationResult = NonNullable<Awaited<ReturnType<typeof updateInvestorProfile>>>
+    export type UpdateInvestorProfileMutationBody = BodyType<InvestorProfileInput>
+    export type UpdateInvestorProfileMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create or update the current user's investor risk profile
+ */
+export const useUpdateInvestorProfile = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInvestorProfile>>, TError,{data: BodyType<InvestorProfileInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateInvestorProfile>>,
+        TError,
+        {data: BodyType<InvestorProfileInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateInvestorProfileMutationOptions(options));
     }
 
 export const getGetPortfolioSummaryUrl = () => {

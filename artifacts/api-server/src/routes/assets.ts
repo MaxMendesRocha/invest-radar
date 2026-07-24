@@ -3,20 +3,20 @@ import { db, assetsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
+import { getQuotes } from "../lib/market-data";
 
 const router: IRouter = Router();
 
-// Simulated market prices (in a real app, would call an external API)
-const MOCK_PRICES: Record<string, number> = {
-  PETR4: 38.50, VALE3: 62.10, ITUB4: 32.80, BBDC4: 15.20, ABEV3: 12.90,
-  WEGE3: 52.40, RENT3: 68.30, MGLU3: 6.80, LREN3: 18.40, EGIE3: 43.20,
-  HGLG11: 165.20, MXRF11: 10.45, XPML11: 102.30, KNRI11: 145.60, HSRE11: 10.80,
-  BOVA11: 118.50, SMAL11: 85.40, IVVB11: 310.20, HASH11: 45.60,
-  AAPL34: 58.90, AMZO34: 65.40, MSFT34: 112.30,
-};
+// Categories traded on B3 and covered by brapi.dev quotes; renda_fixa/fundos have no ticker quote.
+const QUOTED_CATEGORIES = new Set(["acoes", "fiis", "etfs", "bdrs"]);
 
-function getCurrentPrice(ticker: string): number | null {
-  return MOCK_PRICES[ticker.toUpperCase()] ?? null;
+async function getPricesForAssets(assets: { ticker: string; category: string }[]): Promise<Map<string, number>> {
+  const tickers = assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker);
+  const prices = new Map<string, number>();
+  if (tickers.length === 0) return prices;
+  const quotes = await getQuotes(tickers);
+  for (const [ticker, quote] of quotes) prices.set(ticker, quote.price);
+  return prices;
 }
 
 function enrichAsset(asset: {
@@ -24,10 +24,9 @@ function enrichAsset(asset: {
   averagePrice: string; purchaseDate: string | null; category: string;
   sector: string | null; notes: string | null;
   createdAt: Date; updatedAt: Date;
-}) {
+}, currentPrice: number | null) {
   const qty = parseFloat(asset.quantity);
   const avgPrice = parseFloat(asset.averagePrice);
-  const currentPrice = getCurrentPrice(asset.ticker);
   const totalCost = qty * avgPrice;
   const totalValue = currentPrice ? qty * currentPrice : null;
   const profitLoss = totalValue != null ? totalValue - totalCost : null;
@@ -53,7 +52,8 @@ function enrichAsset(asset: {
 
 router.get("/assets", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
-  res.json(assets.map(enrichAsset));
+  const prices = await getPricesForAssets(assets);
+  res.json(assets.map((a) => enrichAsset(a, prices.get(a.ticker.toUpperCase()) ?? null)));
 });
 
 router.post("/assets", requireAuth, async (req, res): Promise<void> => {
@@ -73,7 +73,8 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     sector: sector ?? null,
     notes: notes ?? null,
   }).returning();
-  res.status(201).json(enrichAsset(asset));
+  const prices = await getPricesForAssets([asset]);
+  res.status(201).json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null));
 });
 
 router.get("/assets/:id", requireAuth, async (req, res): Promise<void> => {
@@ -89,7 +90,8 @@ router.get("/assets/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Asset não encontrado" });
     return;
   }
-  res.json(enrichAsset(asset));
+  const prices = await getPricesForAssets([asset]);
+  res.json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null));
 });
 
 router.patch("/assets/:id", requireAuth, async (req, res): Promise<void> => {
@@ -121,7 +123,8 @@ router.patch("/assets/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Asset não encontrado" });
     return;
   }
-  res.json(enrichAsset(asset));
+  const prices = await getPricesForAssets([asset]);
+  res.json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null));
 });
 
 router.delete("/assets/:id", requireAuth, async (req, res): Promise<void> => {

@@ -128,6 +128,124 @@ export interface AssetUpdate {
   notes?: string | null;
 }
 
+export type InvestorProfileHorizon = typeof InvestorProfileHorizon[keyof typeof InvestorProfileHorizon];
+
+
+export const InvestorProfileHorizon = {
+  curto: 'curto',
+  medio: 'medio',
+  longo: 'longo',
+} as const;
+
+export type InvestorProfileLossTolerance = typeof InvestorProfileLossTolerance[keyof typeof InvestorProfileLossTolerance];
+
+
+export const InvestorProfileLossTolerance = {
+  baixa: 'baixa',
+  media: 'media',
+  alta: 'alta',
+} as const;
+
+export type InvestorProfileObjective = typeof InvestorProfileObjective[keyof typeof InvestorProfileObjective];
+
+
+export const InvestorProfileObjective = {
+  preservar: 'preservar',
+  renda: 'renda',
+  crescimento: 'crescimento',
+} as const;
+
+export type InvestorProfileExperience = typeof InvestorProfileExperience[keyof typeof InvestorProfileExperience];
+
+
+export const InvestorProfileExperience = {
+  iniciante: 'iniciante',
+  intermediario: 'intermediario',
+  avancado: 'avancado',
+} as const;
+
+export type InvestorProfileLiquidityNeed = typeof InvestorProfileLiquidityNeed[keyof typeof InvestorProfileLiquidityNeed];
+
+
+export const InvestorProfileLiquidityNeed = {
+  sim: 'sim',
+  nao: 'nao',
+} as const;
+
+export type InvestorProfileClassification = typeof InvestorProfileClassification[keyof typeof InvestorProfileClassification];
+
+
+export const InvestorProfileClassification = {
+  Conservador: 'Conservador',
+  Moderado: 'Moderado',
+  Arrojado: 'Arrojado',
+} as const;
+
+export interface InvestorProfile {
+  id: number;
+  userId: number;
+  horizon: InvestorProfileHorizon;
+  lossTolerance: InvestorProfileLossTolerance;
+  objective: InvestorProfileObjective;
+  experience: InvestorProfileExperience;
+  liquidityNeed: InvestorProfileLiquidityNeed;
+  score: number;
+  classification: InvestorProfileClassification;
+  updatedAt: string;
+}
+
+export type InvestorProfileInputHorizon = typeof InvestorProfileInputHorizon[keyof typeof InvestorProfileInputHorizon];
+
+
+export const InvestorProfileInputHorizon = {
+  curto: 'curto',
+  medio: 'medio',
+  longo: 'longo',
+} as const;
+
+export type InvestorProfileInputLossTolerance = typeof InvestorProfileInputLossTolerance[keyof typeof InvestorProfileInputLossTolerance];
+
+
+export const InvestorProfileInputLossTolerance = {
+  baixa: 'baixa',
+  media: 'media',
+  alta: 'alta',
+} as const;
+
+export type InvestorProfileInputObjective = typeof InvestorProfileInputObjective[keyof typeof InvestorProfileInputObjective];
+
+
+export const InvestorProfileInputObjective = {
+  preservar: 'preservar',
+  renda: 'renda',
+  crescimento: 'crescimento',
+} as const;
+
+export type InvestorProfileInputExperience = typeof InvestorProfileInputExperience[keyof typeof InvestorProfileInputExperience];
+
+
+export const InvestorProfileInputExperience = {
+  iniciante: 'iniciante',
+  intermediario: 'intermediario',
+  avancado: 'avancado',
+} as const;
+
+export type InvestorProfileInputLiquidityNeed = typeof InvestorProfileInputLiquidityNeed[keyof typeof InvestorProfileInputLiquidityNeed];
+
+
+export const InvestorProfileInputLiquidityNeed = {
+  sim: 'sim',
+  nao: 'nao',
+} as const;
+
+export interface InvestorProfileInput {
+  horizon: InvestorProfileInputHorizon;
+  lossTolerance: InvestorProfileInputLossTolerance;
+  objective: InvestorProfileInputObjective;
+  experience: InvestorProfileInputExperience;
+  liquidityNeed: InvestorProfileInputLiquidityNeed;
+}
+
 export interface PortfolioSummary {
   totalPatrimony: number;
   totalProfitLoss: number;

@@ -1,15 +1,20 @@
-# [Project name]
+# InvestRadar
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Agente de gestão de carteira de investimentos: monitora ativos (ações, FIIs, ETFs, BDRs, fundos, renda fixa), gera score/análise por ativo, alertas do "Radar Inteligente" e oportunidades, com base no prompt em `attached_assets/Prompt_Agente_Gestao_Carteira_Investimentos_*.md`.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+Local (fora do Replit):
+
+- Suba um Postgres local e crie um banco (ex: `invest_radar`).
+- `DATABASE_URL="postgresql://user:pass@127.0.0.1:5432/invest_radar" pnpm --filter @workspace/db run push` — cria/atualiza o schema
+- `DATABASE_URL=... SESSION_SECRET=<qualquer-string> PORT=8080 pnpm --filter @workspace/api-server run dev` — API (build + start)
+- `PORT=25214 BASE_PATH=/ pnpm --filter @workspace/carteira run dev` — frontend (Vite, com proxy `/api` → `http://localhost:8080`, configurável via `API_PROXY_TARGET`)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `DATABASE_URL`, `SESSION_SECRET` (api-server), `PORT`/`BASE_PATH` (ambos os artifacts)
+- Env opcional: `BRAPI_TOKEN` (api-server) — token gratuito em https://brapi.dev/dashboard. Sem ele, só PETR4/VALE3/ITUB4/MGLU3 retornam cotação real; os demais tickers caem no fallback (preço médio de compra). Free tier: 15.000 requisições/mês.
 
 ## Stack
 
@@ -22,23 +27,35 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `lib/db` — schema Drizzle (users, assets, alerts, opportunities, transactions, analyses, investor_profiles), fonte de verdade do banco
+- `lib/api-spec/openapi.yaml` — fonte de verdade dos contratos de API
+- `lib/api-zod`, `lib/api-client-react` — gerados via Orval a partir do OpenAPI (não editar à mão)
+- `artifacts/api-server` — backend Express (rotas em `src/routes`)
+- `artifacts/carteira` — frontend (páginas em `src/pages`)
+- `artifacts/mockup-sandbox` — sandbox de design do Replit, não faz parte do app publicado
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Cotações reais via brapi.dev (`artifacts/api-server/src/lib/market-data.ts`), com cache em memória de 5 min e busca em lote por requisição. Cobre `acoes`, `fiis`, `etfs`, `bdrs`; `renda_fixa`/`fundos` não têm ticker de bolsa e sempre caem no fallback (preço médio de compra).
+- `/portfolio/evolution`: só o valor atual (ponto mais recente) usa cotação real — os 11 pontos anteriores do histórico mensal ainda são simulados em torno dele. Histórico real de preço exige uma tabela de séries temporais (backlog, ver Fase 1 do roadmap).
+- O motor de análise (score/status por ativo) em `artifacts/api-server/src/routes/analysis.ts` continua **mockado** (`Math.random()`) — ainda não há IA/regras reais (próxima fase).
+- Autenticação por sessão (`express-session`, cookie httpOnly), sem distinção de perfis, conforme o prompt original.
+- Perfil de investidor (`/profile`, `investor_profiles`) é **opcional** — preenchido em Configurações, não no cadastro. Score 0-100 somado a partir de 5 perguntas (20 pts cada), classificação Conservador (<34) / Moderado (34-66) / Arrojado (≥67). Ainda não influencia a tela de Oportunidades — isso é o próximo passo (Oportunidades também precisa de dados: a tabela está vazia hoje, sem seed).
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Ver `attached_assets/Prompt_Agente_Gestao_Carteira_Investimentos_*.md` para a especificação completa (classificação MANTER/ATENÇÃO/REAVALIAR/POSSÍVEL SAÍDA, Radar Inteligente, score 0-100, dashboards de carteira/saúde/oportunidades).
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Projeto está migrando do fluxo Replit para deploy próprio (Vercel/Railway/VPS a definir) — não assumir que `.replit`/`artifact.toml` seguem sendo a fonte de verdade de deploy.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- **Windows dev**: `pnpm-workspace.yaml` tinha overrides que zeravam os binários nativos não-Linux de `esbuild`, `rollup`, `lightningcss` e `@tailwindcss/oxide` (comentário original: "replit uses linux-x64 only"). Já removidas as entradas `win32-*` — se voltar a quebrar após um `pnpm install`, comece por aí.
+- **Git Bash / MSYS no Windows**: `BASE_PATH=/` é reescrito para o path do Git (`/Program Files/Git/...`) pelo MSYS. Rode com `MSYS_NO_PATHCONV=1` na frente do comando.
+- O script `dev` do `api-server` usava `export NODE_ENV=...` (sintaxe bash), que quebra no shell padrão do pnpm no Windows (cmd.exe). Já corrigido — `NODE_ENV` não é obrigatório, só é comparado com `"production"` em `app.ts`/`logger.ts`.
+- `lib/db/drizzle.config.ts` usava `path.join(__dirname, ...)`, que gerava um path com `\` no Windows e o drizzle-kit não encontrava o schema. Trocado para path relativo simples.
 
 ## Pointers
 

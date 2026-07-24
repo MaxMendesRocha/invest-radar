@@ -135,23 +135,18 @@ export default function Dashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={evolution} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                    <XAxis 
-                      dataKey="date" 
-                      tick={{ fontSize: 12 }} 
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 12 }}
                       stroke="hsl(var(--muted-foreground))"
-                      tickFormatter={(val) => {
-                        const d = new Date(val);
-                        return `${d.getDate()}/${d.getMonth()+1}`;
-                      }}
                     />
-                    <YAxis 
-                      tick={{ fontSize: 12, fontFamily: 'var(--font-mono)' }} 
+                    <YAxis
+                      tick={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}
                       stroke="hsl(var(--muted-foreground))"
                       tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`}
                     />
-                    <RechartsTooltip 
+                    <RechartsTooltip
                       formatter={(value: number) => [formatCurrency(value), "Valor"]}
-                      labelFormatter={(label) => new Date(label).toLocaleDateString('pt-BR')}
                       contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '6px' }}
                     />
                     <Line 

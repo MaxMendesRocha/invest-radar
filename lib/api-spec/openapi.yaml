@@ -14,6 +14,8 @@ tags:
     description: Authentication
   - name: assets
     description: Portfolio assets
+  - name: profile
+    description: Investor risk profile
   - name: portfolio
     description: Portfolio summaries and analytics
   - name: alerts
@@ -233,6 +235,49 @@ paths:
       responses:
         "204":
           description: Deleted
+
+  # ─── INVESTOR PROFILE ────────────────────────────────────────────────────────
+  /profile:
+    get:
+      operationId: getInvestorProfile
+      tags: [profile]
+      summary: Get the current user's investor risk profile, if set
+      responses:
+        "200":
+          description: Investor profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestorProfile"
+        "404":
+          description: Profile not set yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateInvestorProfile
+      tags: [profile]
+      summary: Create or update the current user's investor risk profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvestorProfileInput"
+      responses:
+        "200":
+          description: Saved investor profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestorProfile"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ─── PORTFOLIO SUMMARIES ─────────────────────────────────────────────────────
   /portfolio/summary:
@@ -627,6 +672,59 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
+
+    # ─── INVESTOR PROFILE SCHEMAS ─────────────────────────────────────────────
+    InvestorProfile:
+      type: object
+      required: [id, userId, horizon, lossTolerance, objective, experience, liquidityNeed, score, classification, updatedAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        horizon:
+          type: string
+          enum: [curto, medio, longo]
+        lossTolerance:
+          type: string
+          enum: [baixa, media, alta]
+        objective:
+          type: string
+          enum: [preservar, renda, crescimento]
+        experience:
+          type: string
+          enum: [iniciante, intermediario, avancado]
+        liquidityNeed:
+          type: string
+          enum: [sim, nao]
+        score:
+          type: number
+        classification:
+          type: string
+          enum: [Conservador, Moderado, Arrojado]
+        updatedAt:
+          type: string
+          format: date-time
+
+    InvestorProfileInput:
+      type: object
+      required: [horizon, lossTolerance, objective, experience, liquidityNeed]
+      properties:
+        horizon:
+          type: string
+          enum: [curto, medio, longo]
+        lossTolerance:
+          type: string
+          enum: [baixa, media, alta]
+        objective:
+          type: string
+          enum: [preservar, renda, crescimento]
+        experience:
+          type: string
+          enum: [iniciante, intermediario, avancado]
+        liquidityNeed:
+          type: string
+          enum: [sim, nao]
 
     # ─── PORTFOLIO SCHEMAS ────────────────────────────────────────────────────
     PortfolioSummary:
