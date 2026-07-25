@@ -8,6 +8,7 @@ Local (fora do Replit):
 
 - Suba um Postgres local e crie um banco (ex: `invest_radar`).
 - `DATABASE_URL="postgresql://user:pass@127.0.0.1:5432/invest_radar" pnpm --filter @workspace/db run push` — cria/atualiza o schema
+- `DATABASE_URL=... pnpm --filter @workspace/scripts run seed-opportunities` — popula a lista curada de Oportunidades (apaga e recria)
 - `DATABASE_URL=... SESSION_SECRET=<qualquer-string> PORT=8080 pnpm --filter @workspace/api-server run dev` — API (build + start)
 - `PORT=25214 BASE_PATH=/ pnpm --filter @workspace/carteira run dev` — frontend (Vite, com proxy `/api` → `http://localhost:8080`, configurável via `API_PROXY_TARGET`)
 - `pnpm run typecheck` — full typecheck across all packages
@@ -15,6 +16,17 @@ Local (fora do Replit):
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - Required env: `DATABASE_URL`, `SESSION_SECRET` (api-server), `PORT`/`BASE_PATH` (ambos os artifacts)
 - Env opcional: `BRAPI_TOKEN` (api-server) — token gratuito em https://brapi.dev/dashboard. Sem ele, só PETR4/VALE3/ITUB4/MGLU3 retornam cotação real; os demais tickers caem no fallback (preço médio de compra). Free tier: 15.000 requisições/mês.
+
+### Testar pelo celular (mesma rede Wi-Fi)
+
+Os dois servidores já escutam em `0.0.0.0` (todas as interfaces) — não precisa mudar nada no código. Falta só liberar o Firewall do Windows pra aceitar conexão de outros dispositivos, uma vez só, num **PowerShell como Administrador**:
+
+```powershell
+New-NetFirewallRule -DisplayName "InvestRadar Dev - Frontend" -Direction Inbound -LocalPort 25214 -Protocol TCP -Action Allow -Profile Private
+New-NetFirewallRule -DisplayName "InvestRadar Dev - API" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow -Profile Private
+```
+
+Depois, com o celular na mesma rede Wi-Fi, abrir `http://<IP-da-máquina>:25214` (descobrir o IP com `ipconfig`, campo IPv4). O proxy `/api` do Vite roda no servidor, então sessão/cookie funcionam normalmente — não é preciso mexer em CORS.
 
 ## Stack
 
@@ -40,7 +52,8 @@ Local (fora do Replit):
 - `/portfolio/evolution`: só o valor atual (ponto mais recente) usa cotação real — os 11 pontos anteriores do histórico mensal ainda são simulados em torno dele. Histórico real de preço exige uma tabela de séries temporais (backlog, ver Fase 1 do roadmap).
 - O motor de análise (score/status por ativo) em `artifacts/api-server/src/routes/analysis.ts` continua **mockado** (`Math.random()`) — ainda não há IA/regras reais (próxima fase).
 - Autenticação por sessão (`express-session`, cookie httpOnly), sem distinção de perfis, conforme o prompt original.
-- Perfil de investidor (`/profile`, `investor_profiles`) é **opcional** — preenchido em Configurações, não no cadastro. Score 0-100 somado a partir de 5 perguntas (20 pts cada), classificação Conservador (<34) / Moderado (34-66) / Arrojado (≥67). Ainda não influencia a tela de Oportunidades — isso é o próximo passo (Oportunidades também precisa de dados: a tabela está vazia hoje, sem seed).
+- Perfil de investidor (`/profile`, `investor_profiles`) é **opcional** — preenchido em Configurações, não no cadastro. Score 0-100 somado a partir de 5 perguntas (20 pts cada), classificação Conservador (<34) / Moderado (34-66) / Arrojado (≥67).
+- `opportunities` é populada por `pnpm --filter @workspace/scripts run seed-opportunities` (lista curada de 18 tickers, não são dados live — ver `scripts/src/seed-opportunities.ts`). `/opportunities` reordena o Top 10 pelo `riskLevel` compatível com a classificação do perfil do usuário (Conservador prioriza risco Baixo, Arrojado prioriza Alto); sem perfil definido, mantém a ordenação simples por score.
 
 ## Product
 
@@ -56,6 +69,7 @@ Ver `attached_assets/Prompt_Agente_Gestao_Carteira_Investimentos_*.md` para a es
 - **Git Bash / MSYS no Windows**: `BASE_PATH=/` é reescrito para o path do Git (`/Program Files/Git/...`) pelo MSYS. Rode com `MSYS_NO_PATHCONV=1` na frente do comando.
 - O script `dev` do `api-server` usava `export NODE_ENV=...` (sintaxe bash), que quebra no shell padrão do pnpm no Windows (cmd.exe). Já corrigido — `NODE_ENV` não é obrigatório, só é comparado com `"production"` em `app.ts`/`logger.ts`.
 - `lib/db/drizzle.config.ts` usava `path.join(__dirname, ...)`, que gerava um path com `\` no Windows e o drizzle-kit não encontrava o schema. Trocado para path relativo simples.
+- **brapi.dev**: os planos free/free-token permitem só **1 ticker por requisição**. `market-data.ts` faz uma requisição por ticker (em paralelo) — nunca volte a agrupar tickers numa chamada só (`/quote/A,B,C`), a API rejeita a lista inteira e derruba o preço de todos os ativos daquele lote, não só do que causou o problema.
 
 ## Pointers
 
