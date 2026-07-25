@@ -23,27 +23,42 @@ interface BrapiResult {
 
 const cache = new Map<string, CacheEntry>();
 
-async function fetchQuotes(tickers: string[]): Promise<Map<string, Quote>> {
+// brapi.dev's free/free-token plans cap requests at 1 ticker each — a batched,
+// comma-separated request gets rejected for the whole list (QUOTES_PER_REQUEST_EXCEEDED),
+// even if only one ticker in it would be invalid. Fetch one ticker per request instead.
+async function fetchQuote(ticker: string): Promise<Quote | null> {
   const token = process.env.BRAPI_TOKEN;
-  const url = `${BRAPI_BASE_URL}/${tickers.map(encodeURIComponent).join(",")}`;
+  const url = `${BRAPI_BASE_URL}/${encodeURIComponent(ticker)}`;
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   const response = await fetch(url, { headers });
   if (!response.ok) {
-    logger.warn({ status: response.status, tickers }, "brapi.dev quote request failed");
-    return new Map();
+    logger.warn({ status: response.status, ticker }, "brapi.dev quote request failed");
+    return null;
   }
 
   const body = (await response.json()) as { results?: BrapiResult[] };
+  const item = body.results?.[0];
+  if (!item || typeof item.regularMarketPrice !== "number") return null;
+
+  return {
+    price: item.regularMarketPrice,
+    priceEarnings: item.priceEarnings ?? null,
+    updatedAt: item.regularMarketTime ?? new Date().toISOString(),
+  };
+}
+
+async function fetchQuotes(tickers: string[]): Promise<Map<string, Quote>> {
   const result = new Map<string, Quote>();
-  for (const item of body.results ?? []) {
-    if (typeof item.regularMarketPrice !== "number") continue;
-    result.set(item.symbol.toUpperCase(), {
-      price: item.regularMarketPrice,
-      priceEarnings: item.priceEarnings ?? null,
-      updatedAt: item.regularMarketTime ?? new Date().toISOString(),
-    });
-  }
+  const settled = await Promise.allSettled(tickers.map((ticker) => fetchQuote(ticker)));
+  tickers.forEach((ticker, i) => {
+    const outcome = settled[i];
+    if (outcome.status === "fulfilled" && outcome.value) {
+      result.set(ticker.toUpperCase(), outcome.value);
+    } else if (outcome.status === "rejected") {
+      logger.warn({ err: outcome.reason, ticker }, "brapi.dev quote request errored");
+    }
+  });
   return result;
 }
 
