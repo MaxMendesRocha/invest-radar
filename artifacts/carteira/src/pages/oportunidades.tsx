@@ -60,25 +60,23 @@ export default function Oportunidades() {
                   #{idx + 1}
                 </div>
               </div>
-              <CardHeader className="pb-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <CardTitle className="text-2xl font-mono">{opp.ticker}</CardTitle>
-                      <Badge variant="outline" className="text-[10px]">{opp.category}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground font-medium truncate" title={opp.name}>{opp.name}</p>
+              <CardHeader className="pb-4 pr-16">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-2xl font-mono">{opp.ticker}</CardTitle>
+                    <Badge variant="outline" className="text-[10px]">{opp.category}</Badge>
                   </div>
-                  {opp.currentPrice != null && (
-                    <div className="text-right shrink-0">
-                      <p className="text-[10px] uppercase text-muted-foreground tracking-wider mb-1">Cotação</p>
-                      <p className="font-bold font-mono">{formatCurrency(opp.currentPrice)}</p>
-                    </div>
-                  )}
+                  <p className="text-sm text-muted-foreground font-medium truncate" title={opp.name}>{opp.name}</p>
                 </div>
               </CardHeader>
               <CardContent className="flex-1 space-y-4">
-                <div className="grid grid-cols-2 gap-2 p-3 bg-muted/30 rounded-lg border border-border/50">
+                <div className="grid grid-cols-3 gap-2 p-3 bg-muted/30 rounded-lg border border-border/50">
+                  <div>
+                    <p className="text-[10px] uppercase text-muted-foreground tracking-wider mb-1">Cotação</p>
+                    <p className="font-bold font-mono">
+                      {opp.currentPrice != null ? formatCurrency(opp.currentPrice) : '-'}
+                    </p>
+                  </div>
                   <div>
                     <p className="text-[10px] uppercase text-muted-foreground tracking-wider mb-1 flex items-center gap-1">
                       <TrendingUp className="w-3 h-3" /> Upside
