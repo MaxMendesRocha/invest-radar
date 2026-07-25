@@ -205,7 +205,7 @@ export default function Carteira() {
                 <TableHead className="text-right">Cotação Atual</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">L&P</TableHead>
-                <TableHead className="text-center">Status (IA)</TableHead>
+                <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>

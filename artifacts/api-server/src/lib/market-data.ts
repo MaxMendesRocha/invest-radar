@@ -101,6 +101,113 @@ export async function getQuotes(tickers: string[]): Promise<Map<string, Quote>> 
   return fresh;
 }
 
+export interface Fundamentals {
+  price: number;
+  priceEarnings: number | null; // P/L
+  priceToBook: number | null; // P/VP
+  dividendYield: number | null; // decimal, e.g. 0.05 = 5%
+  returnOnEquity: number | null; // ROE, decimal
+  debtToEquity: number | null; // dívida/patrimônio, ratio (1.5 = 150%)
+  profitMargins: number | null; // margem líquida, decimal
+  revenueGrowth: number | null; // decimal
+  fiftyTwoWeekChange: number | null; // decimal
+  beta: number | null;
+  updatedAt: string;
+}
+
+interface FundamentalsCacheEntry {
+  fundamentals: Fundamentals | null;
+  fetchedAt: number;
+}
+
+interface BrapiFundamentalsResult extends BrapiResult {
+  defaultKeyStatistics?: {
+    priceToBook?: number | null;
+    dividendYield?: number | null;
+    "52WeekChange"?: number | null;
+    beta?: number | null;
+  };
+  financialData?: {
+    returnOnEquity?: number | null;
+    debtToEquity?: number | null;
+    profitMargins?: number | null;
+    revenueGrowth?: number | null;
+  };
+}
+
+const fundamentalsCache = new Map<string, FundamentalsCacheEntry>();
+
+async function fetchFundamentals(ticker: string): Promise<Fundamentals | null> {
+  const token = process.env.BRAPI_TOKEN;
+  const url = `${BRAPI_BASE_URL}/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics,financialData`;
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    logger.warn({ status: response.status, ticker }, "brapi.dev fundamentals request failed");
+    return null;
+  }
+
+  const body = (await response.json()) as { results?: BrapiFundamentalsResult[] };
+  const item = body.results?.[0];
+  if (!item || typeof item.regularMarketPrice !== "number") return null;
+
+  const stats = item.defaultKeyStatistics ?? {};
+  const financials = item.financialData ?? {};
+
+  return {
+    price: item.regularMarketPrice,
+    priceEarnings: item.priceEarnings ?? null,
+    priceToBook: stats.priceToBook ?? null,
+    dividendYield: stats.dividendYield ?? null,
+    returnOnEquity: financials.returnOnEquity ?? null,
+    debtToEquity: financials.debtToEquity ?? null,
+    profitMargins: financials.profitMargins ?? null,
+    revenueGrowth: financials.revenueGrowth ?? null,
+    fiftyTwoWeekChange: stats["52WeekChange"] ?? null,
+    beta: stats.beta ?? null,
+    updatedAt: item.regularMarketTime ?? new Date().toISOString(),
+  };
+}
+
+/**
+ * Cached lookup of fundamentals (P/L, P/VP, ROE, endividamento, margens, crescimento,
+ * beta, variação 12m) for tickers, used by the analysis engine — heavier payload than
+ * getQuotes, so kept separate rather than folded into every price lookup.
+ */
+export async function getFundamentals(tickers: string[]): Promise<Map<string, Fundamentals>> {
+  const uniqueTickers = Array.from(new Set(tickers.map((t) => t.toUpperCase())));
+  if (uniqueTickers.length === 0) return new Map();
+
+  const now = Date.now();
+  const fresh = new Map<string, Fundamentals>();
+  const stale: string[] = [];
+
+  for (const ticker of uniqueTickers) {
+    const cached = fundamentalsCache.get(ticker);
+    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+      if (cached.fundamentals) fresh.set(ticker, cached.fundamentals);
+    } else {
+      stale.push(ticker);
+    }
+  }
+
+  if (stale.length > 0) {
+    const settled = await Promise.allSettled(stale.map((ticker) => fetchFundamentals(ticker)));
+    stale.forEach((ticker, i) => {
+      const outcome = settled[i];
+      const fundamentals = outcome.status === "fulfilled" ? outcome.value : null;
+      if (outcome.status === "rejected") {
+        logger.warn({ err: outcome.reason, ticker }, "brapi.dev fundamentals request errored");
+      }
+      fundamentalsCache.set(ticker, { fundamentals, fetchedAt: now });
+      if (fundamentals) fresh.set(ticker, fundamentals);
+    });
+  }
+
+  return fresh;
+}
+
 // Categories traded on B3 and covered by brapi.dev quotes; renda_fixa/fundos have no ticker quote.
 export const QUOTED_CATEGORIES = new Set(["acoes", "fiis", "etfs", "bdrs"]);
 

@@ -44,7 +44,7 @@ export default function Analise() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-3xl font-bold tracking-tight">Análise de Ativos</h1>
-          <p className="text-muted-foreground">Avaliação fundamentalista guiada por inteligência artificial.</p>
+          <p className="text-muted-foreground">Avaliação fundamentalista por regras, com base em dados reais de mercado.</p>
         </div>
         
         <Button onClick={handleGenerate} disabled={generateAnalysis.isPending} className="gap-2">
