@@ -1,6 +1,8 @@
-import { 
+import {
   useListOpportunities,
-  getListOpportunitiesQueryKey 
+  getListOpportunitiesQueryKey,
+  useGetInvestorProfile,
+  getGetInvestorProfileQueryKey,
 } from "@workspace/api-client-react";
 import { formatPercent } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -13,14 +15,31 @@ const RISK_MAP = {
   Alto: "destructive"
 };
 
+const CLASSIFICATION_BADGE: Record<string, "default" | "secondary" | "destructive"> = {
+  Conservador: "default",
+  Moderado: "secondary",
+  Arrojado: "destructive",
+};
+
 export default function Oportunidades() {
   const { data: opportunities, isLoading } = useListOpportunities({ query: { queryKey: getListOpportunitiesQueryKey() } });
+  const { data: profile } = useGetInvestorProfile({ query: { queryKey: getGetInvestorProfileQueryKey(), retry: false } });
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Oportunidades</h1>
         <p className="text-muted-foreground">Ativos rankeados com base em fundamentos, valuation e momento de mercado.</p>
+        {profile ? (
+          <p className="text-sm text-muted-foreground flex items-center gap-2">
+            Priorizado para o seu perfil:
+            <Badge variant={CLASSIFICATION_BADGE[profile.classification] ?? "default"}>{profile.classification}</Badge>
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Defina seu perfil de investidor em Configurações para priorizar essa lista pelo seu apetite a risco.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
