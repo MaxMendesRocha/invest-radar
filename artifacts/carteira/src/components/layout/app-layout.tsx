@@ -27,6 +27,43 @@ const NAV_ITEMS = [
   { href: "/saude", label: "Saúde do Portfólio", icon: Stethoscope },
 ];
 
+// Most-used sections get one-thumb access on mobile; the rest stay in the drawer.
+const MOBILE_TAB_ITEMS = [
+  { href: "/", label: "Início", icon: LayoutDashboard },
+  { href: "/carteira", label: "Carteira", icon: Wallet },
+  { href: "/radar", label: "Radar", icon: Radar },
+  { href: "/analise", label: "Análise", icon: Activity },
+  { href: "/oportunidades", label: "Oport.", icon: Lightbulb },
+];
+
+function MobileBottomNav() {
+  const [location] = useLocation();
+
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-sidebar text-sidebar-foreground border-t border-sidebar-border pb-[env(safe-area-inset-bottom)]">
+      <div className="flex items-stretch h-14">
+        {MOBILE_TAB_ITEMS.map((item) => {
+          const isActive = location === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                isActive
+                  ? "text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
+              }`}
+            >
+              <item.icon className="w-5 h-5" />
+              <span className="text-[10px] leading-none">{item.label}</span>
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
 function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const [location, setLocation] = useLocation();
   const { data: user } = useGetMe();
@@ -134,12 +171,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        <div className="flex-1 overflow-y-auto p-4 pb-20 md:p-8">
           <div className="max-w-7xl mx-auto w-full">
             {children}
           </div>
         </div>
       </main>
+
+      <MobileBottomNav />
     </div>
   );
 }
