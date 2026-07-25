@@ -20,4 +20,6 @@ export interface Opportunity {
   positives: string[];
   risks: string[];
   horizon: string;
+  /** @nullable */
+  currentPrice?: number | null;
 }

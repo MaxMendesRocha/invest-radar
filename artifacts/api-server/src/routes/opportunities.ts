@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, opportunitiesTable, investorProfilesTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
+import { getPricesFor } from "../lib/market-data";
 
 const router: IRouter = Router();
 
@@ -42,7 +43,11 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
     });
   }
 
-  res.json(items.slice(0, 10));
+  const top10 = items.slice(0, 10);
+
+  // Only fetch quotes for what's actually shown, not the full curated list.
+  const prices = await getPricesFor(top10);
+  res.json(top10.map((item) => ({ ...item, currentPrice: prices.get(item.ticker.toUpperCase()) ?? null })));
 });
 
 export default router;

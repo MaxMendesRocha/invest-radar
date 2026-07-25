@@ -100,3 +100,21 @@ export async function getQuotes(tickers: string[]): Promise<Map<string, Quote>> 
 
   return fresh;
 }
+
+// Categories traded on B3 and covered by brapi.dev quotes; renda_fixa/fundos have no ticker quote.
+export const QUOTED_CATEGORIES = new Set(["acoes", "fiis", "etfs", "bdrs"]);
+
+/**
+ * Convenience wrapper around getQuotes for a list of { ticker, category } records
+ * (assets, opportunities, ...): filters to quotable categories and returns a
+ * ticker -> price map. Missing entries mean no quote was available — callers
+ * fall back to whatever price they already have on hand.
+ */
+export async function getPricesFor(items: { ticker: string; category: string }[]): Promise<Map<string, number>> {
+  const tickers = items.filter((i) => QUOTED_CATEGORIES.has(i.category)).map((i) => i.ticker);
+  const prices = new Map<string, number>();
+  if (tickers.length === 0) return prices;
+  const quotes = await getQuotes(tickers);
+  for (const [ticker, quote] of quotes) prices.set(ticker, quote.price);
+  return prices;
+}

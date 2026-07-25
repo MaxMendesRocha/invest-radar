@@ -370,6 +370,8 @@ export interface Opportunity {
   positives: string[];
   risks: string[];
   horizon: string;
+  /** @nullable */
+  currentPrice?: number | null;
 }
 
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];

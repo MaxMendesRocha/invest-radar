@@ -386,7 +386,8 @@ export const ListOpportunitiesResponseItem = zod.object({
   "reason": zod.string(),
   "positives": zod.array(zod.string()),
   "risks": zod.array(zod.string()),
-  "horizon": zod.string()
+  "horizon": zod.string(),
+  "currentPrice": zod.number().nullish()
 })
 export const ListOpportunitiesResponse = zod.array(ListOpportunitiesResponseItem)
 
@@ -527,7 +528,8 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "reason": zod.string(),
   "positives": zod.array(zod.string()),
   "risks": zod.array(zod.string()),
-  "horizon": zod.string()
+  "horizon": zod.string(),
+  "currentPrice": zod.number().nullish()
 }))
 })
 

@@ -48,12 +48,13 @@ Depois, com o celular na mesma rede Wi-Fi, abrir `http://<IP-da-máquina>:25214`
 
 ## Architecture decisions
 
-- Cotações reais via brapi.dev (`artifacts/api-server/src/lib/market-data.ts`), com cache em memória de 5 min e busca em lote por requisição. Cobre `acoes`, `fiis`, `etfs`, `bdrs`; `renda_fixa`/`fundos` não têm ticker de bolsa e sempre caem no fallback (preço médio de compra).
+- Cotações reais via brapi.dev (`artifacts/api-server/src/lib/market-data.ts`), com cache em memória de 5 min (uma requisição por ticker, em paralelo — ver gotcha abaixo). Cobre `acoes`, `fiis`, `etfs`, `bdrs`; `renda_fixa`/`fundos` não têm ticker de bolsa. O helper compartilhado `getPricesFor(items)` (também exporta `QUOTED_CATEGORIES`) é usado por `assets.ts`, `portfolio.ts` e `opportunities.ts` — não duplicar essa lógica de novo num quarto lugar, importar dali.
 - `/portfolio/evolution`: só o valor atual (ponto mais recente) usa cotação real — os 11 pontos anteriores do histórico mensal ainda são simulados em torno dele. Histórico real de preço exige uma tabela de séries temporais (backlog, ver Fase 1 do roadmap).
 - O motor de análise (score/status por ativo) em `artifacts/api-server/src/routes/analysis.ts` continua **mockado** (`Math.random()`) — ainda não há IA/regras reais (próxima fase).
 - Autenticação por sessão (`express-session`, cookie httpOnly), sem distinção de perfis, conforme o prompt original.
 - Perfil de investidor (`/profile`, `investor_profiles`) é **opcional** — preenchido em Configurações, não no cadastro. Score 0-100 somado a partir de 5 perguntas (20 pts cada), classificação Conservador (<34) / Moderado (34-66) / Arrojado (≥67).
-- `opportunities` é populada por `pnpm --filter @workspace/scripts run seed-opportunities` (lista curada de 18 tickers, não são dados live — ver `scripts/src/seed-opportunities.ts`). `/opportunities` reordena o Top 10 pelo `riskLevel` compatível com a classificação do perfil do usuário (Conservador prioriza risco Baixo, Arrojado prioriza Alto); sem perfil definido, mantém a ordenação simples por score.
+- `opportunities` é populada por `pnpm --filter @workspace/scripts run seed-opportunities` (lista curada de 18 tickers, não são dados live — ver `scripts/src/seed-opportunities.ts`). `/opportunities` reordena o Top 10 pelo `riskLevel` compatível com a classificação do perfil do usuário (Conservador prioriza risco Baixo, Arrojado prioriza Alto); sem perfil definido, mantém a ordenação simples por score. `currentPrice` é buscado só pros 10 já rankeados (cotação real, mesmo cache de `market-data.ts`) — os demais campos (score, potentialReturn, dividendYield) continuam curados/fixos.
+- Navegação mobile (`app-layout.tsx`, abaixo de `md`): barra superior com hambúrguer (abre o drawer com todos os itens) + barra inferior fixa com os 5 destinos mais usados (Início, Carteira, Radar, Análise, Oportunidades). Dividendos/Saúde/Configurações ficam só no drawer. Desktop usa a sidebar fixa de sempre, sem nenhuma das duas barras.
 
 ## Product
 

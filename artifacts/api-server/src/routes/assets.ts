@@ -3,21 +3,9 @@ import { db, assetsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { getQuotes } from "../lib/market-data";
+import { getPricesFor } from "../lib/market-data";
 
 const router: IRouter = Router();
-
-// Categories traded on B3 and covered by brapi.dev quotes; renda_fixa/fundos have no ticker quote.
-const QUOTED_CATEGORIES = new Set(["acoes", "fiis", "etfs", "bdrs"]);
-
-async function getPricesForAssets(assets: { ticker: string; category: string }[]): Promise<Map<string, number>> {
-  const tickers = assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker);
-  const prices = new Map<string, number>();
-  if (tickers.length === 0) return prices;
-  const quotes = await getQuotes(tickers);
-  for (const [ticker, quote] of quotes) prices.set(ticker, quote.price);
-  return prices;
-}
 
 function enrichAsset(asset: {
   id: number; userId: number; ticker: string; quantity: string;
@@ -52,7 +40,7 @@ function enrichAsset(asset: {
 
 router.get("/assets", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
-  const prices = await getPricesForAssets(assets);
+  const prices = await getPricesFor(assets);
   res.json(assets.map((a) => enrichAsset(a, prices.get(a.ticker.toUpperCase()) ?? null)));
 });
 
@@ -73,7 +61,7 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     sector: sector ?? null,
     notes: notes ?? null,
   }).returning();
-  const prices = await getPricesForAssets([asset]);
+  const prices = await getPricesFor([asset]);
   res.status(201).json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null));
 });
 
@@ -90,7 +78,7 @@ router.get("/assets/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Asset não encontrado" });
     return;
   }
-  const prices = await getPricesForAssets([asset]);
+  const prices = await getPricesFor([asset]);
   res.json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null));
 });
 
@@ -123,7 +111,7 @@ router.patch("/assets/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Asset não encontrado" });
     return;
   }
-  const prices = await getPricesForAssets([asset]);
+  const prices = await getPricesFor([asset]);
   res.json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null));
 });
 

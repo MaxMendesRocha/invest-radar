@@ -2,21 +2,9 @@ import { Router, type IRouter } from "express";
 import { db, assetsTable, transactionsTable } from "@workspace/db";
 import { eq, sum } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { getQuotes } from "../lib/market-data";
+import { getPricesFor } from "../lib/market-data";
 
 const router: IRouter = Router();
-
-// Categories traded on B3 and covered by brapi.dev quotes; renda_fixa/fundos have no ticker quote.
-const QUOTED_CATEGORIES = new Set(["acoes", "fiis", "etfs", "bdrs"]);
-
-async function getPricesForAssets(assets: { ticker: string; category: string }[]): Promise<Map<string, number>> {
-  const tickers = assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker);
-  const prices = new Map<string, number>();
-  if (tickers.length === 0) return prices;
-  const quotes = await getQuotes(tickers);
-  for (const [ticker, quote] of quotes) prices.set(ticker, quote.price);
-  return prices;
-}
 
 const SECTOR_MAP: Record<string, string> = {
   PETR4: "Petróleo & Gás", VALE3: "Mineração", ITUB4: "Bancos", BBDC4: "Bancos",
@@ -30,7 +18,7 @@ const SECTOR_MAP: Record<string, string> = {
 router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
   const txRows = await db.select({ total: sum(transactionsTable.amount) }).from(transactionsTable).where(eq(transactionsTable.userId, req.session.userId!));
-  const prices = await getPricesForAssets(assets);
+  const prices = await getPricesFor(assets);
 
   let totalPatrimony = 0;
   let totalCost = 0;
@@ -60,7 +48,7 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
 
 router.get("/portfolio/distribution", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
-  const prices = await getPricesForAssets(assets);
+  const prices = await getPricesFor(assets);
 
   const byCategoryMap: Record<string, number> = {};
   const bySectorMap: Record<string, number> = {};
@@ -98,7 +86,7 @@ router.get("/portfolio/distribution", requireAuth, async (req, res): Promise<voi
 
 router.get("/portfolio/evolution", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
-  const prices = await getPricesForAssets(assets);
+  const prices = await getPricesFor(assets);
 
   let currentValue = 0;
   for (const a of assets) {

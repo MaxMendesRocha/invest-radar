@@ -898,6 +898,8 @@ components:
             type: string
         horizon:
           type: string
+        currentPrice:
+          type: ["number", "null"]
 
     # ─── TRANSACTION SCHEMAS ──────────────────────────────────────────────────
     Transaction:

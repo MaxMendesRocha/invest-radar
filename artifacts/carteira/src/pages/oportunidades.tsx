@@ -4,7 +4,7 @@ import {
   useGetInvestorProfile,
   getGetInvestorProfileQueryKey,
 } from "@workspace/api-client-react";
-import { formatPercent } from "@/lib/utils";
+import { formatCurrency, formatPercent } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Lightbulb, TrendingUp, ShieldAlert, ArrowRight, Target } from "lucide-react";
@@ -61,12 +61,20 @@ export default function Oportunidades() {
                 </div>
               </div>
               <CardHeader className="pb-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <CardTitle className="text-2xl font-mono">{opp.ticker}</CardTitle>
-                    <Badge variant="outline" className="text-[10px]">{opp.category}</Badge>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-2xl font-mono">{opp.ticker}</CardTitle>
+                      <Badge variant="outline" className="text-[10px]">{opp.category}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground font-medium truncate" title={opp.name}>{opp.name}</p>
                   </div>
-                  <p className="text-sm text-muted-foreground font-medium truncate" title={opp.name}>{opp.name}</p>
+                  {opp.currentPrice != null && (
+                    <div className="text-right shrink-0">
+                      <p className="text-[10px] uppercase text-muted-foreground tracking-wider mb-1">Cotação</p>
+                      <p className="font-bold font-mono">{formatCurrency(opp.currentPrice)}</p>
+                    </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="flex-1 space-y-4">
