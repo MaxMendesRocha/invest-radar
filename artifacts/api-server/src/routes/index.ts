@@ -8,6 +8,7 @@ import alertsRouter from "./alerts";
 import opportunitiesRouter from "./opportunities";
 import transactionsRouter from "./transactions";
 import analysisRouter from "./analysis";
+import macroRouter from "./macro";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(alertsRouter);
 router.use(opportunitiesRouter);
 router.use(transactionsRouter);
 router.use(analysisRouter);
+router.use(macroRouter);
 
 export default router;

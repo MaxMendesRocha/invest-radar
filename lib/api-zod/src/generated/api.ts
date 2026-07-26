@@ -483,7 +483,7 @@ export const GetAssetAnalysisResponse = zod.object({
 
 
 /**
- * @summary Trigger AI analysis for the entire portfolio
+ * @summary Regenerate rules-based analysis for the entire portfolio
  */
 export const GeneratePortfolioAnalysisResponse = zod.object({
   "generatedAt": zod.coerce.date(),
@@ -534,6 +534,18 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "horizon": zod.string(),
   "currentPrice": zod.number().nullish()
 }))
+})
+
+
+/**
+ * @summary Real macroeconomic indicators (Selic, IPCA, câmbio) from the Banco Central
+ */
+export const GetMacroSnapshotResponse = zod.object({
+  "selic": zod.number().nullable(),
+  "selicTrend": zod.union([zod.literal('alta'),zod.literal('queda'),zod.literal('estavel'),zod.literal(null)]).nullable(),
+  "ipca12m": zod.number().nullable(),
+  "usdBrl": zod.number().nullable(),
+  "updatedAt": zod.coerce.date()
 })
 
 

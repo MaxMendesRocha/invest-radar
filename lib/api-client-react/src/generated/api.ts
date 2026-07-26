@@ -32,6 +32,7 @@ import type {
   HealthStatus,
   InvestorProfile,
   InvestorProfileInput,
+  MacroSnapshot,
   Opportunity,
   PortfolioDistribution,
   PortfolioHealth,
@@ -2018,7 +2019,7 @@ export const getGeneratePortfolioAnalysisUrl = () => {
 }
 
 /**
- * @summary Trigger AI analysis for the entire portfolio
+ * @summary Regenerate rules-based analysis for the entire portfolio
  */
 export const generatePortfolioAnalysis = async ( options?: RequestInit): Promise<PortfolioReport> => {
 
@@ -2067,7 +2068,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type GeneratePortfolioAnalysisMutationError = ErrorType<unknown>
 
     /**
- * @summary Trigger AI analysis for the entire portfolio
+ * @summary Regenerate rules-based analysis for the entire portfolio
  */
 export const useGeneratePortfolioAnalysis = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generatePortfolioAnalysis>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -2079,4 +2080,81 @@ export const useGeneratePortfolioAnalysis = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getGeneratePortfolioAnalysisMutationOptions(options));
     }
+
+export const getGetMacroSnapshotUrl = () => {
+
+
+
+
+  return `/api/macro`
+}
+
+/**
+ * @summary Real macroeconomic indicators (Selic, IPCA, câmbio) from the Banco Central
+ */
+export const getMacroSnapshot = async ( options?: RequestInit): Promise<MacroSnapshot> => {
+
+  return customFetch<MacroSnapshot>(getGetMacroSnapshotUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMacroSnapshotQueryKey = () => {
+    return [
+    `/api/macro`
+    ] as const;
+    }
+
+
+export const getGetMacroSnapshotQueryOptions = <TData = Awaited<ReturnType<typeof getMacroSnapshot>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMacroSnapshot>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMacroSnapshotQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMacroSnapshot>>> = ({ signal }) => getMacroSnapshot({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMacroSnapshot>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMacroSnapshotQueryResult = NonNullable<Awaited<ReturnType<typeof getMacroSnapshot>>>
+export type GetMacroSnapshotQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Real macroeconomic indicators (Selic, IPCA, câmbio) from the Banco Central
+ */
+
+export function useGetMacroSnapshot<TData = Awaited<ReturnType<typeof getMacroSnapshot>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMacroSnapshot>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMacroSnapshotQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 

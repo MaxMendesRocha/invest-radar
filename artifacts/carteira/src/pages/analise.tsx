@@ -85,6 +85,18 @@ export default function Analise() {
                     </div>
                     <Badge variant="outline">Em breve</Badge>
                   </div>
+                  {analysis.newsItems.length > 0 && (
+                    <div className="px-6 pb-6">
+                      <h4 className="flex items-center gap-2 font-semibold mb-2 text-xs uppercase tracking-wider text-muted-foreground">
+                        <Newspaper className="w-3 h-3" /> Radar de Notícias
+                      </h4>
+                      <ul className="space-y-1">
+                        {analysis.newsItems.map((n, i) => (
+                          <li key={i} className="text-xs text-muted-foreground truncate" title={n}>- {n}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </Card>
               );
             }

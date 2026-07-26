@@ -6,6 +6,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 export interface Quote {
   price: number;
   priceEarnings: number | null;
+  name: string | null;
   updatedAt: string;
 }
 
@@ -19,6 +20,8 @@ interface BrapiResult {
   regularMarketPrice?: number;
   priceEarnings?: number | null;
   regularMarketTime?: string;
+  longName?: string;
+  shortName?: string;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -44,6 +47,7 @@ async function fetchQuote(ticker: string): Promise<Quote | null> {
   return {
     price: item.regularMarketPrice,
     priceEarnings: item.priceEarnings ?? null,
+    name: item.longName ?? item.shortName ?? null,
     updatedAt: item.regularMarketTime ?? new Date().toISOString(),
   };
 }

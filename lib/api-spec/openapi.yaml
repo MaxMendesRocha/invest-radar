@@ -25,7 +25,9 @@ tags:
   - name: transactions
     description: Dividend transactions
   - name: analysis
-    description: AI-powered asset analysis
+    description: Rules-based fundamentalist asset analysis
+  - name: macro
+    description: Macroeconomic indicators
 
 paths:
   /healthz:
@@ -518,7 +520,7 @@ paths:
     post:
       operationId: generatePortfolioAnalysis
       tags: [analysis]
-      summary: Trigger AI analysis for the entire portfolio
+      summary: Regenerate rules-based analysis for the entire portfolio
       responses:
         "200":
           description: Analysis generated
@@ -526,6 +528,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PortfolioReport"
+
+  # ─── MACRO ───────────────────────────────────────────────────────────────────
+  /macro:
+    get:
+      operationId: getMacroSnapshot
+      tags: [macro]
+      summary: Real macroeconomic indicators (Selic, IPCA, câmbio) from the Banco Central
+      responses:
+        "200":
+          description: Macro snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MacroSnapshot"
 
 components:
   schemas:
@@ -979,6 +995,24 @@ components:
             type: string
         monitoringRecommendation:
           type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ─── MACRO SCHEMAS ────────────────────────────────────────────────────────
+    MacroSnapshot:
+      type: object
+      required: [selic, selicTrend, ipca12m, usdBrl, updatedAt]
+      properties:
+        selic:
+          type: ["number", "null"]
+        selicTrend:
+          type: ["string", "null"]
+          enum: [alta, queda, estavel, null]
+        ipca12m:
+          type: ["number", "null"]
+        usdBrl:
+          type: ["number", "null"]
         updatedAt:
           type: string
           format: date-time

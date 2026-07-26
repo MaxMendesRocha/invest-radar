@@ -451,6 +451,30 @@ export interface AssetAnalysis {
   updatedAt: string;
 }
 
+/**
+ * @nullable
+ */
+export type MacroSnapshotSelicTrend = typeof MacroSnapshotSelicTrend[keyof typeof MacroSnapshotSelicTrend] | null;
+
+
+export const MacroSnapshotSelicTrend = {
+  alta: 'alta',
+  queda: 'queda',
+  estavel: 'estavel',
+} as const;
+
+export interface MacroSnapshot {
+  /** @nullable */
+  selic: number | null;
+  /** @nullable */
+  selicTrend: MacroSnapshotSelicTrend;
+  /** @nullable */
+  ipca12m: number | null;
+  /** @nullable */
+  usdBrl: number | null;
+  updatedAt: string;
+}
+
 export interface PortfolioReport {
   generatedAt: string;
   summary: PortfolioSummary;

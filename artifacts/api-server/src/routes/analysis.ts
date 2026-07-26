@@ -3,8 +3,10 @@ import { db, assetsTable, alertsTable, analysesTable, opportunitiesTable } from 
 import { eq, and } from "drizzle-orm";
 import { GetAssetAnalysisParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, QUOTED_CATEGORIES } from "../lib/market-data";
+import { getPricesFor, getQuotes, QUOTED_CATEGORIES } from "../lib/market-data";
 import { analysisForUnquotedAsset, pendingAnalysis, type AnalysisResult } from "../lib/analysis-engine";
+import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
+import { getMacroSnapshot } from "../lib/macro-data";
 
 const router: IRouter = Router();
 
@@ -15,6 +17,21 @@ const router: IRouter = Router();
 // get saved.
 function computeAnalysis(category: string): AnalysisResult {
   return QUOTED_CATEGORIES.has(category) ? pendingAnalysis() : analysisForUnquotedAsset();
+}
+
+function formatHeadline(item: NewsHeadline): string {
+  return item.impact ? `[${item.impact}] ${item.title}` : item.title;
+}
+
+// Real, relevant headlines for a ticker — searches by the company's popular name
+// (see resolveSearchTerm's comment on why brapi's legal name alone isn't enough).
+// Renda fixa/fundos have no company to search for, so they never get news.
+async function getNewsItemsFor(ticker: string, category: string): Promise<string[]> {
+  if (!QUOTED_CATEGORIES.has(category)) return [];
+  const quotes = await getQuotes([ticker]);
+  const name = quotes.get(ticker.toUpperCase())?.name ?? null;
+  const headlines = await getNewsFor(resolveSearchTerm(ticker, name), 3);
+  return headlines.map(formatHeadline);
 }
 
 function serializePersisted(row: typeof analysesTable.$inferSelect) {
@@ -33,7 +50,7 @@ function serializePersisted(row: typeof analysesTable.$inferSelect) {
   };
 }
 
-function toApiShape(ticker: string, result: AnalysisResult) {
+function toApiShape(ticker: string, result: AnalysisResult, newsItems: string[]) {
   return {
     ticker: ticker.toUpperCase(),
     available: result.available,
@@ -42,8 +59,7 @@ function toApiShape(ticker: string, result: AnalysisResult) {
     scoreClassification: result.scoreClassification,
     positives: result.positives,
     risks: result.risks,
-    // Notícias reais ainda não implementadas (Fase 3) — nunca inventar manchetes aqui.
-    newsItems: [] as string[],
+    newsItems,
     alerts: result.available && result.risks.length > 0 ? [result.risks[0]] : [],
     monitoringRecommendation: result.monitoringRecommendation,
     updatedAt: new Date().toISOString(),
@@ -56,11 +72,14 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
   const existingAnalyses = await db.select().from(analysesTable).where(eq(analysesTable.userId, req.session.userId!));
   const analysisMap = new Map(existingAnalyses.map((a) => [a.ticker, a]));
 
-  const result = assets.map((asset) => {
-    const existing = analysisMap.get(asset.ticker);
-    if (existing) return serializePersisted(existing);
-    return toApiShape(asset.ticker, computeAnalysis(asset.category));
-  });
+  const result = await Promise.all(
+    assets.map(async (asset) => {
+      const existing = analysisMap.get(asset.ticker);
+      if (existing) return serializePersisted(existing);
+      const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
+      return toApiShape(asset.ticker, computeAnalysis(asset.category), newsItems);
+    })
+  );
 
   res.json(result);
 });
@@ -90,7 +109,8 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
     return;
   }
 
-  res.json(toApiShape(asset.ticker, computeAnalysis(asset.category)));
+  const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
+  res.json(toApiShape(asset.ticker, computeAnalysis(asset.category), newsItems));
 });
 
 router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> => {
@@ -98,6 +118,20 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
 
   await db.delete(analysesTable).where(eq(analysesTable.userId, req.session.userId!));
   await db.delete(alertsTable).where(eq(alertsTable.userId, req.session.userId!));
+
+  // Real news per ticker, fetched once and reused for both the analysis payload
+  // and the "noticias" alerts below.
+  const newsByTicker = new Map<string, NewsHeadline[]>();
+  await Promise.all(
+    assets
+      .filter((a) => QUOTED_CATEGORIES.has(a.category))
+      .map(async (a) => {
+        const quotes = await getQuotes([a.ticker]);
+        const name = quotes.get(a.ticker.toUpperCase())?.name ?? null;
+        const headlines = await getNewsFor(resolveSearchTerm(a.ticker, name), 3);
+        newsByTicker.set(a.ticker.toUpperCase(), headlines);
+      })
+  );
 
   const analyses = assets.map((a) => ({
     ticker: a.ticker.toUpperCase(),
@@ -109,6 +143,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   const available = analyses.filter((a) => a.available);
 
   for (const analysis of available) {
+    const newsItems = (newsByTicker.get(analysis.ticker) ?? []).map(formatHeadline);
     await db.insert(analysesTable).values({
       userId: req.session.userId!,
       ticker: analysis.ticker,
@@ -117,13 +152,18 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       scoreClassification: analysis.scoreClassification,
       positives: JSON.stringify(analysis.positives),
       risks: JSON.stringify(analysis.risks),
-      newsItems: JSON.stringify([]),
+      newsItems: JSON.stringify(newsItems),
       alerts: JSON.stringify(analysis.risks.length > 0 ? [analysis.risks[0]] : []),
       monitoringRecommendation: analysis.monitoringRecommendation,
     });
   }
 
-  const alertsToInsert = available
+  type AlertToInsert = {
+    userId: number; type: string; severity: string; title: string; message: string;
+    ticker: string | null; isRead: boolean;
+  };
+
+  const fundamentalAlerts: AlertToInsert[] = available
     .filter((a) => a.score < 60)
     .map((a) => ({
       userId: req.session.userId!,
@@ -135,6 +175,46 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       isRead: false,
     }));
 
+  const newsAlerts: AlertToInsert[] = Array.from(newsByTicker.entries()).flatMap(([ticker, headlines]) =>
+    headlines
+      .filter((h) => h.impact === "Negativo" || h.impact === "Muito Negativo")
+      .map((h) => ({
+        userId: req.session.userId!,
+        type: "noticias",
+        severity: h.impact === "Muito Negativo" ? "Critico" : "Alto",
+        title: `${ticker} — notícia ${h.impact!.toLowerCase()}`,
+        message: h.title,
+        ticker,
+        isRead: false,
+      }))
+  );
+
+  const macro = await getMacroSnapshot();
+  const macroAlerts: AlertToInsert[] = [];
+  if (macro.ipca12m != null && macro.ipca12m > 4.5) {
+    macroAlerts.push({
+      userId: req.session.userId!,
+      type: "macroeconomico",
+      severity: "Medio",
+      title: "IPCA acima do teto da meta",
+      message: `IPCA acumulado em 12 meses em ${macro.ipca12m.toFixed(2)}% — acima do teto histórico de meta de inflação.`,
+      ticker: null,
+      isRead: false,
+    });
+  }
+  if (macro.selicTrend === "alta") {
+    macroAlerts.push({
+      userId: req.session.userId!,
+      type: "macroeconomico",
+      severity: "Baixo",
+      title: "Selic em trajetória de alta",
+      message: `Selic em ${macro.selic?.toFixed(2)}%, em alta nos últimos meses — pode pressionar ativos de maior risco e crescimento.`,
+      ticker: null,
+      isRead: false,
+    });
+  }
+
+  const alertsToInsert = [...fundamentalAlerts, ...newsAlerts, ...macroAlerts];
   if (alertsToInsert.length > 0) {
     await db.insert(alertsTable).values(alertsToInsert);
   }
@@ -168,7 +248,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     },
     analyses: analyses.map((a) => ({
       ...a,
-      newsItems: [] as string[],
+      newsItems: (newsByTicker.get(a.ticker) ?? []).map(formatHeadline),
       alerts: a.available && a.risks.length > 0 ? [a.risks[0]] : [],
     })),
     topAlerts: alertRows.slice(0, 5).map((a) => ({

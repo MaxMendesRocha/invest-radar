@@ -1,24 +1,31 @@
-import { 
-  useListAlerts, 
-  useMarkAlertRead, 
+import {
+  useListAlerts,
+  useMarkAlertRead,
   useDeleteAlert,
-  getListAlertsQueryKey 
+  getListAlertsQueryKey,
+  useGetMacroSnapshot,
+  getGetMacroSnapshotQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  AlertTriangle, 
-  AlertCircle, 
-  Info, 
-  CheckCircle2, 
-  Trash2, 
+import {
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  CheckCircle2,
+  Trash2,
   BellRing,
   TrendingDown,
-  Newspaper
+  TrendingUp,
+  Minus,
+  Newspaper,
+  Landmark,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+const SELIC_TREND_ICON: Record<string, any> = { alta: TrendingUp, queda: TrendingDown, estavel: Minus };
 
 const SEVERITY_CONFIG = {
   Critico: { color: "text-destructive border-destructive/20 bg-destructive/5", icon: AlertTriangle, badge: "destructive" },
@@ -36,6 +43,7 @@ const TYPE_ICONS: Record<string, any> = {
 
 export default function Radar() {
   const { data: alerts, isLoading } = useListAlerts({ query: { queryKey: getListAlertsQueryKey() } });
+  const { data: macro, isLoading: isLoadingMacro } = useGetMacroSnapshot({ query: { queryKey: getGetMacroSnapshotQueryKey() } });
   const markRead = useMarkAlertRead();
   const deleteAlert = useDeleteAlert();
   const queryClient = useQueryClient();
@@ -71,6 +79,47 @@ export default function Radar() {
         </div>
         <p className="text-muted-foreground">Monitoramento ativo de riscos e eventos do seu portfólio.</p>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Landmark className="w-4 h-4" /> Cenário Macroeconômico
+          </CardTitle>
+          <CardDescription>Indicadores oficiais do Banco Central (SGS), atualizados periodicamente.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoadingMacro ? (
+            <div className="h-12 bg-muted/20 animate-pulse rounded" />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <p className="text-xs uppercase text-muted-foreground tracking-wider mb-1">Selic</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-bold font-mono">
+                    {macro?.selic != null ? `${macro.selic.toFixed(2)}%` : "-"}
+                  </span>
+                  {macro?.selicTrend && (() => {
+                    const TrendIcon = SELIC_TREND_ICON[macro.selicTrend] ?? Minus;
+                    return <TrendIcon className="w-4 h-4 text-muted-foreground" />;
+                  })()}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-muted-foreground tracking-wider mb-1">IPCA (12 meses)</p>
+                <span className="text-xl font-bold font-mono">
+                  {macro?.ipca12m != null ? `${macro.ipca12m.toFixed(2)}%` : "-"}
+                </span>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-muted-foreground tracking-wider mb-1">Dólar (PTAX)</p>
+                <span className="text-xl font-bold font-mono">
+                  {macro?.usdBrl != null ? `R$ ${macro.usdBrl.toFixed(4)}` : "-"}
+                </span>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4">
         {isLoading ? (
