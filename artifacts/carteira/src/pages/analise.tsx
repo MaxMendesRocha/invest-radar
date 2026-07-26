@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity } from "lucide-react";
+import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const STATUS_MAP: Record<string, { color: string, label: string }> = {
@@ -70,9 +70,28 @@ export default function Analise() {
           </Card>
         ) : (
           analyses?.map((analysis) => {
+            if (!analysis.available) {
+              return (
+                <Card key={analysis.ticker} className="overflow-hidden">
+                  <div className="p-6 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center">
+                        <Clock className="w-6 h-6 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold font-mono">{analysis.ticker}</h3>
+                        <p className="text-sm text-muted-foreground mt-1 max-w-md">{analysis.monitoringRecommendation}</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline">Em breve</Badge>
+                  </div>
+                </Card>
+              );
+            }
+
             const isExpanded = expandedId === analysis.ticker;
             const statusConfig = STATUS_MAP[analysis.status] || STATUS_MAP.MANTER;
-            
+
             return (
               <Card 
                 key={analysis.ticker} 

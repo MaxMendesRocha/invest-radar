@@ -3,34 +3,24 @@ import { db, assetsTable, alertsTable, analysesTable, opportunitiesTable } from 
 import { eq, and } from "drizzle-orm";
 import { GetAssetAnalysisParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { getFundamentals, getPricesFor, QUOTED_CATEGORIES, type Fundamentals } from "../lib/market-data";
-import { analyzeFundamentals, analysisForUnquotedAsset, type AnalysisResult } from "../lib/analysis-engine";
+import { getPricesFor, QUOTED_CATEGORIES } from "../lib/market-data";
+import { analysisForUnquotedAsset, pendingAnalysis, type AnalysisResult } from "../lib/analysis-engine";
 
 const router: IRouter = Router();
 
-const EMPTY_FUNDAMENTALS: Fundamentals = {
-  price: 0,
-  priceEarnings: null,
-  priceToBook: null,
-  dividendYield: null,
-  returnOnEquity: null,
-  debtToEquity: null,
-  profitMargins: null,
-  revenueGrowth: null,
-  fiftyTwoWeekChange: null,
-  beta: null,
-  updatedAt: new Date().toISOString(),
-};
-
-function computeAnalysis(ticker: string, category: string, fundamentalsMap: Map<string, Fundamentals>): AnalysisResult {
-  if (!QUOTED_CATEGORIES.has(category)) return analysisForUnquotedAsset();
-  const fundamentals = fundamentalsMap.get(ticker.toUpperCase()) ?? EMPTY_FUNDAMENTALS;
-  return analyzeFundamentals(fundamentals);
+// Full fundamentalist analysis (analyzeFundamentals in analysis-engine.ts) needs the
+// paid brapi.dev plan — see pendingAnalysis()'s comment. "Pending" results are never
+// persisted to analysesTable, so there's nothing stale to invalidate once a data
+// source is picked; only genuinely-computed results (today: the unquoted-asset case)
+// get saved.
+function computeAnalysis(category: string): AnalysisResult {
+  return QUOTED_CATEGORIES.has(category) ? pendingAnalysis() : analysisForUnquotedAsset();
 }
 
 function serializePersisted(row: typeof analysesTable.$inferSelect) {
   return {
     ticker: row.ticker,
+    available: true,
     status: row.status,
     score: parseFloat(row.score),
     scoreClassification: row.scoreClassification,
@@ -46,6 +36,7 @@ function serializePersisted(row: typeof analysesTable.$inferSelect) {
 function toApiShape(ticker: string, result: AnalysisResult) {
   return {
     ticker: ticker.toUpperCase(),
+    available: result.available,
     status: result.status,
     score: result.score,
     scoreClassification: result.scoreClassification,
@@ -53,7 +44,7 @@ function toApiShape(ticker: string, result: AnalysisResult) {
     risks: result.risks,
     // Notícias reais ainda não implementadas (Fase 3) — nunca inventar manchetes aqui.
     newsItems: [] as string[],
-    alerts: result.risks.length > 0 ? [result.risks[0]] : [],
+    alerts: result.available && result.risks.length > 0 ? [result.risks[0]] : [],
     monitoringRecommendation: result.monitoringRecommendation,
     updatedAt: new Date().toISOString(),
   };
@@ -65,13 +56,10 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
   const existingAnalyses = await db.select().from(analysesTable).where(eq(analysesTable.userId, req.session.userId!));
   const analysisMap = new Map(existingAnalyses.map((a) => [a.ticker, a]));
 
-  const needsFundamentals = assets.filter((a) => !analysisMap.has(a.ticker) && QUOTED_CATEGORIES.has(a.category));
-  const fundamentalsMap = await getFundamentals(needsFundamentals.map((a) => a.ticker));
-
   const result = assets.map((asset) => {
     const existing = analysisMap.get(asset.ticker);
     if (existing) return serializePersisted(existing);
-    return toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsMap));
+    return toApiShape(asset.ticker, computeAnalysis(asset.category));
   });
 
   res.json(result);
@@ -102,28 +90,25 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
     return;
   }
 
-  const fundamentalsMap = QUOTED_CATEGORIES.has(asset.category)
-    ? await getFundamentals([asset.ticker])
-    : new Map<string, Fundamentals>();
-
-  res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsMap)));
+  res.json(toApiShape(asset.ticker, computeAnalysis(asset.category)));
 });
 
 router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
 
-  const fundamentalsMap = await getFundamentals(
-    assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker)
-  );
-
   await db.delete(analysesTable).where(eq(analysesTable.userId, req.session.userId!));
+  await db.delete(alertsTable).where(eq(alertsTable.userId, req.session.userId!));
 
   const analyses = assets.map((a) => ({
     ticker: a.ticker.toUpperCase(),
-    ...computeAnalysis(a.ticker, a.category, fundamentalsMap),
+    ...computeAnalysis(a.category),
   }));
 
-  for (const analysis of analyses) {
+  // Only persist (and alert on) results that are actually available — pending
+  // ones have nothing real to save yet and shouldn't spam the Radar.
+  const available = analyses.filter((a) => a.available);
+
+  for (const analysis of available) {
     await db.insert(analysesTable).values({
       userId: req.session.userId!,
       ticker: analysis.ticker,
@@ -138,10 +123,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     });
   }
 
-  // Also generate alerts based on analyses
-  await db.delete(alertsTable).where(eq(alertsTable.userId, req.session.userId!));
-
-  const alertsToInsert = analyses
+  const alertsToInsert = available
     .filter((a) => a.score < 60)
     .map((a) => ({
       userId: req.session.userId!,
@@ -184,7 +166,11 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       portfolioYield: 0,
       assetCount: assets.length,
     },
-    analyses: analyses.map((a) => ({ ...a, newsItems: [] as string[], alerts: a.risks.length > 0 ? [a.risks[0]] : [] })),
+    analyses: analyses.map((a) => ({
+      ...a,
+      newsItems: [] as string[],
+      alerts: a.available && a.risks.length > 0 ? [a.risks[0]] : [],
+    })),
     topAlerts: alertRows.slice(0, 5).map((a) => ({
       id: a.id, userId: a.userId, type: a.type, severity: a.severity,
       title: a.title, message: a.message, ticker: a.ticker,

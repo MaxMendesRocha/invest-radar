@@ -244,7 +244,9 @@ export default function Carteira() {
                         ) : '-'}
                       </TableCell>
                       <TableCell className="text-center">
-                        {analysis?.status ? (
+                        {analysis?.available === false ? (
+                          <Badge variant="outline">Em breve</Badge>
+                        ) : analysis?.status ? (
                           <Badge variant={STATUS_COLOR_MAP[analysis.status] || "default"}>
                             {analysis.status}
                           </Badge>

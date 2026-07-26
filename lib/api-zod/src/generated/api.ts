@@ -446,6 +446,7 @@ export const DeleteTransactionResponse = zod.void()
  */
 export const ListAssetAnalysesResponseItem = zod.object({
   "ticker": zod.string(),
+  "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
   "status": zod.enum(['MANTER', 'ATENCAO', 'REAVALIAR', 'POSSIVEL_SAIDA']),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
@@ -468,6 +469,7 @@ export const GetAssetAnalysisParams = zod.object({
 
 export const GetAssetAnalysisResponse = zod.object({
   "ticker": zod.string(),
+  "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
   "status": zod.enum(['MANTER', 'ATENCAO', 'REAVALIAR', 'POSSIVEL_SAIDA']),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
@@ -495,6 +497,7 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
 }),
   "analyses": zod.array(zod.object({
   "ticker": zod.string(),
+  "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
   "status": zod.enum(['MANTER', 'ATENCAO', 'REAVALIAR', 'POSSIVEL_SAIDA']),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),

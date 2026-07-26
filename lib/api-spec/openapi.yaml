@@ -946,10 +946,13 @@ components:
     # ─── ANALYSIS SCHEMAS ─────────────────────────────────────────────────────
     AssetAnalysis:
       type: object
-      required: [ticker, status, score, scoreClassification, positives, risks, newsItems, alerts, monitoringRecommendation, updatedAt]
+      required: [ticker, available, status, score, scoreClassification, positives, risks, newsItems, alerts, monitoringRecommendation, updatedAt]
       properties:
         ticker:
           type: string
+        available:
+          type: boolean
+          description: False when a full fundamentalist analysis isn't available yet (pending a data source) — score/status are placeholders and should not be shown.
         status:
           type: string
           enum: [MANTER, ATENCAO, REAVALIAR, POSSIVEL_SAIDA]

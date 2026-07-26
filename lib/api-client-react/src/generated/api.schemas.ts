@@ -438,6 +438,8 @@ export const AssetAnalysisScoreClassification = {
 
 export interface AssetAnalysis {
   ticker: string;
+  /** False when a full fundamentalist analysis isn't available yet (pending a data source) — score/status are placeholders and should not be shown. */
+  available: boolean;
   status: AssetAnalysisStatus;
   score: number;
   scoreClassification: AssetAnalysisScoreClassification;

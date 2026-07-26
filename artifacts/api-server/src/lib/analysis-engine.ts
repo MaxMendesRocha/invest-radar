@@ -4,6 +4,7 @@ export type AnalysisStatus = "MANTER" | "ATENCAO" | "REAVALIAR" | "POSSIVEL_SAID
 export type ScoreClassification = "Excelente" | "Forte" | "Estavel" | "Atencao" | "Critico";
 
 export interface AnalysisResult {
+  available: boolean;
   score: number;
   scoreClassification: ScoreClassification;
   status: AnalysisStatus;
@@ -108,15 +109,17 @@ function buildRecommendation(risks: string[]): string {
 }
 
 const NO_FUNDAMENTALS_RESULT: AnalysisResult = {
-  score: 60,
+  available: false,
+  score: 0,
   scoreClassification: "Estavel",
-  status: "ATENCAO",
+  status: "MANTER",
   positives: [],
-  risks: ["Dados fundamentalistas não disponíveis para este ativo no momento"],
-  monitoringRecommendation: "Sem dados de mercado suficientes para uma análise fundamentalista automatizada — acompanhar manualmente.",
+  risks: [],
+  monitoringRecommendation: "Dados fundamentalistas não disponíveis para este ativo no momento.",
 };
 
 const NOT_QUOTED_RESULT: AnalysisResult = {
+  available: true,
   score: 60,
   scoreClassification: "Estavel",
   status: "MANTER",
@@ -125,8 +128,28 @@ const NOT_QUOTED_RESULT: AnalysisResult = {
   monitoringRecommendation: "Ativo de renda fixa ou fundo sem ticker de bolsa — fora do escopo da análise fundamentalista automatizada.",
 };
 
+// P/VP, ROE, endividamento, margens e DY exigem o plano pago da brapi.dev
+// (?modules=defaultKeyStatistics,financialData); no plano atual essa chamada
+// falha com MODULES_NOT_AVAILABLE para qualquer ticker fora dos 4 liberados
+// para teste (PETR4, VALE3, ITUB4, MGLU3). Até decidirmos a fonte de dados
+// (upgrade de plano, CVM direto, ou outro provedor), a análise mostra "Em breve"
+// em vez de fingir um score completo — ver `computeAnalysis` em routes/analysis.ts.
+const PENDING_RESULT: AnalysisResult = {
+  available: false,
+  score: 0,
+  scoreClassification: "Estavel",
+  status: "MANTER",
+  positives: [],
+  risks: [],
+  monitoringRecommendation: "Análise fundamentalista completa (P/L, P/VP, ROE, endividamento, margens) em breve — aguardando definição da fonte de dados.",
+};
+
 export function analysisForUnquotedAsset(): AnalysisResult {
   return NOT_QUOTED_RESULT;
+}
+
+export function pendingAnalysis(): AnalysisResult {
+  return PENDING_RESULT;
 }
 
 /**
@@ -135,6 +158,10 @@ export function analysisForUnquotedAsset(): AnalysisResult {
  * Fundamentos 40%, Notícias 20%, Macro 20%, Tendência histórica 10%, Volatilidade 10%.
  * Notícias/Macro don't have a real data source yet (Fase 3), so they score neutral (60)
  * instead of being faked — Tendência (variação 12m) and Volatilidade (beta) are real.
+ *
+ * NOT CURRENTLY CALLED from routes/analysis.ts — kept ready for when the fundamentals
+ * data source is decided (see PENDING_RESULT above). Requires the paid brapi.dev plan
+ * for most of its inputs, which we don't have.
  */
 export function analyzeFundamentals(f: Fundamentals): AnalysisResult {
   const fundamentalMetrics = [
@@ -173,6 +200,7 @@ export function analyzeFundamentals(f: Fundamentals): AnalysisResult {
   }
 
   return {
+    available: true,
     score,
     scoreClassification: scoreClassification(score),
     status: statusFromScore(score),
