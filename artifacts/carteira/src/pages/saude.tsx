@@ -1,6 +1,8 @@
-import { 
+import {
   useGetPortfolioHealth,
-  getGetPortfolioHealthQueryKey 
+  getGetPortfolioHealthQueryKey,
+  useGetPortfolioSummary,
+  getGetPortfolioSummaryQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -8,6 +10,8 @@ import { Activity, ShieldCheck, HeartPulse } from "lucide-react";
 
 export default function Saude() {
   const { data: health, isLoading } = useGetPortfolioHealth({ query: { queryKey: getGetPortfolioHealthQueryKey() } });
+  const { data: summary, isLoading: isLoadingSummary } = useGetPortfolioSummary({ query: { queryKey: getGetPortfolioSummaryQueryKey() } });
+  const hasAssets = (summary?.assetCount ?? 0) > 0;
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return "text-green-600 dark:text-green-500";
@@ -30,7 +34,7 @@ export default function Saude() {
         <p className="text-muted-foreground">Raio-x estrutural e diagnóstico completo da sua carteira.</p>
       </div>
 
-      {isLoading ? (
+      {isLoading || isLoadingSummary ? (
         <div className="grid gap-6">
           <Card className="h-64 animate-pulse bg-muted/20" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -38,7 +42,7 @@ export default function Saude() {
             <Card className="h-48 animate-pulse bg-muted/20" />
           </div>
         </div>
-      ) : !health ? (
+      ) : !health || !hasAssets ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground">
             <HeartPulse className="w-12 h-12 mb-4 opacity-20" />

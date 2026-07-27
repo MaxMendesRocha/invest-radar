@@ -122,11 +122,14 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
   const categories = new Set(assets.map(a => a.category));
   const sectors = new Set(assets.map(sectorFor));
 
-  const diversification = Math.min(100, categories.size * 15 + sectors.size * 8);
+  // With no assets, every dimension is honestly 0 — the risk/dividends/growth fallbacks
+  // below are heuristics for an existing portfolio's composition, not a default score
+  // for having no portfolio at all (that was a bug: an empty carteira showed Score 34).
+  const diversification = assets.length > 0 ? Math.min(100, categories.size * 15 + sectors.size * 8) : 0;
   const concentration = assets.length > 0 ? Math.max(0, 100 - (100 / assets.length) * 2) : 0;
-  const risk = assets.some(a => a.category === "acoes") ? 60 : 80;
-  const dividends = assets.some(a => a.category === "fiis" || a.category === "acoes") ? 72 : 50;
-  const growth = 68;
+  const risk = assets.length > 0 ? (assets.some(a => a.category === "acoes") ? 60 : 80) : 0;
+  const dividends = assets.length > 0 ? (assets.some(a => a.category === "fiis" || a.category === "acoes") ? 72 : 50) : 0;
+  const growth = assets.length > 0 ? 68 : 0;
 
   const score = Math.round((diversification * 0.25 + concentration * 0.25 + risk * 0.2 + dividends * 0.15 + growth * 0.15));
 
