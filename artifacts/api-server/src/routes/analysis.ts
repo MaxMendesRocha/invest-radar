@@ -3,7 +3,7 @@ import { db, assetsTable, alertsTable, analysesTable, opportunitiesTable } from 
 import { eq, and } from "drizzle-orm";
 import { GetAssetAnalysisParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getQuotes, sectorFor, QUOTED_CATEGORIES } from "../lib/market-data";
+import { getPricesFor, getQuotes, getPriceHistories, sectorFor, QUOTED_CATEGORIES, type PriceHistory } from "../lib/market-data";
 import { analysisForUnquotedAsset, pendingAnalysis, type AnalysisResult } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
@@ -89,6 +89,58 @@ function computeConcentrationAlerts(
       message: `Sua carteira tem apenas ${byTicker.size} ativo${byTicker.size > 1 ? "s" : ""} diferente${byTicker.size > 1 ? "s" : ""} — baixa diversificação aumenta o risco em caso de queda de um deles.`,
       isRead: false,
     });
+  }
+
+  return alerts;
+}
+
+const PRICE_STRONG_MOVE_PERCENT = 8; // % em 5 dias úteis, direto da especificação
+
+/**
+ * Alerta de Preço from the product spec — also needs no fundamentals/paid data,
+ * just brapi.dev's free `?range=3mo&interval=1d` (52-week high/low + daily closes,
+ * confirmed to work for any quotable ticker, not only the 4 whitelisted for the
+ * paid modules). "Máximas históricas"/"mínimas relevantes" from the spec are
+ * approximated as 52-week high/low — the only window brapi.dev exposes for free.
+ */
+function computePriceAlerts(
+  assets: { ticker: string; category: string }[],
+  histories: Map<string, PriceHistory>,
+  userId: number,
+): AlertToInsert[] {
+  const alerts: AlertToInsert[] = [];
+
+  for (const a of assets) {
+    if (!QUOTED_CATEGORIES.has(a.category)) continue;
+    const ticker = a.ticker.toUpperCase();
+    const h = histories.get(ticker);
+    if (!h) continue;
+
+    if (h.fiveDayChangePercent != null && Math.abs(h.fiveDayChangePercent) >= PRICE_STRONG_MOVE_PERCENT) {
+      const up = h.fiveDayChangePercent > 0;
+      alerts.push({
+        userId, type: "preco", severity: "Alto", ticker,
+        title: `${ticker} ${up ? "subiu" : "caiu"} ${Math.abs(h.fiveDayChangePercent).toFixed(1)}% em 5 dias`,
+        message: `${ticker} ${up ? "valorizou" : "desvalorizou"} ${Math.abs(h.fiveDayChangePercent).toFixed(1)}% nos últimos 5 dias úteis — variação forte, vale entender o motivo.`,
+        isRead: false,
+      });
+    }
+
+    if (h.fiftyTwoWeekHigh != null && h.price >= h.fiftyTwoWeekHigh) {
+      alerts.push({
+        userId, type: "preco", severity: "Medio", ticker,
+        title: `${ticker} rompeu a máxima de 52 semanas`,
+        message: `${ticker} está cotado a R$ ${h.price.toFixed(2)}, novo topo em 52 semanas.`,
+        isRead: false,
+      });
+    } else if (h.fiftyTwoWeekLow != null && h.price <= h.fiftyTwoWeekLow) {
+      alerts.push({
+        userId, type: "preco", severity: "Alto", ticker,
+        title: `${ticker} rompeu a mínima de 52 semanas`,
+        message: `${ticker} está cotado a R$ ${h.price.toFixed(2)}, nova mínima em 52 semanas — atenção redobrada.`,
+        isRead: false,
+      });
+    }
   }
 
   return alerts;
@@ -243,6 +295,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   }
 
   const prices = await getPricesFor(assets);
+  const priceHistories = await getPriceHistories(assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker));
 
   const fundamentalAlerts: AlertToInsert[] = available
     .filter((a) => a.score < 60)
@@ -296,8 +349,9 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   }
 
   const concentrationAlerts = computeConcentrationAlerts(assets, prices, req.session.userId!);
+  const priceAlerts = computePriceAlerts(assets, priceHistories, req.session.userId!);
 
-  const alertsToInsert = [...fundamentalAlerts, ...newsAlerts, ...macroAlerts, ...concentrationAlerts];
+  const alertsToInsert = [...fundamentalAlerts, ...newsAlerts, ...macroAlerts, ...concentrationAlerts, ...priceAlerts];
   if (alertsToInsert.length > 0) {
     await db.insert(alertsTable).values(alertsToInsert);
   }

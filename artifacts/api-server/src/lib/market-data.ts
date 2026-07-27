@@ -231,6 +231,106 @@ export function sectorFor(asset: { ticker: string; sector: string | null }): str
   return asset.sector ?? SECTOR_MAP[asset.ticker.toUpperCase()] ?? "Outros";
 }
 
+export interface PriceHistory {
+  price: number;
+  fiftyTwoWeekHigh: number | null;
+  fiftyTwoWeekLow: number | null;
+  fiveDayChangePercent: number | null; // % vs close ~5 trading days ago
+  updatedAt: string;
+}
+
+interface PriceHistoryCacheEntry {
+  history: PriceHistory | null;
+  fetchedAt: number;
+}
+
+interface BrapiHistoricalPoint {
+  date: number; // unix seconds
+  close: number;
+}
+
+interface BrapiHistoryResult extends BrapiResult {
+  fiftyTwoWeekHigh?: number | null;
+  fiftyTwoWeekLow?: number | null;
+  historicalDataPrice?: BrapiHistoricalPoint[];
+}
+
+const priceHistoryCache = new Map<string, PriceHistoryCacheEntry>();
+
+// `?range=3mo&interval=1d` (daily closes + 52-week range) works for any quotable
+// ticker on the free plan — confirmed against a non-whitelisted ação (WEGE3) and a
+// FII (HGLG11), not just the paid `modules` used by getFundamentals. Used for the
+// Alerta de Preço (variação forte, rompimento de máxima/mínima), which needs none
+// of the paid fundamentals data.
+async function fetchPriceHistory(ticker: string): Promise<PriceHistory | null> {
+  const token = process.env.BRAPI_TOKEN;
+  const url = `${BRAPI_BASE_URL}/${encodeURIComponent(ticker)}?range=3mo&interval=1d`;
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    logger.warn({ status: response.status, ticker }, "brapi.dev price history request failed");
+    return null;
+  }
+
+  const body = (await response.json()) as { results?: BrapiHistoryResult[] };
+  const item = body.results?.[0];
+  if (!item || typeof item.regularMarketPrice !== "number") return null;
+
+  const history = item.historicalDataPrice ?? [];
+  // 5 pregões atrás relative to the latest close on file — needs at least 6 points.
+  const fiveDaysAgoClose = history.length >= 6 ? history[history.length - 6].close : null;
+  const fiveDayChangePercent = fiveDaysAgoClose && fiveDaysAgoClose > 0
+    ? ((item.regularMarketPrice - fiveDaysAgoClose) / fiveDaysAgoClose) * 100
+    : null;
+
+  return {
+    price: item.regularMarketPrice,
+    fiftyTwoWeekHigh: item.fiftyTwoWeekHigh ?? null,
+    fiftyTwoWeekLow: item.fiftyTwoWeekLow ?? null,
+    fiveDayChangePercent,
+    updatedAt: item.regularMarketTime ?? new Date().toISOString(),
+  };
+}
+
+/**
+ * Cached lookup of price history (52-week high/low, 5-trading-day change) used by
+ * the Alerta de Preço. Separate from getQuotes because it's a heavier payload
+ * (historical series) that most callers don't need on every price lookup.
+ */
+export async function getPriceHistories(tickers: string[]): Promise<Map<string, PriceHistory>> {
+  const uniqueTickers = Array.from(new Set(tickers.map((t) => t.toUpperCase())));
+  if (uniqueTickers.length === 0) return new Map();
+
+  const now = Date.now();
+  const fresh = new Map<string, PriceHistory>();
+  const stale: string[] = [];
+
+  for (const ticker of uniqueTickers) {
+    const cached = priceHistoryCache.get(ticker);
+    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+      if (cached.history) fresh.set(ticker, cached.history);
+    } else {
+      stale.push(ticker);
+    }
+  }
+
+  if (stale.length > 0) {
+    const settled = await Promise.allSettled(stale.map((ticker) => fetchPriceHistory(ticker)));
+    stale.forEach((ticker, i) => {
+      const outcome = settled[i];
+      const history = outcome.status === "fulfilled" ? outcome.value : null;
+      if (outcome.status === "rejected") {
+        logger.warn({ err: outcome.reason, ticker }, "brapi.dev price history request errored");
+      }
+      priceHistoryCache.set(ticker, { history, fetchedAt: now });
+      if (history) fresh.set(ticker, history);
+    });
+  }
+
+  return fresh;
+}
+
 /**
  * Convenience wrapper around getQuotes for a list of { ticker, category } records
  * (assets, opportunities, ...): filters to quotable categories and returns a
