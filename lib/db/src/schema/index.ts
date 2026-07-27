@@ -5,3 +5,4 @@ export * from "./alerts";
 export * from "./opportunities";
 export * from "./transactions";
 export * from "./analyses";
+export * from "./portfolio-snapshots";

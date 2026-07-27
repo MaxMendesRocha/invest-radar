@@ -3,6 +3,7 @@ import { db, assetsTable, transactionsTable } from "@workspace/db";
 import { eq, sum } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor } from "../lib/market-data";
+import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
 
 const router: IRouter = Router();
 
@@ -35,6 +36,10 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
   const totalProfitLossPercent = totalCost > 0 ? (totalProfitLoss / totalCost) * 100 : 0;
   const totalDividends = parseFloat(String(txRows[0]?.total ?? "0")) || 0;
   const portfolioYield = totalCost > 0 ? (totalDividends / totalCost) * 100 : 0;
+
+  // Upserts today's row in portfolio_snapshots — this is the only place real history
+  // gets recorded, from ordinary use of the app, no scheduled job involved.
+  await recordSnapshot(req.session.userId!, totalPatrimony, totalCost);
 
   res.json({
     totalPatrimony,
@@ -95,15 +100,25 @@ router.get("/portfolio/evolution", requireAuth, async (req, res): Promise<void> 
     currentValue += qty * price;
   }
 
-  // NOTE: only the current-value baseline above uses real quotes; the trailing 11 points are
-  // still simulated around it — real historical evolution needs a price-history table (backlog).
+  // Months with a real snapshot (portfolio_snapshots) use it; months without one still
+  // fall back to a simulated approximation around the current value. The real portion
+  // grows on its own as portfolio_snapshots accumulates one row per day of app usage.
+  const snapshots = await getSnapshotsForUser(req.session.userId!);
+
   const points = [];
   const now = new Date();
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const label = d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
-    const factor = 1 - i * 0.015 + Math.random() * 0.02 - 0.01;
-    const value = Math.round(currentValue * factor * 100) / 100;
+    const snapshot = findSnapshotForMonth(snapshots, d.getFullYear(), d.getMonth());
+
+    let value: number;
+    if (snapshot) {
+      value = parseFloat(snapshot.totalValue);
+    } else {
+      const factor = 1 - i * 0.015 + Math.random() * 0.02 - 0.01;
+      value = Math.round(currentValue * factor * 100) / 100;
+    }
     points.push({ date: label, value, cdi: null, ibov: null });
   }
 
@@ -146,11 +161,11 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     totalCost += qty * avgPrice;
     totalValue += qty * price;
   }
-  // Real total return based on current holdings — held flat across every point below
-  // because we don't have historical portfolio-value snapshots yet (no price-history
-  // table), so month-by-month evolution can't be honestly reconstructed. A portfolio
-  // with 0 assets correctly shows 0%, not a fabricated gain.
+  // Fallback for months without a real snapshot: current return held flat, since we
+  // have no other honest estimate for the past. A portfolio with 0 assets correctly
+  // shows 0%, not a fabricated gain.
   const portfolioReturn = totalCost > 0 ? Math.round(((totalValue - totalCost) / totalCost) * 10000) / 100 : 0;
+  const snapshots = await getSnapshotsForUser(req.session.userId!);
 
   const points = [];
   const now = new Date();
@@ -161,6 +176,14 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const label = d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
+    const snapshot = findSnapshotForMonth(snapshots, d.getFullYear(), d.getMonth());
+
+    let portfolioForMonth = portfolioReturn;
+    if (snapshot) {
+      const snapCost = parseFloat(snapshot.totalCost);
+      const snapValue = parseFloat(snapshot.totalValue);
+      portfolioForMonth = snapCost > 0 ? Math.round(((snapValue - snapCost) / snapCost) * 10000) / 100 : 0;
+    }
 
     cdiAcc *= 1.0087;
     ibovAcc *= 1 + (0.008 + Math.random() * 0.03 - 0.015);
@@ -168,7 +191,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
 
     points.push({
       label,
-      portfolio: portfolioReturn,
+      portfolio: portfolioForMonth,
       cdi: Math.round((cdiAcc - 100) * 100) / 100,
       ibov: Math.round((ibovAcc - 100) * 100) / 100,
       ifix: Math.round((ifixAcc - 100) * 100) / 100,
