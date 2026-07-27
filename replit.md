@@ -67,27 +67,21 @@ Ver `attached_assets/Prompt_Agente_Gestao_Carteira_Investimentos_*.md` para a es
 
 - Projeto migrou do fluxo Replit para deploy próprio: **Vercel** (frontend) + **Railway** (api-server) + **Supabase** (Postgres) — não assumir que `.replit`/`artifact.toml` seguem sendo a fonte de verdade de deploy.
 
-## Deploy (Vercel + Railway + Supabase)
+## Deploy (Vercel + Railway + Supabase) — no ar e validado
+
+- Frontend: https://invest-radar-carteira.vercel.app
+- API: https://invest-radar-production.up.railway.app (não é pra usuário final acessar direto — sempre pelo domínio da Vercel, que faz proxy de `/api/*` pra cá)
+- Banco: Supabase, projeto `gzqqwpetlfruokgnfmzp`, connection string do pooler (modo *transaction*, porta 6543) guardada como `DATABASE_URL` no Railway
 
 Arquitetura: a Vercel faz *rewrite* de `/api/*` pro domínio do Railway (`artifacts/carteira/vercel.json`) — o navegador nunca vê dois domínios diferentes, então sessão/cookie funcionam exatamente como em dev local (proxy do Vite) e não precisou mexer em CORS nem em `sameSite`. Não confundir com a arquitetura serverless da Vercel — o api-server continua sendo um processo Node tradicional no Railway, só o frontend estático vai pra Vercel.
 
-**Supabase** (só eu, o usuário, posso criar a conta/projeto):
-1. Criar projeto em supabase.com
-2. Pegar a connection string do **pooler** (modo *transaction*, Settings → Database)
-3. Rodar localmente, apontando pra ela: `DATABASE_URL="<connection-string-supabase>" pnpm --filter @workspace/db run push`
-4. Rodar o seed: `DATABASE_URL="<connection-string-supabase>" pnpm --filter @workspace/scripts run seed-opportunities`
+**Pra reproduzir do zero** (ex: outro ambiente, staging):
 
-**Railway** (`railway.json` na raiz já configura build/start/healthcheck):
-1. Novo projeto → "Deploy from GitHub repo", apontar pro repositório — **raiz do repo como root directory** (não apontar pra `artifacts/api-server`, o pnpm workspace precisa do repo inteiro pra resolver os pacotes `@workspace/*`)
-2. Variáveis de ambiente do serviço: `DATABASE_URL` (do Supabase), `SESSION_SECRET` (gerar uma string aleatória), `BRAPI_TOKEN`, `ANTHROPIC_API_KEY`, `NODE_ENV=production`. `PORT` é injetado automaticamente pelo Railway, não precisa setar.
-3. Depois do primeiro deploy, copiar o domínio gerado (`*.up.railway.app`)
+1. **Supabase**: criar projeto → pegar connection string do pooler (Settings → Database → Connect → Transaction pooler) → rodar `DATABASE_URL="<string>" pnpm --filter @workspace/db run push` e depois `pnpm --filter @workspace/scripts run seed-opportunities` apontando pra ela
+2. **Railway**: "Deploy from GitHub repo" — **raiz do repo como root directory**, não `artifacts/api-server` (o pnpm workspace precisa do repo inteiro pra resolver os pacotes `@workspace/*`). Se ele auto-detectar o monorepo e criar um serviço por pacote (`@workspace/carteira`, `@workspace/api-spec` etc.), **apague todos exceto um** e configure esse com root directory vazio — só assim ele usa o `railway.json` da raiz. Env vars: `DATABASE_URL`, `SESSION_SECRET`, `BRAPI_TOKEN`, `ANTHROPIC_API_KEY`, `NODE_ENV=production` (`PORT` é automático). Gerar o domínio em Settings → Networking → Generate Domain.
+3. **Vercel**: import project, **Root Directory = `artifacts/carteira`**, env var `BASE_PATH=/` (obrigatória, ver gotcha — sem ela o build falha). Editar `artifacts/carteira/vercel.json` trocando o domínio do rewrite pelo domínio real do Railway antes do deploy.
 
-**Vercel** (conta já existe):
-1. Import project, **Root Directory = `artifacts/carteira`**
-2. Antes do primeiro deploy, editar `artifacts/carteira/vercel.json` trocando `SUBSTITUA-PELO-DOMINIO-RAILWAY.up.railway.app` pelo domínio real do Railway
-3. Não precisa configurar `PORT`/`BASE_PATH` como env var na Vercel — `vite build` não usa `PORT` (corrigido, ver gotcha) e `BASE_PATH` já vem fixo do `vercel.json`... na verdade `BASE_PATH` ainda é lido de env var pelo `vite.config.ts`, então **precisa** setar `BASE_PATH=/` nas env vars do projeto Vercel, senão o build falha
-
-Depois do primeiro deploy dos três, testar o fluxo completo (cadastro/login/carteira) pelo domínio da Vercel antes de considerar concluído.
+Depois do primeiro deploy dos três, testar cadastro/login/navegação pelo domínio da Vercel antes de considerar concluído — foi assim que os três gotchas abaixo (pnpm 11, cookie de sessão, rotas 404) apareceram.
 
 ## Gotchas
 
@@ -97,6 +91,9 @@ Depois do primeiro deploy dos três, testar o fluxo completo (cadastro/login/car
 - `lib/db/drizzle.config.ts` usava `path.join(__dirname, ...)`, que gerava um path com `\` no Windows e o drizzle-kit não encontrava o schema. Trocado para path relativo simples.
 - **brapi.dev**: os planos free/free-token permitem só **1 ticker por requisição**. `market-data.ts` faz uma requisição por ticker (em paralelo) — nunca volte a agrupar tickers numa chamada só (`/quote/A,B,C`), a API rejeita a lista inteira e derruba o preço de todos os ativos daquele lote, não só do que causou o problema.
 - `vite.config.ts` da carteira exigia `PORT` mesmo pra `vite build` (que não abre porta nenhuma) — isso quebraria todo build na Vercel. Corrigido: `PORT` só é exigido quando `command === 'serve'` (dev/preview). `BASE_PATH` continua sempre obrigatório (afeta os paths dos assets no HTML gerado, isso sim importa pro build) — configurar como env var na Vercel.
+- **Railway/Nixpacks não suporta pnpm 11** — trata como v9 desconhecida e quebra com um erro enganoso (`ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`, sem nenhuma relação óbvia com versão de pnpm). `package.json` está fixado em `pnpm@10.34.5` por causa disso — não subir pra 11.x sem checar se o Nixpacks já suporta.
+- **Cookie de sessão não era definido em produção** (login retornava 200 mas sem `Set-Cookie`): Railway/Vercel terminam TLS antes da requisição chegar no processo Node, e sem `app.set("trust proxy", 1)` o Express não confia no `X-Forwarded-Proto`, então `req.secure` fica `false` e o `express-session` recusa definir um cookie `secure: true` (não é só a flag, ele nem tenta). Já corrigido em `app.ts` — se voltar a acontecer num novo ambiente atrás de proxy, é o primeiro lugar pra olhar.
+- **Rotas client-side davam 404 na Vercel** (`/login`, `/carteira` etc. só existem no React Router, não são arquivos): faltava um rewrite catch-all pro `index.html` em `vercel.json`, depois do rewrite de `/api/*` (ordem importa, primeiro match vence).
 
 ## Pointers
 
