@@ -7,6 +7,12 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+// Railway (and the Vercel rewrite in front of it) terminate TLS before the request
+// reaches this process — without trusting the proxy, req.secure is always false, so
+// express-session silently refuses to set the "secure" cookie at all (not just the
+// attribute), and login never persists. This tells Express to honor X-Forwarded-Proto.
+app.set("trust proxy", 1);
+
 app.use(
   pinoHttp({
     logger,
