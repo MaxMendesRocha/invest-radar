@@ -134,23 +134,41 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
 });
 
 router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void> => {
+  const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
+  const prices = await getPricesFor(assets);
+
+  let totalCost = 0;
+  let totalValue = 0;
+  for (const a of assets) {
+    const qty = parseFloat(a.quantity);
+    const avgPrice = parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase()) ?? avgPrice;
+    totalCost += qty * avgPrice;
+    totalValue += qty * price;
+  }
+  // Real total return based on current holdings — held flat across every point below
+  // because we don't have historical portfolio-value snapshots yet (no price-history
+  // table), so month-by-month evolution can't be honestly reconstructed. A portfolio
+  // with 0 assets correctly shows 0%, not a fabricated gain.
+  const portfolioReturn = totalCost > 0 ? Math.round(((totalValue - totalCost) / totalCost) * 10000) / 100 : 0;
+
   const points = [];
   const now = new Date();
 
-  let portfolioAcc = 100, cdiAcc = 100, ibovAcc = 100, ifixAcc = 100;
+  // CDI/IBOV/IFIX are still simulated (Math.random) — no real data source wired up yet.
+  let cdiAcc = 100, ibovAcc = 100, ifixAcc = 100;
 
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const label = d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
 
-    portfolioAcc *= 1 + (0.012 + Math.random() * 0.01 - 0.005);
     cdiAcc *= 1.0087;
     ibovAcc *= 1 + (0.008 + Math.random() * 0.03 - 0.015);
     ifixAcc *= 1 + (0.007 + Math.random() * 0.015 - 0.007);
 
     points.push({
       label,
-      portfolio: Math.round((portfolioAcc - 100) * 100) / 100,
+      portfolio: portfolioReturn,
       cdi: Math.round((cdiAcc - 100) * 100) / 100,
       ibov: Math.round((ibovAcc - 100) * 100) / 100,
       ifix: Math.round((ifixAcc - 100) * 100) / 100,
@@ -159,7 +177,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
 
   res.json({
     points,
-    portfolioTotal: Math.round((portfolioAcc - 100) * 100) / 100,
+    portfolioTotal: portfolioReturn,
     cdiTotal: Math.round((cdiAcc - 100) * 100) / 100,
     ibovTotal: Math.round((ibovAcc - 100) * 100) / 100,
     ifixTotal: Math.round((ifixAcc - 100) * 100) / 100,

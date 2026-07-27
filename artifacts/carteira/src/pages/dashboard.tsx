@@ -9,7 +9,7 @@ import {
   getGetPortfolioBenchmarksQueryKey
 } from "@workspace/api-client-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, BarChart, Bar
@@ -206,6 +206,7 @@ export default function Dashboard() {
         <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle>Comparativo (Benchmarks)</CardTitle>
+            <CardDescription>Carteira reflete sua rentabilidade real atual. CDI/IBOV/IFIX ainda são simulados — sem fonte de dado real conectada.</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoadingBench ? (
