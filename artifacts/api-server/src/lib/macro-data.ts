@@ -11,17 +11,17 @@ const SERIES = {
   usdBrl: "1",
 } as const;
 
+export interface SgsPoint {
+  data: string;
+  valor: string;
+}
+
 export interface MacroSnapshot {
   selic: number | null;
   selicTrend: "alta" | "queda" | "estavel" | null;
   ipca12m: number | null;
   usdBrl: number | null;
   updatedAt: string;
-}
-
-interface SgsPoint {
-  data: string;
-  valor: string;
 }
 
 async function fetchSeries(code: string, count: number): Promise<SgsPoint[]> {
@@ -42,7 +42,8 @@ function formatBcbDate(d: Date): string {
   return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
-async function fetchSeriesRange(code: string, daysBack: number): Promise<SgsPoint[]> {
+/** Exported for benchmark-data.ts (CDI monthly returns) — same BCB SGS API, different series. */
+export async function fetchSeriesRange(code: string, daysBack: number): Promise<SgsPoint[]> {
   const end = new Date();
   const start = new Date();
   start.setDate(start.getDate() - daysBack);

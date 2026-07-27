@@ -6,3 +6,4 @@ export * from "./opportunities";
 export * from "./transactions";
 export * from "./analyses";
 export * from "./portfolio-snapshots";
+export * from "./index-snapshots";

@@ -4,6 +4,7 @@ import { eq, sum } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, sectorFor } from "../lib/market-data";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
+import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
 
 const router: IRouter = Router();
 
@@ -161,14 +162,29 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   const portfolioReturn = totalCost > 0 ? Math.round(((totalValue - totalCost) / totalCost) * 10000) / 100 : 0;
   const snapshots = await getSnapshotsForUser(req.session.userId!);
 
+  // CDI is real for the full window (BCB publishes years of monthly history for free).
+  // IBOV/IFIX are real wherever we have two consecutive months of closes on file —
+  // IBOV starts with ~3 real months backfilled from brapi.dev's free tier; IFIX has no
+  // historical data available for free, so it only accumulates one day at a time from
+  // here on. Months without real data on either side still fall back to the old
+  // simulated approximation, same "real crowds out simulated, never fabricated" rule
+  // used for the portfolio's own snapshot history.
+  const [cdiReturns, ibovCloses, ifixCloses] = await Promise.all([
+    getCdiMonthlyReturns(),
+    syncAndGetIndexCloses("^BVSP", "ibov"),
+    syncAndGetIndexCloses("IFIX", "ifix"),
+  ]);
+
   const points = [];
   const now = new Date();
 
-  // CDI/IBOV/IFIX are still simulated (Math.random) — no real data source wired up yet.
   let cdiAcc = 100, ibovAcc = 100, ifixAcc = 100;
 
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const prevD = new Date(now.getFullYear(), now.getMonth() - i - 1, 1);
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const prevMonthKey = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, "0")}`;
     const label = d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
     const snapshot = findSnapshotForMonth(snapshots, d.getFullYear(), d.getMonth());
 
@@ -179,9 +195,16 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
       portfolioForMonth = snapCost > 0 ? Math.round(((snapValue - snapCost) / snapCost) * 10000) / 100 : 0;
     }
 
-    cdiAcc *= 1.0087;
-    ibovAcc *= 1 + (0.008 + Math.random() * 0.03 - 0.015);
-    ifixAcc *= 1 + (0.007 + Math.random() * 0.015 - 0.007);
+    const cdiMonthReturn = cdiReturns.get(monthKey);
+    cdiAcc *= cdiMonthReturn != null ? 1 + cdiMonthReturn / 100 : 1.0087;
+
+    const ibovThis = ibovCloses.get(monthKey);
+    const ibovPrev = ibovCloses.get(prevMonthKey);
+    ibovAcc *= ibovThis != null && ibovPrev != null ? ibovThis / ibovPrev : 1 + (0.008 + Math.random() * 0.03 - 0.015);
+
+    const ifixThis = ifixCloses.get(monthKey);
+    const ifixPrev = ifixCloses.get(prevMonthKey);
+    ifixAcc *= ifixThis != null && ifixPrev != null ? ifixThis / ifixPrev : 1 + (0.007 + Math.random() * 0.015 - 0.007);
 
     points.push({
       label,

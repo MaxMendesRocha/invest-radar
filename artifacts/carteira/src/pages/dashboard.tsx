@@ -206,7 +206,7 @@ export default function Dashboard() {
         <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle>Comparativo (Benchmarks)</CardTitle>
-            <CardDescription>Carteira reflete sua rentabilidade real atual. CDI/IBOV/IFIX ainda são simulados — sem fonte de dado real conectada.</CardDescription>
+            <CardDescription>Carteira reflete sua rentabilidade real atual. CDI é real (Banco Central); IBOV usa dados reais dos meses recentes; IFIX ainda está sendo acumulado e usa aproximação simulada até ter histórico suficiente.</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoadingBench ? (
