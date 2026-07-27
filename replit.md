@@ -65,7 +65,29 @@ Ver `attached_assets/Prompt_Agente_Gestao_Carteira_Investimentos_*.md` para a es
 
 ## User preferences
 
-- Projeto está migrando do fluxo Replit para deploy próprio (Vercel/Railway/VPS a definir) — não assumir que `.replit`/`artifact.toml` seguem sendo a fonte de verdade de deploy.
+- Projeto migrou do fluxo Replit para deploy próprio: **Vercel** (frontend) + **Railway** (api-server) + **Supabase** (Postgres) — não assumir que `.replit`/`artifact.toml` seguem sendo a fonte de verdade de deploy.
+
+## Deploy (Vercel + Railway + Supabase)
+
+Arquitetura: a Vercel faz *rewrite* de `/api/*` pro domínio do Railway (`artifacts/carteira/vercel.json`) — o navegador nunca vê dois domínios diferentes, então sessão/cookie funcionam exatamente como em dev local (proxy do Vite) e não precisou mexer em CORS nem em `sameSite`. Não confundir com a arquitetura serverless da Vercel — o api-server continua sendo um processo Node tradicional no Railway, só o frontend estático vai pra Vercel.
+
+**Supabase** (só eu, o usuário, posso criar a conta/projeto):
+1. Criar projeto em supabase.com
+2. Pegar a connection string do **pooler** (modo *transaction*, Settings → Database)
+3. Rodar localmente, apontando pra ela: `DATABASE_URL="<connection-string-supabase>" pnpm --filter @workspace/db run push`
+4. Rodar o seed: `DATABASE_URL="<connection-string-supabase>" pnpm --filter @workspace/scripts run seed-opportunities`
+
+**Railway** (`railway.json` na raiz já configura build/start/healthcheck):
+1. Novo projeto → "Deploy from GitHub repo", apontar pro repositório — **raiz do repo como root directory** (não apontar pra `artifacts/api-server`, o pnpm workspace precisa do repo inteiro pra resolver os pacotes `@workspace/*`)
+2. Variáveis de ambiente do serviço: `DATABASE_URL` (do Supabase), `SESSION_SECRET` (gerar uma string aleatória), `BRAPI_TOKEN`, `ANTHROPIC_API_KEY`, `NODE_ENV=production`. `PORT` é injetado automaticamente pelo Railway, não precisa setar.
+3. Depois do primeiro deploy, copiar o domínio gerado (`*.up.railway.app`)
+
+**Vercel** (conta já existe):
+1. Import project, **Root Directory = `artifacts/carteira`**
+2. Antes do primeiro deploy, editar `artifacts/carteira/vercel.json` trocando `SUBSTITUA-PELO-DOMINIO-RAILWAY.up.railway.app` pelo domínio real do Railway
+3. Não precisa configurar `PORT`/`BASE_PATH` como env var na Vercel — `vite build` não usa `PORT` (corrigido, ver gotcha) e `BASE_PATH` já vem fixo do `vercel.json`... na verdade `BASE_PATH` ainda é lido de env var pelo `vite.config.ts`, então **precisa** setar `BASE_PATH=/` nas env vars do projeto Vercel, senão o build falha
+
+Depois do primeiro deploy dos três, testar o fluxo completo (cadastro/login/carteira) pelo domínio da Vercel antes de considerar concluído.
 
 ## Gotchas
 
@@ -74,6 +96,7 @@ Ver `attached_assets/Prompt_Agente_Gestao_Carteira_Investimentos_*.md` para a es
 - O script `dev` do `api-server` usava `export NODE_ENV=...` (sintaxe bash), que quebra no shell padrão do pnpm no Windows (cmd.exe). Já corrigido — `NODE_ENV` não é obrigatório, só é comparado com `"production"` em `app.ts`/`logger.ts`.
 - `lib/db/drizzle.config.ts` usava `path.join(__dirname, ...)`, que gerava um path com `\` no Windows e o drizzle-kit não encontrava o schema. Trocado para path relativo simples.
 - **brapi.dev**: os planos free/free-token permitem só **1 ticker por requisição**. `market-data.ts` faz uma requisição por ticker (em paralelo) — nunca volte a agrupar tickers numa chamada só (`/quote/A,B,C`), a API rejeita a lista inteira e derruba o preço de todos os ativos daquele lote, não só do que causou o problema.
+- `vite.config.ts` da carteira exigia `PORT` mesmo pra `vite build` (que não abre porta nenhuma) — isso quebraria todo build na Vercel. Corrigido: `PORT` só é exigido quando `command === 'serve'` (dev/preview). `BASE_PATH` continua sempre obrigatório (afeta os paths dos assets no HTML gerado, isso sim importa pro build) — configurar como env var na Vercel.
 
 ## Pointers
 

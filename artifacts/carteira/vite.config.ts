@@ -5,20 +5,6 @@ import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
-const rawPort = process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    'PORT environment variable is required but was not provided.',
-  );
-}
-
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
 const basePath = process.env.BASE_PATH;
 
 if (!basePath) {
@@ -27,7 +13,28 @@ if (!basePath) {
   );
 }
 
-export default defineConfig({
+export default defineConfig(async ({ command }) => {
+  // `vite build` produces static files and never binds a port — only dev/preview
+  // servers need one. Requiring it unconditionally broke static-host builds (Vercel)
+  // that have no reason to set a PORT env var at build time.
+  let port: number | undefined;
+  if (command === 'serve') {
+    const rawPort = process.env.PORT;
+
+    if (!rawPort) {
+      throw new Error(
+        'PORT environment variable is required but was not provided.',
+      );
+    }
+
+    port = Number(rawPort);
+
+    if (Number.isNaN(port) || port <= 0) {
+      throw new Error(`Invalid PORT value: "${rawPort}"`);
+    }
+  }
+
+  return {
   base: basePath,
   plugins: [
     react(),
@@ -84,4 +91,5 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
   },
+  };
 });

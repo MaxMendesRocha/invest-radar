@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @workspace/carteira run build",
+  "outputDirectory": "dist/public",
+  "installCommand": "echo 'handled by buildCommand'",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://SUBSTITUA-PELO-DOMINIO-RAILWAY.up.railway.app/api/:path*" }
+  ]
+}
