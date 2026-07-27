@@ -2,19 +2,10 @@ import { Router, type IRouter } from "express";
 import { db, assetsTable, transactionsTable } from "@workspace/db";
 import { eq, sum } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor } from "../lib/market-data";
+import { getPricesFor, sectorFor } from "../lib/market-data";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
 
 const router: IRouter = Router();
-
-const SECTOR_MAP: Record<string, string> = {
-  PETR4: "Petróleo & Gás", VALE3: "Mineração", ITUB4: "Bancos", BBDC4: "Bancos",
-  ABEV3: "Bebidas", WEGE3: "Indústria", RENT3: "Locação", MGLU3: "Varejo",
-  LREN3: "Varejo", EGIE3: "Energia", HGLG11: "Logística", MXRF11: "Papel",
-  XPML11: "Shopping", KNRI11: "Lajes Comerciais", HSRE11: "Shopping",
-  BOVA11: "ETF", SMAL11: "ETF", IVVB11: "ETF", HASH11: "ETF",
-  AAPL34: "Tecnologia", AMZO34: "Tecnologia", MSFT34: "Tecnologia",
-};
 
 router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
@@ -68,7 +59,7 @@ router.get("/portfolio/distribution", requireAuth, async (req, res): Promise<voi
     total += value;
 
     byCategoryMap[a.category] = (byCategoryMap[a.category] ?? 0) + value;
-    const sector = a.sector ?? SECTOR_MAP[a.ticker.toUpperCase()] ?? "Outros";
+    const sector = sectorFor(a);
     bySectorMap[sector] = (bySectorMap[sector] ?? 0) + value;
 
     const risk = a.category === "acoes" ? "Alto" : a.category === "renda_fixa" ? "Baixo" : "Médio";
@@ -129,7 +120,7 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
 
   const categories = new Set(assets.map(a => a.category));
-  const sectors = new Set(assets.map(a => a.sector ?? SECTOR_MAP[a.ticker.toUpperCase()] ?? "Outros"));
+  const sectors = new Set(assets.map(sectorFor));
 
   const diversification = Math.min(100, categories.size * 15 + sectors.size * 8);
   const concentration = assets.length > 0 ? Math.max(0, 100 - (100 / assets.length) * 2) : 0;

@@ -215,6 +215,22 @@ export async function getFundamentals(tickers: string[]): Promise<Map<string, Fu
 // Categories traded on B3 and covered by brapi.dev quotes; renda_fixa/fundos have no ticker quote.
 export const QUOTED_CATEGORIES = new Set(["acoes", "fiis", "etfs", "bdrs"]);
 
+// Curated fallback for assets without an explicit sector set by the user — used by
+// portfolio.ts (distribution) and analysis.ts (concentration alerts), kept here so
+// both stay in sync instead of drifting into two separate copies.
+const SECTOR_MAP: Record<string, string> = {
+  PETR4: "Petróleo & Gás", VALE3: "Mineração", ITUB4: "Bancos", BBDC4: "Bancos",
+  ABEV3: "Bebidas", WEGE3: "Indústria", RENT3: "Locação", MGLU3: "Varejo",
+  LREN3: "Varejo", EGIE3: "Energia", HGLG11: "Logística", MXRF11: "Papel",
+  XPML11: "Shopping", KNRI11: "Lajes Comerciais", HSRE11: "Shopping",
+  BOVA11: "ETF", SMAL11: "ETF", IVVB11: "ETF", HASH11: "ETF",
+  AAPL34: "Tecnologia", AMZO34: "Tecnologia", MSFT34: "Tecnologia",
+};
+
+export function sectorFor(asset: { ticker: string; sector: string | null }): string {
+  return asset.sector ?? SECTOR_MAP[asset.ticker.toUpperCase()] ?? "Outros";
+}
+
 /**
  * Convenience wrapper around getQuotes for a list of { ticker, category } records
  * (assets, opportunities, ...): filters to quotable categories and returns a

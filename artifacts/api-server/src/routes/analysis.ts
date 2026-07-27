@@ -3,12 +3,96 @@ import { db, assetsTable, alertsTable, analysesTable, opportunitiesTable } from 
 import { eq, and } from "drizzle-orm";
 import { GetAssetAnalysisParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getQuotes, QUOTED_CATEGORIES } from "../lib/market-data";
+import { getPricesFor, getQuotes, sectorFor, QUOTED_CATEGORIES } from "../lib/market-data";
 import { analysisForUnquotedAsset, pendingAnalysis, type AnalysisResult } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
 
 const router: IRouter = Router();
+
+type AlertToInsert = {
+  userId: number; type: string; severity: string; title: string; message: string;
+  ticker: string | null; isRead: boolean;
+};
+
+const CONCENTRATION_ASSET_CRITICAL = 40; // % of patrimony in a single ticker
+const CONCENTRATION_ASSET_HIGH = 25;
+const CONCENTRATION_SECTOR_HIGH = 50; // % of patrimony in a single sector
+const MIN_DISTINCT_ASSETS = 3;
+
+/**
+ * Alerta de Concentração from the product spec — no external data needed, just the
+ * holdings already in the DB plus current prices. Deliberately conservative
+ * thresholds; tune once we have real user feedback on what feels noisy vs useful.
+ */
+function computeConcentrationAlerts(
+  assets: { ticker: string; quantity: string; averagePrice: string; sector: string | null }[],
+  prices: Map<string, number>,
+  userId: number,
+): AlertToInsert[] {
+  const byTicker = new Map<string, number>();
+  const bySector = new Map<string, number>();
+  let totalValue = 0;
+
+  for (const a of assets) {
+    const qty = parseFloat(a.quantity);
+    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const value = qty * price;
+    totalValue += value;
+
+    const ticker = a.ticker.toUpperCase();
+    byTicker.set(ticker, (byTicker.get(ticker) ?? 0) + value);
+
+    const sector = sectorFor(a);
+    bySector.set(sector, (bySector.get(sector) ?? 0) + value);
+  }
+
+  if (totalValue <= 0) return [];
+
+  const alerts: AlertToInsert[] = [];
+
+  for (const [ticker, value] of byTicker) {
+    const pct = (value / totalValue) * 100;
+    if (pct >= CONCENTRATION_ASSET_CRITICAL) {
+      alerts.push({
+        userId, type: "concentracao", severity: "Critico", ticker,
+        title: `${ticker} concentra ${pct.toFixed(0)}% da carteira`,
+        message: `${ticker} representa ${pct.toFixed(1)}% do patrimônio total — concentração elevada em um único ativo.`,
+        isRead: false,
+      });
+    } else if (pct >= CONCENTRATION_ASSET_HIGH) {
+      alerts.push({
+        userId, type: "concentracao", severity: "Alto", ticker,
+        title: `${ticker} concentra ${pct.toFixed(0)}% da carteira`,
+        message: `${ticker} representa ${pct.toFixed(1)}% do patrimônio total — considere diversificar.`,
+        isRead: false,
+      });
+    }
+  }
+
+  for (const [sector, value] of bySector) {
+    const pct = (value / totalValue) * 100;
+    if (pct >= CONCENTRATION_SECTOR_HIGH) {
+      alerts.push({
+        userId, type: "concentracao", severity: "Alto", ticker: null,
+        title: `Setor ${sector} concentra ${pct.toFixed(0)}% da carteira`,
+        message: `O setor "${sector}" representa ${pct.toFixed(1)}% do patrimônio total — risco de concentração setorial.`,
+        isRead: false,
+      });
+    }
+  }
+
+  if (byTicker.size > 0 && byTicker.size < MIN_DISTINCT_ASSETS) {
+    alerts.push({
+      userId, type: "concentracao", severity: "Medio", ticker: null,
+      title: "Baixa diversificação",
+      message: `Sua carteira tem apenas ${byTicker.size} ativo${byTicker.size > 1 ? "s" : ""} diferente${byTicker.size > 1 ? "s" : ""} — baixa diversificação aumenta o risco em caso de queda de um deles.`,
+      isRead: false,
+    });
+  }
+
+  return alerts;
+}
 
 // Full fundamentalist analysis (analyzeFundamentals in analysis-engine.ts) needs the
 // paid brapi.dev plan — see pendingAnalysis()'s comment. "Pending" results are never
@@ -158,10 +242,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     });
   }
 
-  type AlertToInsert = {
-    userId: number; type: string; severity: string; title: string; message: string;
-    ticker: string | null; isRead: boolean;
-  };
+  const prices = await getPricesFor(assets);
 
   const fundamentalAlerts: AlertToInsert[] = available
     .filter((a) => a.score < 60)
@@ -214,14 +295,15 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     });
   }
 
-  const alertsToInsert = [...fundamentalAlerts, ...newsAlerts, ...macroAlerts];
+  const concentrationAlerts = computeConcentrationAlerts(assets, prices, req.session.userId!);
+
+  const alertsToInsert = [...fundamentalAlerts, ...newsAlerts, ...macroAlerts, ...concentrationAlerts];
   if (alertsToInsert.length > 0) {
     await db.insert(alertsTable).values(alertsToInsert);
   }
 
   const alertRows = await db.select().from(alertsTable).where(eq(alertsTable.userId, req.session.userId!));
 
-  const prices = await getPricesFor(assets);
   let totalPatrimony = 0;
   let totalCost = 0;
   for (const a of assets) {

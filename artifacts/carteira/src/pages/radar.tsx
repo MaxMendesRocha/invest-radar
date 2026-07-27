@@ -22,6 +22,7 @@ import {
   Minus,
   Newspaper,
   Landmark,
+  PieChart,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -39,6 +40,7 @@ const TYPE_ICONS: Record<string, any> = {
   fundamentos: AlertCircle,
   noticias: Newspaper,
   dividendos: BellRing,
+  concentracao: PieChart,
 };
 
 export default function Radar() {
