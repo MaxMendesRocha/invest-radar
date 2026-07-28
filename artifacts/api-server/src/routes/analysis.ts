@@ -3,7 +3,7 @@ import { db, assetsTable, alertsTable, analysesTable, opportunitiesTable } from 
 import { eq, and } from "drizzle-orm";
 import { GetAssetAnalysisParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getQuotes, getPriceHistories, sectorFor, QUOTED_CATEGORIES, type PriceHistory } from "../lib/market-data";
+import { getPricesFor, getPriceHistories, sectorFor, QUOTED_CATEGORIES, type PriceHistory } from "../lib/market-data";
 import { analysisForUnquotedAsset, pendingAnalysis, type AnalysisResult } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
@@ -159,14 +159,12 @@ function formatHeadline(item: NewsHeadline): string {
   return item.impact ? `[${item.impact}] ${item.title}` : item.title;
 }
 
-// Real, relevant headlines for a ticker — searches by the company's popular name
-// (see resolveSearchTerm's comment on why brapi's legal name alone isn't enough).
-// Renda fixa/fundos have no company to search for, so they never get news.
+// Real, relevant headlines for a ticker — see resolveSearchTerm's comment for how the
+// search term is picked. Renda fixa/fundos have no company to search for, so they
+// never get news.
 async function getNewsItemsFor(ticker: string, category: string): Promise<string[]> {
   if (!QUOTED_CATEGORIES.has(category)) return [];
-  const quotes = await getQuotes([ticker]);
-  const name = quotes.get(ticker.toUpperCase())?.name ?? null;
-  const headlines = await getNewsFor(resolveSearchTerm(ticker, name), 3);
+  const headlines = await getNewsFor(resolveSearchTerm(ticker), 3);
   return headlines.map(formatHeadline);
 }
 
@@ -262,9 +260,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     assets
       .filter((a) => QUOTED_CATEGORIES.has(a.category))
       .map(async (a) => {
-        const quotes = await getQuotes([a.ticker]);
-        const name = quotes.get(a.ticker.toUpperCase())?.name ?? null;
-        const headlines = await getNewsFor(resolveSearchTerm(a.ticker, name), 3);
+        const headlines = await getNewsFor(resolveSearchTerm(a.ticker), 3);
         newsByTicker.set(a.ticker.toUpperCase(), headlines);
       })
   );

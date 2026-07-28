@@ -9,13 +9,24 @@ const CLASSIFICATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // a headline's impact 
 export const NEWS_IMPACTS = ["Muito Positivo", "Positivo", "Neutro", "Negativo", "Muito Negativo"] as const;
 export type NewsImpact = (typeof NEWS_IMPACTS)[number];
 
-// News headlines use the company's popular/trade name ("Vale", "Petrobras"), not the
-// registered legal name brapi.dev returns ("Vale S.A.", "Petroleo Brasileiro SA") — for
-// several well-known tickers those are unrelated words, so a search on the legal name
-// would miss everything. Curated for the most-traded B3 tickers; anything else falls
-// back to the first word of the legal name, which works for names like "WEG SA" or
-// "Ambev SA" but not for cases like Petrobras — a known gap until we find a fuller
-// ticker->nome-popular source.
+// For the most-traded ações, the company's popular/trade name ("Vale", "Petrobras")
+// finds more relevant headlines than the ticker itself. Curated by hand and verified
+// against real InfoMoney search results — every entry here is a distinctive brand
+// name with no collision risk.
+//
+// Everything else falls back to the raw ticker symbol (see resolveSearchTerm below),
+// NOT the first word of brapi.dev's legal name — that used to be the fallback, and it
+// broke in ways that shipped a real false positive to a user: MXRF11's legal name is
+// "Maxi Renda Fundo de Investimento Imobiliario", so the fallback searched "Maxi" and
+// surfaced a baby-stroller sale ad ("Carrinho de bebê Maxi Baby..."). Checking a batch
+// of FII/ETF tickers the same way found more of the same class of bug — HSRE11's
+// legal name starts with "HSI", which pulled in unrelated news (US immigration,
+// organized crime) that has nothing to do with the fund. The raw ticker, by contrast,
+// is exactly what InfoMoney's own headlines use for FIIs/lesser-covered tickers
+// ("FII MXRF11 divulga...", "XPML11 anuncia..."), so it's both safer and, in testing,
+// at least as precise — confirmed across MXRF11, XPML11, HSRE11, and re-verified it
+// doesn't regress the well-covered ações either (PETR4, VALE3, MGLU3, WEGE3 all still
+// returned clean, on-topic results searched by ticker alone).
 const COMPANY_ALIASES: Record<string, string> = {
   PETR3: "Petrobras", PETR4: "Petrobras",
   ITUB3: "Itaú", ITUB4: "Itaú",
@@ -32,12 +43,9 @@ const COMPANY_ALIASES: Record<string, string> = {
   CSNA3: "CSN",
 };
 
-/** Best-effort colloquial search term for a ticker — see COMPANY_ALIASES comment above. */
-export function resolveSearchTerm(ticker: string, legalName: string | null): string {
-  const alias = COMPANY_ALIASES[ticker.toUpperCase()];
-  if (alias) return alias;
-  if (legalName) return legalName.split(" ")[0];
-  return ticker;
+/** Best-effort search term for a ticker — see COMPANY_ALIASES comment above. */
+export function resolveSearchTerm(ticker: string): string {
+  return COMPANY_ALIASES[ticker.toUpperCase()] ?? ticker.toUpperCase();
 }
 
 export interface NewsHeadline {
