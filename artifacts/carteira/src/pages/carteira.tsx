@@ -193,7 +193,8 @@ export default function Carteira() {
         </Dialog>
       </div>
 
-      <Card>
+      {/* Desktop: tabela — cabe as 9 colunas sem rolagem horizontal */}
+      <Card className="hidden md:block">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -226,7 +227,7 @@ export default function Carteira() {
                 assets?.map((asset) => {
                   const analysis = analyses?.find(a => a.ticker === asset.ticker);
                   const isProfit = asset.profitLoss && asset.profitLoss >= 0;
-                  
+
                   return (
                     <TableRow key={asset.id}>
                       <TableCell className="font-bold">{asset.ticker}</TableCell>
@@ -272,6 +273,75 @@ export default function Carteira() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Mobile: cards — evita rolagem horizontal das 9 colunas da tabela */}
+      <div className="md:hidden space-y-3">
+        {isLoading ? (
+          <Card><CardContent className="py-8 text-center text-muted-foreground">Carregando carteira...</CardContent></Card>
+        ) : assets?.length === 0 ? (
+          <Card><CardContent className="py-8 text-center text-muted-foreground">Sua carteira está vazia. Adicione ativos para começar.</CardContent></Card>
+        ) : (
+          assets?.map((asset) => {
+            const analysis = analyses?.find(a => a.ticker === asset.ticker);
+            const isProfit = asset.profitLoss && asset.profitLoss >= 0;
+
+            return (
+              <Card key={asset.id}>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-bold text-lg">{asset.ticker}</div>
+                      <div className="text-xs text-muted-foreground">{CATEGORY_MAP[asset.category] || asset.category}</div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {analysis?.available === false ? (
+                        <Badge variant="outline">Em breve</Badge>
+                      ) : analysis?.status ? (
+                        <Badge variant={STATUS_COLOR_MAP[analysis.status] || "default"}>{analysis.status}</Badge>
+                      ) : null}
+                      <Button variant="ghost" size="icon" onClick={() => handleEditOpen(asset)}>
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(asset.id)} className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-sm">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Quantidade</div>
+                      <div className="font-mono">{asset.quantity}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Preço Médio</div>
+                      <div className="font-mono">{formatCurrency(asset.averagePrice)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Cotação Atual</div>
+                      <div className="font-mono">{asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Total</div>
+                      <div className="font-mono">{asset.totalValue ? formatCurrency(asset.totalValue) : '-'}</div>
+                    </div>
+                    <div className="col-span-2">
+                      <div className="text-xs text-muted-foreground">L&P</div>
+                      <div className={`font-mono font-medium ${isProfit ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
+                        {asset.profitLoss != null && asset.profitLossPercent != null ? (
+                          <>
+                            {isProfit ? '+' : ''}{formatCurrency(asset.profitLoss)}{' '}
+                            <span className="text-xs opacity-80">({isProfit ? '+' : ''}{formatPercent(asset.profitLossPercent)})</span>
+                          </>
+                        ) : '-'}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
+        )}
+      </div>
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
