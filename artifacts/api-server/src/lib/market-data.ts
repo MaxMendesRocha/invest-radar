@@ -107,13 +107,14 @@ export async function getQuotes(tickers: string[]): Promise<Map<string, Quote>> 
 
 export interface Fundamentals {
   price: number;
+  name: string | null;
   priceEarnings: number | null; // P/L
   priceToBook: number | null; // P/VP
   dividendYield: number | null; // decimal, e.g. 0.05 = 5%
-  returnOnEquity: number | null; // ROE, decimal
-  debtToEquity: number | null; // dívida/patrimônio, ratio (1.5 = 150%)
+  returnOnEquity: number | null; // ROE, decimal — netIncome / shareholdersEquity (ver fetchV2Statements)
+  debtToEquity: number | null; // dívida/patrimônio — (loansAndFinancing + longTermLoansAndFinancing) / shareholdersEquity
   profitMargins: number | null; // margem líquida, decimal
-  revenueGrowth: number | null; // decimal
+  revenueGrowth: number | null; // decimal — receita do ano mais recente vs ano anterior
   fiftyTwoWeekChange: number | null; // decimal
   beta: number | null;
   updatedAt: string;
@@ -124,55 +125,107 @@ interface FundamentalsCacheEntry {
   fetchedAt: number;
 }
 
-interface BrapiFundamentalsResult extends BrapiResult {
+interface BrapiKeyStatsResult extends BrapiResult {
   defaultKeyStatistics?: {
     priceToBook?: number | null;
     dividendYield?: number | null;
     "52WeekChange"?: number | null;
     beta?: number | null;
-  };
-  financialData?: {
-    returnOnEquity?: number | null;
-    debtToEquity?: number | null;
     profitMargins?: number | null;
-    revenueGrowth?: number | null;
   };
 }
 
-const fundamentalsCache = new Map<string, FundamentalsCacheEntry>();
+interface KeyStats {
+  price: number;
+  name: string | null;
+  priceEarnings: number | null;
+  priceToBook: number | null;
+  dividendYield: number | null;
+  profitMargins: number | null;
+  fiftyTwoWeekChange: number | null;
+  beta: number | null;
+  updatedAt: string;
+}
 
-async function fetchFundamentals(ticker: string): Promise<Fundamentals | null> {
+// O módulo financialData da brapi.dev (que traria ROE/dívida-patrimônio/crescimento
+// prontos) exige um plano acima do atual — testado: pedir financialData junto de
+// outro módulo na mesma chamada derruba a chamada INTEIRA com 403 MODULES_NOT_AVAILABLE,
+// não só o campo que falta. Por isso aqui só pedimos defaultKeyStatistics (P/L, P/VP,
+// DY, beta, margem líquida — todos no plano atual) e calculamos ROE/dívida-patrimônio/
+// crescimento a partir do balanço e DRE reais via fetchV2Statements abaixo.
+async function fetchKeyStatistics(ticker: string): Promise<KeyStats | null> {
   const token = process.env.BRAPI_TOKEN;
-  const url = `${BRAPI_BASE_URL}/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics,financialData`;
+  const url = `${BRAPI_BASE_URL}/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics`;
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   const response = await fetch(url, { headers });
   if (!response.ok) {
-    logger.warn({ status: response.status, ticker }, "brapi.dev fundamentals request failed");
+    logger.warn({ status: response.status, ticker }, "brapi.dev key statistics request failed");
     return null;
   }
 
-  const body = (await response.json()) as { results?: BrapiFundamentalsResult[] };
+  const body = (await response.json()) as { results?: BrapiKeyStatsResult[] };
   const item = body.results?.[0];
   if (!item || typeof item.regularMarketPrice !== "number") return null;
 
   const stats = item.defaultKeyStatistics ?? {};
-  const financials = item.financialData ?? {};
-
   return {
     price: item.regularMarketPrice,
+    name: item.longName ?? item.shortName ?? null,
     priceEarnings: item.priceEarnings ?? null,
     priceToBook: stats.priceToBook ?? null,
     dividendYield: stats.dividendYield ?? null,
-    returnOnEquity: financials.returnOnEquity ?? null,
-    debtToEquity: financials.debtToEquity ?? null,
-    profitMargins: financials.profitMargins ?? null,
-    revenueGrowth: financials.revenueGrowth ?? null,
+    profitMargins: stats.profitMargins ?? null,
     fiftyTwoWeekChange: stats["52WeekChange"] ?? null,
     beta: stats.beta ?? null,
     updatedAt: item.regularMarketTime ?? new Date().toISOString(),
   };
 }
+
+const BRAPI_V2_BASE_URL = "https://brapi.dev/api/v2/stocks";
+
+interface BrapiV2Period {
+  endDate: string;
+  shareholdersEquity?: number | null;
+  loansAndFinancing?: number | null;
+  longTermLoansAndFinancing?: number | null;
+  totalRevenue?: number | null;
+  netIncome?: number | null;
+}
+
+interface BrapiV2Result {
+  symbol: string;
+  data?: BrapiV2Period[];
+}
+
+// Endpoints v2 (diferentes do /api/quote v1) — trazem o balanço patrimonial e a DRE
+// reportados de verdade (padrão CVM), com o ano mais recente primeiro em `data[]`.
+// Ao contrário do v1, aceitam vários tickers numa única chamada (?symbols=A,B,C).
+async function fetchV2Statements(
+  tickers: string[],
+  path: "balance-sheet" | "income-statement",
+): Promise<Map<string, BrapiV2Period[]>> {
+  const result = new Map<string, BrapiV2Period[]>();
+  if (tickers.length === 0) return result;
+
+  const token = process.env.BRAPI_TOKEN;
+  const url = `${BRAPI_V2_BASE_URL}/${path}?symbols=${tickers.map(encodeURIComponent).join(",")}`;
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    logger.warn({ status: response.status, path, tickers }, "brapi.dev v2 statement request failed");
+    return result;
+  }
+
+  const body = (await response.json()) as { results?: BrapiV2Result[] };
+  for (const item of body.results ?? []) {
+    if (item.data && item.data.length > 0) result.set(item.symbol.toUpperCase(), item.data);
+  }
+  return result;
+}
+
+const fundamentalsCache = new Map<string, FundamentalsCacheEntry>();
 
 /**
  * Cached lookup of fundamentals (P/L, P/VP, ROE, endividamento, margens, crescimento,
@@ -197,13 +250,49 @@ export async function getFundamentals(tickers: string[]): Promise<Map<string, Fu
   }
 
   if (stale.length > 0) {
-    const settled = await Promise.allSettled(stale.map((ticker) => fetchFundamentals(ticker)));
+    const [keyStatsSettled, balanceSheets, incomeStatements] = await Promise.all([
+      Promise.allSettled(stale.map((ticker) => fetchKeyStatistics(ticker))),
+      fetchV2Statements(stale, "balance-sheet"),
+      fetchV2Statements(stale, "income-statement"),
+    ]);
+
     stale.forEach((ticker, i) => {
-      const outcome = settled[i];
-      const fundamentals = outcome.status === "fulfilled" ? outcome.value : null;
+      const outcome = keyStatsSettled[i];
+      const keyStats = outcome.status === "fulfilled" ? outcome.value : null;
       if (outcome.status === "rejected") {
-        logger.warn({ err: outcome.reason, ticker }, "brapi.dev fundamentals request errored");
+        logger.warn({ err: outcome.reason, ticker }, "brapi.dev key statistics request errored");
       }
+
+      let fundamentals: Fundamentals | null = null;
+      if (keyStats) {
+        const balanceSheet = balanceSheets.get(ticker)?.[0]; // mais recente primeiro
+        const [latestIncome, previousIncome] = incomeStatements.get(ticker) ?? [];
+
+        const equity = balanceSheet?.shareholdersEquity ?? null;
+        const debt =
+          balanceSheet?.loansAndFinancing != null && balanceSheet?.longTermLoansAndFinancing != null
+            ? balanceSheet.loansAndFinancing + balanceSheet.longTermLoansAndFinancing
+            : null;
+
+        fundamentals = {
+          price: keyStats.price,
+          name: keyStats.name,
+          priceEarnings: keyStats.priceEarnings,
+          priceToBook: keyStats.priceToBook,
+          dividendYield: keyStats.dividendYield,
+          profitMargins: keyStats.profitMargins,
+          fiftyTwoWeekChange: keyStats.fiftyTwoWeekChange,
+          beta: keyStats.beta,
+          returnOnEquity: equity && latestIncome?.netIncome != null ? latestIncome.netIncome / equity : null,
+          debtToEquity: equity ? (debt != null ? debt / equity : null) : null,
+          revenueGrowth:
+            latestIncome?.totalRevenue != null && previousIncome?.totalRevenue
+              ? (latestIncome.totalRevenue - previousIncome.totalRevenue) / previousIncome.totalRevenue
+              : null,
+          updatedAt: keyStats.updatedAt,
+        };
+      }
+
       fundamentalsCache.set(ticker, { fundamentals, fetchedAt: now });
       if (fundamentals) fresh.set(ticker, fundamentals);
     });

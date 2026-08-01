@@ -3,8 +3,16 @@ import { db, assetsTable, alertsTable, analysesTable, opportunitiesTable } from 
 import { eq, and } from "drizzle-orm";
 import { GetAssetAnalysisParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getPriceHistories, sectorFor, QUOTED_CATEGORIES, type PriceHistory } from "../lib/market-data";
-import { analysisForUnquotedAsset, pendingAnalysis, type AnalysisResult } from "../lib/analysis-engine";
+import {
+  getPricesFor,
+  getPriceHistories,
+  getFundamentals,
+  sectorFor,
+  QUOTED_CATEGORIES,
+  type PriceHistory,
+  type Fundamentals,
+} from "../lib/market-data";
+import { analysisForUnquotedAsset, pendingAnalysis, analyzeFundamentals, type AnalysisResult } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
 
@@ -146,13 +154,13 @@ function computePriceAlerts(
   return alerts;
 }
 
-// Full fundamentalist analysis (analyzeFundamentals in analysis-engine.ts) needs the
-// paid brapi.dev plan — see pendingAnalysis()'s comment. "Pending" results are never
-// persisted to analysesTable, so there's nothing stale to invalidate once a data
-// source is picked; only genuinely-computed results (today: the unquoted-asset case)
-// get saved.
-function computeAnalysis(category: string): AnalysisResult {
-  return QUOTED_CATEGORIES.has(category) ? pendingAnalysis() : analysisForUnquotedAsset();
+// Real fundamentals via getFundamentals() (brapi.dev, ver market-data.ts). Se o
+// provider não devolver dado pra um ticker específico (falha pontual, ticker sem
+// cobertura), cai em pendingAnalysis() — "Em breve" nunca virou score inventado.
+function computeAnalysis(ticker: string, category: string, fundamentalsByTicker: Map<string, Fundamentals>): AnalysisResult {
+  if (!QUOTED_CATEGORIES.has(category)) return analysisForUnquotedAsset();
+  const fundamentals = fundamentalsByTicker.get(ticker.toUpperCase());
+  return fundamentals ? analyzeFundamentals(fundamentals) : pendingAnalysis();
 }
 
 function formatHeadline(item: NewsHeadline): string {
@@ -206,12 +214,15 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
   const existingAnalyses = await db.select().from(analysesTable).where(eq(analysesTable.userId, req.session.userId!));
   const analysisMap = new Map(existingAnalyses.map((a) => [a.ticker, a]));
 
+  const pendingAssets = assets.filter((a) => !analysisMap.has(a.ticker) && QUOTED_CATEGORIES.has(a.category));
+  const fundamentalsByTicker = await getFundamentals(pendingAssets.map((a) => a.ticker));
+
   const result = await Promise.all(
     assets.map(async (asset) => {
       const existing = analysisMap.get(asset.ticker);
       if (existing) return serializePersisted(existing);
       const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-      return toApiShape(asset.ticker, computeAnalysis(asset.category), newsItems);
+      return toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker), newsItems);
     })
   );
 
@@ -244,7 +255,10 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
   }
 
   const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-  res.json(toApiShape(asset.ticker, computeAnalysis(asset.category), newsItems));
+  const fundamentalsByTicker = QUOTED_CATEGORIES.has(asset.category)
+    ? await getFundamentals([asset.ticker])
+    : new Map<string, Fundamentals>();
+  res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker), newsItems));
 });
 
 router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> => {
@@ -265,9 +279,13 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       })
   );
 
+  const fundamentalsByTicker = await getFundamentals(
+    assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker)
+  );
+
   const analyses = assets.map((a) => ({
     ticker: a.ticker.toUpperCase(),
-    ...computeAnalysis(a.category),
+    ...computeAnalysis(a.ticker, a.category, fundamentalsByTicker),
   }));
 
   // Only persist (and alert on) results that are actually available — pending
