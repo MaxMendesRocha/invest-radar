@@ -297,32 +297,41 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   // ativo também usa o cenário macro como parte do contexto real que ela recebe.
   const macro = await getMacroSnapshot();
 
-  for (const analysis of available) {
-    const newsItems = (newsByTicker.get(analysis.ticker) ?? []).map(formatHeadline);
-    const aiRecommendation = await synthesizeAssetRecommendation({
-      ticker: analysis.ticker,
-      score: analysis.score,
-      scoreClassification: analysis.scoreClassification,
-      status: analysis.status,
-      positives: analysis.positives,
-      risks: analysis.risks,
-      newsItems,
-      macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
-    });
+  // Em paralelo — sequencial levava ~4s por ativo (chamada real à Anthropic), o que
+  // deixava uma carteira de 5 ativos demorando ~20s pra gerar.
+  await Promise.all(
+    available.map(async (analysis) => {
+      const newsItems = (newsByTicker.get(analysis.ticker) ?? []).map(formatHeadline);
+      const aiRecommendation = await synthesizeAssetRecommendation({
+        ticker: analysis.ticker,
+        score: analysis.score,
+        scoreClassification: analysis.scoreClassification,
+        status: analysis.status,
+        positives: analysis.positives,
+        risks: analysis.risks,
+        newsItems,
+        macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
+      });
 
-    await db.insert(analysesTable).values({
-      userId: req.session.userId!,
-      ticker: analysis.ticker,
-      status: analysis.status,
-      score: String(analysis.score),
-      scoreClassification: analysis.scoreClassification,
-      positives: JSON.stringify(analysis.positives),
-      risks: JSON.stringify(analysis.risks),
-      newsItems: JSON.stringify(newsItems),
-      alerts: JSON.stringify(analysis.risks.length > 0 ? [analysis.risks[0]] : []),
-      monitoringRecommendation: aiRecommendation ?? analysis.monitoringRecommendation,
-    });
-  }
+      // Mutação intencional: `analysis` é a mesma referência presente em `analyses`
+      // (available é só um filter, não uma cópia), então isso também atualiza o texto
+      // que vai na resposta HTTP construída a partir de `analyses` lá embaixo.
+      analysis.monitoringRecommendation = aiRecommendation ?? analysis.monitoringRecommendation;
+
+      await db.insert(analysesTable).values({
+        userId: req.session.userId!,
+        ticker: analysis.ticker,
+        status: analysis.status,
+        score: String(analysis.score),
+        scoreClassification: analysis.scoreClassification,
+        positives: JSON.stringify(analysis.positives),
+        risks: JSON.stringify(analysis.risks),
+        newsItems: JSON.stringify(newsItems),
+        alerts: JSON.stringify(analysis.risks.length > 0 ? [analysis.risks[0]] : []),
+        monitoringRecommendation: analysis.monitoringRecommendation,
+      });
+    })
+  );
 
   const prices = await getPricesFor(assets);
   const priceHistories = await getPriceHistories(assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker));
