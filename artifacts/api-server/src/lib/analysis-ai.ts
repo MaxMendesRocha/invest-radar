@@ -85,7 +85,7 @@ export async function synthesizeAssetRecommendation(input: AssetRecommendationIn
   try {
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
+      max_tokens: 500, // 2-5 frases cruzando fundamentos+notícias+macro+IR passam de 300 com frequência e cortavam o texto no meio
       messages: [{ role: "user", content: buildPrompt(input) }],
     });
 

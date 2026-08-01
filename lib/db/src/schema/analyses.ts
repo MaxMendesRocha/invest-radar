@@ -14,6 +14,7 @@ export const analysesTable = pgTable("analyses", {
   newsItems: text("news_items").notNull(),
   alerts: text("alerts").notNull(),
   monitoringRecommendation: text("monitoring_recommendation").notNull(),
+  taxEstimate: text("tax_estimate"), // JSON de TaxEstimate (tax-engine.ts) ou null — nullable pois nem toda categoria tem estimativa de IR
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
