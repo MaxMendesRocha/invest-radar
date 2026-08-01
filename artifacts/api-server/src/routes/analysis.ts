@@ -17,6 +17,7 @@ import { analysisForUnquotedAsset, pendingAnalysis, analyzeFundamentals, type An
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { synthesizeAssetRecommendation } from "../lib/analysis-ai";
+import { estimateCapitalGainsTax, type TaxEstimate } from "../lib/tax-engine";
 
 const router: IRouter = Router();
 
@@ -191,6 +192,10 @@ function serializePersisted(row: typeof analysesTable.$inferSelect) {
     newsItems: JSON.parse(row.newsItems) as string[],
     alerts: JSON.parse(row.alerts) as string[],
     monitoringRecommendation: row.monitoringRecommendation,
+    // Não persistido (o preço no momento da venda muda todo dia) — só POST
+    // /analysis/generate calcula na hora. Presente como null aqui pra manter o
+    // shape consistente com as outras rotas.
+    taxEstimate: null as TaxEstimate | null,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -207,6 +212,10 @@ function toApiShape(ticker: string, result: AnalysisResult, newsItems: string[])
     newsItems,
     alerts: result.available && result.risks.length > 0 ? [result.risks[0]] : [],
     monitoringRecommendation: result.monitoringRecommendation,
+    // Só calculado em POST /analysis/generate (precisa do preço atual, que essas
+    // rotas GET não buscam pra ficarem leves) — sempre presente no shape, mesmo
+    // que null, pra quem consome a API não precisar tratar campo ausente.
+    taxEstimate: null as TaxEstimate | null,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -289,6 +298,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   const analyses = assets.map((a) => ({
     ticker: a.ticker.toUpperCase(),
     ...computeAnalysis(a.ticker, a.category, fundamentalsByTicker),
+    taxEstimate: null as TaxEstimate | null,
   }));
 
   // Only persist (and alert on) results that are actually available — pending
@@ -299,11 +309,24 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   // ativo também usa o cenário macro como parte do contexto real que ela recebe.
   const macro = await getMacroSnapshot();
 
+  // Movido pra antes do loop de IA (o resto do handler só precisava dele mais
+  // embaixo) porque o cálculo de IR precisa do preço atual de cada ativo.
+  const prices = await getPricesFor(assets);
+  const assetsByTicker = new Map(assets.map((a) => [a.ticker.toUpperCase(), a]));
+
   // Em paralelo — sequencial levava ~4s por ativo (chamada real à Anthropic), o que
   // deixava uma carteira de 5 ativos demorando ~20s pra gerar.
   await Promise.all(
     available.map(async (analysis) => {
       const newsItems = (newsByTicker.get(analysis.ticker) ?? []).map(formatHeadline);
+
+      const asset = assetsByTicker.get(analysis.ticker);
+      const currentPrice = asset ? (prices.get(analysis.ticker) ?? parseFloat(asset.averagePrice)) : null;
+      const tax = asset && currentPrice != null
+        ? estimateCapitalGainsTax(asset.category, parseFloat(asset.quantity), parseFloat(asset.averagePrice), currentPrice)
+        : null;
+      analysis.taxEstimate = tax; // mesma mutação intencional de monitoringRecommendation logo abaixo — flui pra resposta HTTP
+
       const aiRecommendation = await synthesizeAssetRecommendation({
         ticker: analysis.ticker,
         score: analysis.score,
@@ -313,6 +336,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         risks: analysis.risks,
         newsItems,
         macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
+        tax,
       });
 
       // Mutação intencional: `analysis` é a mesma referência presente em `analyses`
@@ -335,7 +359,6 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     })
   );
 
-  const prices = await getPricesFor(assets);
   const priceHistories = await getPriceHistories(assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker));
 
   const fundamentalAlerts: AlertToInsert[] = available

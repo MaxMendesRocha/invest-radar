@@ -7,6 +7,7 @@
  */
 import type { AssetAnalysisScoreClassification } from './assetAnalysisScoreClassification';
 import type { AssetAnalysisStatus } from './assetAnalysisStatus';
+import type { AssetAnalysisTaxEstimate } from './assetAnalysisTaxEstimate';
 
 export interface AssetAnalysis {
   ticker: string;
@@ -20,5 +21,10 @@ export interface AssetAnalysis {
   newsItems: string[];
   alerts: string[];
   monitoringRecommendation: string;
+  /**
+     * Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível.
+     * @nullable
+     */
+  taxEstimate?: AssetAnalysisTaxEstimate;
   updatedAt: Date;
 }

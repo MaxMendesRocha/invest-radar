@@ -456,6 +456,13 @@ export const ListAssetAnalysesResponseItem = zod.object({
   "newsItems": zod.array(zod.string()),
   "alerts": zod.array(zod.string()),
   "monitoringRecommendation": zod.string(),
+  "taxEstimate": zod.object({
+  "grossGain": zod.number(),
+  "taxRate": zod.number(),
+  "taxOwed": zod.number(),
+  "netGain": zod.number(),
+  "exempt": zod.boolean()
+}).nullish().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
   "updatedAt": zod.coerce.date()
 })
 export const ListAssetAnalysesResponse = zod.array(ListAssetAnalysesResponseItem)
@@ -479,6 +486,13 @@ export const GetAssetAnalysisResponse = zod.object({
   "newsItems": zod.array(zod.string()),
   "alerts": zod.array(zod.string()),
   "monitoringRecommendation": zod.string(),
+  "taxEstimate": zod.object({
+  "grossGain": zod.number(),
+  "taxRate": zod.number(),
+  "taxOwed": zod.number(),
+  "netGain": zod.number(),
+  "exempt": zod.boolean()
+}).nullish().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
   "updatedAt": zod.coerce.date()
 })
 
@@ -507,6 +521,13 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "newsItems": zod.array(zod.string()),
   "alerts": zod.array(zod.string()),
   "monitoringRecommendation": zod.string(),
+  "taxEstimate": zod.object({
+  "grossGain": zod.number(),
+  "taxRate": zod.number(),
+  "taxOwed": zod.number(),
+  "netGain": zod.number(),
+  "exempt": zod.boolean()
+}).nullish().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
   "updatedAt": zod.coerce.date()
 })),
   "topAlerts": zod.array(zod.object({

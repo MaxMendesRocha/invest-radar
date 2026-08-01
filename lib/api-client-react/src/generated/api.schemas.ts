@@ -438,6 +438,18 @@ export const AssetAnalysisScoreClassification = {
   Critico: 'Critico',
 } as const;
 
+/**
+ * Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível.
+ * @nullable
+ */
+export type AssetAnalysisTaxEstimate = {
+  grossGain: number;
+  taxRate: number;
+  taxOwed: number;
+  netGain: number;
+  exempt: boolean;
+} | null;
+
 export interface AssetAnalysis {
   ticker: string;
   /** False when a full fundamentalist analysis isn't available yet (pending a data source) — score/status are placeholders and should not be shown. */
@@ -450,6 +462,11 @@ export interface AssetAnalysis {
   newsItems: string[];
   alerts: string[];
   monitoringRecommendation: string;
+  /**
+     * Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível.
+     * @nullable
+     */
+  taxEstimate?: AssetAnalysisTaxEstimate;
   updatedAt: string;
 }
 
