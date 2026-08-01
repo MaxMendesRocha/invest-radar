@@ -1,72 +1,75 @@
+import { logger } from "./logger";
+
 export interface UniverseEntry {
   ticker: string;
   category: "acoes" | "fiis" | "etfs" | "bdrs";
   fallbackName: string; // só usado se getFundamentals() não trouxer o nome real
 }
 
-// Lista curada manualmente (brapi.dev não expõe "listar todos os tickers" em
-// nenhum plano) — base são os 18 tickers de scripts/src/seed-opportunities.ts,
-// mais ~30 tickers líquidos da B3 cobrindo setores que faltavam (bancos, varejo,
-// saúde, papel&celulose, siderurgia, telecom, saneamento, seguros, energia
-// elétrica, agro, construção, tecnologia). Cada ticker foi confirmado batendo
-// direto na brapi.dev antes de entrar aqui — alguns tinham código diferente do
-// esperado por mudança societária recente (ELET3→AXIA3 "AXIA Energia",
-// EMBR3→EMBJ3, JBSS3→JBSS32 "JBS N.V." após redomiciliação), e dois candidatos
-// (BCFF11, MRFG3) não existem mais na API e foram descartados em vez de
-// adivinhados. Se um ticker aqui ficar inválido no futuro, regenerateOpportunities()
-// simplesmente não encontra fundamentos pra ele e pula — nunca fabrica dado.
-export const TICKER_UNIVERSE: UniverseEntry[] = [
-  // Ações — já em seed-opportunities.ts
-  { ticker: "EGIE3", category: "acoes", fallbackName: "Engie Brasil Energia" },
-  { ticker: "WEGE3", category: "acoes", fallbackName: "WEG" },
-  { ticker: "ABEV3", category: "acoes", fallbackName: "Ambev" },
-  { ticker: "ITUB4", category: "acoes", fallbackName: "Itaú Unibanco" },
-  { ticker: "BBDC4", category: "acoes", fallbackName: "Bradesco" },
-  { ticker: "VALE3", category: "acoes", fallbackName: "Vale" },
-  { ticker: "PETR4", category: "acoes", fallbackName: "Petrobras" },
-  { ticker: "RENT3", category: "acoes", fallbackName: "Localiza" },
-  { ticker: "MGLU3", category: "acoes", fallbackName: "Magazine Luiza" },
-  // Ações — novas, confirmadas direto na brapi.dev
-  { ticker: "BBAS3", category: "acoes", fallbackName: "Banco do Brasil" },
-  { ticker: "SANB11", category: "acoes", fallbackName: "Santander Brasil" },
-  { ticker: "LREN3", category: "acoes", fallbackName: "Renner" },
-  { ticker: "HAPV3", category: "acoes", fallbackName: "Hapvida" },
-  { ticker: "FLRY3", category: "acoes", fallbackName: "Fleury" },
-  { ticker: "SUZB3", category: "acoes", fallbackName: "Suzano" },
-  { ticker: "KLBN11", category: "acoes", fallbackName: "Klabin" },
-  { ticker: "GGBR4", category: "acoes", fallbackName: "Gerdau" },
-  { ticker: "CSNA3", category: "acoes", fallbackName: "CSN" },
-  { ticker: "VIVT3", category: "acoes", fallbackName: "Telefônica Brasil" },
-  { ticker: "TIMS3", category: "acoes", fallbackName: "TIM" },
-  { ticker: "SBSP3", category: "acoes", fallbackName: "Sabesp" },
-  { ticker: "BBSE3", category: "acoes", fallbackName: "BB Seguridade" },
-  { ticker: "AXIA3", category: "acoes", fallbackName: "AXIA Energia (ex-Eletrobras)" },
-  { ticker: "CMIG4", category: "acoes", fallbackName: "Cemig" },
-  { ticker: "TAEE11", category: "acoes", fallbackName: "Taesa" },
-  { ticker: "JBSS32", category: "acoes", fallbackName: "JBS N.V." },
-  { ticker: "CYRE3", category: "acoes", fallbackName: "Cyrela" },
-  { ticker: "MRVE3", category: "acoes", fallbackName: "MRV" },
-  { ticker: "TOTS3", category: "acoes", fallbackName: "Totvs" },
-  { ticker: "EMBJ3", category: "acoes", fallbackName: "Embraer" },
-  { ticker: "B3SA3", category: "acoes", fallbackName: "B3" },
-  // FIIs
-  { ticker: "HGLG11", category: "fiis", fallbackName: "CSHG Logística" },
-  { ticker: "KNRI11", category: "fiis", fallbackName: "Kinea Renda Imobiliária" },
-  { ticker: "MXRF11", category: "fiis", fallbackName: "Maxi Renda" },
-  { ticker: "XPML11", category: "fiis", fallbackName: "XP Malls" },
-  { ticker: "BTLG11", category: "fiis", fallbackName: "BTG Pactual Logística" },
-  { ticker: "VISC11", category: "fiis", fallbackName: "Vinci Shopping Centers" },
-  { ticker: "KNCR11", category: "fiis", fallbackName: "Kinea Rendimentos Imobiliários" },
-  { ticker: "HGRE11", category: "fiis", fallbackName: "CSHG Real Estate" },
-  // ETFs
-  { ticker: "BOVA11", category: "etfs", fallbackName: "iShares Ibovespa" },
-  { ticker: "IVVB11", category: "etfs", fallbackName: "iShares S&P 500" },
-  { ticker: "SMAL11", category: "etfs", fallbackName: "iShares Small Cap" },
-  { ticker: "DIVO11", category: "etfs", fallbackName: "It Now IDIV" },
-  // BDRs
-  { ticker: "AAPL34", category: "bdrs", fallbackName: "Apple" },
-  { ticker: "MSFT34", category: "bdrs", fallbackName: "Microsoft" },
-  { ticker: "AMZO34", category: "bdrs", fallbackName: "Amazon" },
-  { ticker: "GOGL34", category: "bdrs", fallbackName: "Alphabet (Google)" },
-  { ticker: "NVDC34", category: "bdrs", fallbackName: "Nvidia" },
+const BRAPI_LIST_URL = "https://brapi.dev/api/quote/list";
+
+// Quantos tickers por categoria entram no universo de screening — limitado pra
+// manter o tempo/custo do job de regeneração (a cada 2 dias) razoável. Ordenado por
+// market cap desc, então cobre os mais relevantes/líquidos de cada categoria antes
+// de qualquer coisa obscura. Ajustável sem mudar arquitetura.
+// "acoes" pede o dobro do alvo porque ~metade dos tickers de ação no plano atual
+// são duplicatas do mercado fracionário (PETR4F = mesma empresa que PETR4),
+// filtradas depois em fetchCategory — confirmado que FIIs/ETFs/BDRs não têm esse
+// problema, então não precisam do mesmo ajuste.
+const CATEGORY_QUERIES: { category: UniverseEntry["category"]; type: string; subType?: string; limit: number }[] = [
+  { category: "acoes", type: "stock", limit: 160 },
+  { category: "fiis", type: "fund", subType: "fii", limit: 50 },
+  { category: "etfs", type: "fund", subType: "etf", limit: 15 },
+  { category: "bdrs", type: "bdr", limit: 25 },
 ];
+
+interface BrapiListStock {
+  stock: string;
+  name: string | null;
+}
+
+async function fetchCategory(query: (typeof CATEGORY_QUERIES)[number]): Promise<UniverseEntry[]> {
+  const token = process.env.BRAPI_TOKEN;
+  const params = new URLSearchParams({
+    type: query.type,
+    sortBy: "market_cap_basic",
+    sortOrder: "desc",
+    limit: String(query.limit),
+  });
+  if (query.subType) params.set("subType", query.subType);
+  const url = `${BRAPI_LIST_URL}?${params.toString()}`;
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    logger.warn({ status: response.status, category: query.category }, "brapi.dev quote/list request failed");
+    return [];
+  }
+
+  const body = (await response.json()) as { stocks?: BrapiListStock[] };
+  return (body.stocks ?? [])
+    // Tickers terminados em dígito+F são o mercado fracionário da mesma empresa
+    // (ex: PETR4 e PETR4F são a Petrobras duas vezes) — confirmado comparando o
+    // `name` de vários pares, nunca aparece em FIIs/ETFs/BDRs. Sem esse filtro a
+    // lista de oportunidades mostra a mesma empresa duplicada.
+    .filter((s) => !/\dF$/.test(s.stock))
+    .map((s) => ({
+      ticker: s.stock.toUpperCase(),
+      category: query.category,
+      fallbackName: s.name ?? s.stock,
+    }));
+}
+
+/**
+ * Universo de tickers pra screening de oportunidades, buscado ao vivo da brapi.dev
+ * (top N por market cap de cada categoria via GET /api/quote/list) em vez de uma
+ * lista fixa — elimina o risco de ticker desatualizado por evento societário (já
+ * vimos ELET3→AXIA3, EMBR3→EMBJ3, JBSS3→JBSS32 na lista curada anterior) e cobre
+ * muito mais do mercado sem manutenção manual. Retorna [] se todas as categorias
+ * falharem (provider fora do ar) — regenerateOpportunities() trata universo vazio
+ * como falha e não mexe na tabela existente, em vez de esvaziá-la.
+ */
+export async function fetchTickerUniverse(): Promise<UniverseEntry[]> {
+  const results = await Promise.all(CATEGORY_QUERIES.map(fetchCategory));
+  return results.flat();
+}
