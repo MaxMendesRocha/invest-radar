@@ -1,16 +1,43 @@
 import { useState } from "react";
-import { 
-  useListAssetAnalyses, 
+import {
+  useListAssetAnalyses,
   useGeneratePortfolioAnalysis,
-  getListAssetAnalysesQueryKey
+  getListAssetAnalysesQueryKey,
+  type AssetAnalysis,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity, Clock } from "lucide-react";
+import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity, Clock, Receipt } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/utils";
+
+function TaxBadge({ tax }: { tax: AssetAnalysis["taxEstimate"] }) {
+  if (!tax) return null;
+
+  const isLoss = tax.grossGain < 0;
+  const colorClass = isLoss
+    ? "bg-muted/40 border-border/50 text-muted-foreground"
+    : tax.exempt
+    ? "bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400"
+    : "bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400";
+
+  const label = isLoss
+    ? `Prejuízo estimado de ${formatCurrency(Math.abs(tax.grossGain))} — sem IR se vender agora`
+    : tax.exempt
+    ? `Isento de IR se vender agora (ganho de ${formatCurrency(tax.grossGain)})`
+    : `IR estimado: ${formatCurrency(tax.taxOwed)} (${(tax.taxRate * 100).toFixed(0)}%) · líquido: ${formatCurrency(tax.netGain)}`;
+
+  return (
+    <div className={`flex flex-wrap items-center gap-2 text-xs px-3 py-2 rounded-md border mb-3 ${colorClass}`}>
+      <Receipt className="w-3.5 h-3.5 shrink-0" />
+      <span className="font-medium">{label}</span>
+      <span className="text-[10px] opacity-70 sm:ml-auto">estimativa isolada, não considera outras vendas do mês</span>
+    </div>
+  );
+}
 
 const STATUS_MAP: Record<string, { color: string, label: string }> = {
   MANTER: { color: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20", label: "Manter" },
@@ -92,7 +119,7 @@ export default function Analise() {
                       </h4>
                       <ul className="space-y-1">
                         {analysis.newsItems.map((n, i) => (
-                          <li key={i} className="text-xs text-muted-foreground truncate" title={n}>- {n}</li>
+                          <li key={i} className="text-xs text-muted-foreground break-words">- {n}</li>
                         ))}
                       </ul>
                     </div>
@@ -175,13 +202,14 @@ export default function Analise() {
                           <h4 className="flex items-center gap-2 font-semibold mb-3 text-sm uppercase tracking-wider text-muted-foreground">
                             <Activity className="w-4 h-4" /> Recomendação Tática
                           </h4>
+                          <TaxBadge tax={analysis.taxEstimate} />
                           <div className="bg-muted/50 p-4 rounded-md text-sm leading-relaxed border border-border/50">
                             {analysis.monitoringRecommendation}
                           </div>
                         </div>
 
                         {(analysis.newsItems.length > 0 || analysis.alerts.length > 0) && (
-                          <div className="grid grid-cols-2 gap-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {analysis.newsItems.length > 0 && (
                               <div>
                                 <h4 className="flex items-center gap-2 font-semibold mb-2 text-xs uppercase tracking-wider text-muted-foreground">
@@ -189,7 +217,7 @@ export default function Analise() {
                                 </h4>
                                 <ul className="space-y-1">
                                   {analysis.newsItems.slice(0,2).map((n, i) => (
-                                    <li key={i} className="text-xs truncate" title={n}>- {n}</li>
+                                    <li key={i} className="text-xs break-words">- {n}</li>
                                   ))}
                                 </ul>
                               </div>
@@ -201,7 +229,7 @@ export default function Analise() {
                                 </h4>
                                 <ul className="space-y-1">
                                   {analysis.alerts.slice(0,2).map((a, i) => (
-                                    <li key={i} className="text-xs text-orange-600 dark:text-orange-400 truncate" title={a}>- {a}</li>
+                                    <li key={i} className="text-xs text-orange-600 dark:text-orange-400 break-words">- {a}</li>
                                   ))}
                                 </ul>
                               </div>

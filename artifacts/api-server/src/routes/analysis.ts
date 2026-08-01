@@ -192,10 +192,10 @@ function serializePersisted(row: typeof analysesTable.$inferSelect) {
     newsItems: JSON.parse(row.newsItems) as string[],
     alerts: JSON.parse(row.alerts) as string[],
     monitoringRecommendation: row.monitoringRecommendation,
-    // Não persistido (o preço no momento da venda muda todo dia) — só POST
-    // /analysis/generate calcula na hora. Presente como null aqui pra manter o
-    // shape consistente com as outras rotas.
-    taxEstimate: null as TaxEstimate | null,
+    // Persistido no momento do POST /analysis/generate (preço daquele instante) —
+    // fica parado até a próxima geração, igual ao resto da análise (score,
+    // positivos, riscos). Não recalculado a cada leitura.
+    taxEstimate: row.taxEstimate ? (JSON.parse(row.taxEstimate) as TaxEstimate) : null,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -355,6 +355,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         newsItems: JSON.stringify(newsItems),
         alerts: JSON.stringify(analysis.risks.length > 0 ? [analysis.risks[0]] : []),
         monitoringRecommendation: analysis.monitoringRecommendation,
+        taxEstimate: tax ? JSON.stringify(tax) : null,
       });
     })
   );

@@ -66,7 +66,7 @@ export default function Oportunidades() {
                     <CardTitle className="text-2xl font-mono">{opp.ticker}</CardTitle>
                     <Badge variant="outline" className="text-[10px]">{opp.category}</Badge>
                   </div>
-                  <p className="text-sm text-muted-foreground font-medium truncate" title={opp.name}>{opp.name}</p>
+                  <p className="text-sm text-muted-foreground font-medium break-words">{opp.name}</p>
                 </div>
               </CardHeader>
               <CardContent className="flex-1 space-y-4">
@@ -96,7 +96,7 @@ export default function Oportunidades() {
                 </div>
 
                 <div>
-                  <p className="text-sm font-medium mb-1 line-clamp-2">{opp.reason}</p>
+                  <p className="text-sm font-medium mb-1">{opp.reason}</p>
                   <div className="flex items-center gap-2 text-xs mt-2">
                     <span className="text-muted-foreground">Risco:</span>
                     <Badge variant={RISK_MAP[opp.riskLevel] as any} className="h-5 px-1.5 text-[10px] uppercase">
@@ -111,7 +111,7 @@ export default function Oportunidades() {
                   {opp.positives.slice(0,2).map((p, i) => (
                     <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
                       <ArrowRight className="w-3 h-3 mt-0.5 shrink-0 text-primary" />
-                      <span className="line-clamp-1">{p}</span>
+                      <span>{p}</span>
                     </div>
                   ))}
                 </div>
