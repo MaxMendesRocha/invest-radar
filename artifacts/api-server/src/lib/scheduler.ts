@@ -48,11 +48,22 @@ export async function runJobAndRecord(job: JobDefinition): Promise<{ summary: st
   }
 }
 
+// Roda dentro de um timer solto (setTimeout/setInterval em startScheduler), sem
+// nenhuma request HTTP esperando por ela — uma exceção não capturada aqui vira uma
+// unhandled rejection e derruba o processo Node INTEIRO (Node 15+ mata o processo
+// por padrão), tirando do ar toda a API por causa de um job em segundo plano. Já
+// aconteceu de verdade em produção: job_runs sumiu do banco, a query de
+// maybeRunJob rejeitou sem try/catch, e isso matou o servidor num loop de crash.
+// Por isso TUDO aqui dentro precisa ficar contido, sem exceção.
 async function maybeRunJob(job: JobDefinition): Promise<void> {
-  const [row] = await db.select().from(jobRunsTable).where(eq(jobRunsTable.jobName, job.name));
-  if (row?.lastRunAt && Date.now() - row.lastRunAt.getTime() < job.minGapMs) return;
+  try {
+    const [row] = await db.select().from(jobRunsTable).where(eq(jobRunsTable.jobName, job.name));
+    if (row?.lastRunAt && Date.now() - row.lastRunAt.getTime() < job.minGapMs) return;
 
-  await runJobAndRecord(job).catch(() => {}); // já logado dentro de runJobAndRecord
+    await runJobAndRecord(job).catch(() => {}); // já logado dentro de runJobAndRecord
+  } catch (err) {
+    logger.error({ err, job: job.name }, "maybeRunJob falhou fora do runJobAndRecord — job pulado, servidor segue no ar");
+  }
 }
 
 /**
