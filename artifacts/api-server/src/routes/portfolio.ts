@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, assetsTable, transactionsTable } from "@workspace/db";
+import { db, assetsTable, transactionsTable, investorProfilesTable } from "@workspace/db";
 import { eq, sum } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents } from "../lib/market-data";
@@ -210,6 +210,8 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
           growth,
           composition,
           macro: await getMacroSnapshot().then((m) => ({ selic: m.selic, selicTrend: m.selicTrend, ipca12m: m.ipca12m })),
+          investorProfile: await db.select().from(investorProfilesTable).where(eq(investorProfilesTable.userId, req.session.userId!))
+            .then(([p]) => p?.classification ?? null),
         })
       : null;
 
