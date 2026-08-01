@@ -302,7 +302,8 @@ export const GetPortfolioHealthResponse = zod.object({
   "risk": zod.number(),
   "dividends": zod.number(),
   "growth": zod.number(),
-  "concentration": zod.number()
+  "concentration": zod.number(),
+  "aiDiagnosis": zod.string().nullish()
 })
 
 

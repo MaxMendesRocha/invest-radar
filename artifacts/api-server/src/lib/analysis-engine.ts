@@ -57,14 +57,14 @@ function evalMargin(margin: number | null): MetricEval | null {
   return { score: 35, risk: "Margens líquidas reduzidas" };
 }
 
-function evalDividendYield(dy: number | null): MetricEval | null {
+export function evalDividendYield(dy: number | null): MetricEval | null {
   if (dy == null) return null;
   if (dy >= 0.06) return { score: 85, positive: "Dividend yield acima da média do mercado" };
   if (dy >= 0.03) return { score: 60 };
   return { score: 45 };
 }
 
-function evalRevenueGrowth(growth: number | null): MetricEval | null {
+export function evalRevenueGrowth(growth: number | null): MetricEval | null {
   if (growth == null) return null;
   if (growth >= 0.05) return { score: 80, positive: "Crescimento de receita consistente" };
   if (growth >= -0.05) return { score: 55 };
@@ -79,7 +79,7 @@ function evalTrend(change52w: number | null): MetricEval | null {
   return { score: 25, risk: "Forte desvalorização nos últimos 12 meses" };
 }
 
-function evalVolatility(beta: number | null): MetricEval | null {
+export function evalVolatility(beta: number | null): MetricEval | null {
   if (beta == null) return null;
   if (beta <= 0.7) return { score: 85, positive: "Baixa volatilidade frente ao mercado (beta baixo)" };
   if (beta <= 1.2) return { score: 65 };
