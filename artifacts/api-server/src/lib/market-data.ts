@@ -198,10 +198,13 @@ interface BrapiV2Result {
   data?: BrapiV2Period[];
 }
 
-// Endpoints v2 (diferentes do /api/quote v1) — trazem o balanço patrimonial e a DRE
-// reportados de verdade (padrão CVM), com o ano mais recente primeiro em `data[]`.
-// Ao contrário do v1, aceitam vários tickers numa única chamada (?symbols=A,B,C).
-async function fetchV2Statements(
+// Plano atual da brapi.dev limita os endpoints v2 a 10 tickers por chamada —
+// pedir mais devolve erro QUOTES_PER_REQUEST_EXCEEDED (sem `results`), o que sem
+// esse chunking faria a lista inteira ficar sem dado nenhum silenciosamente pra
+// carteiras/telas com mais de 10 ativos cotados.
+const V2_BATCH_SIZE = 10;
+
+async function fetchV2StatementsBatch(
   tickers: string[],
   path: "balance-sheet" | "income-statement",
 ): Promise<Map<string, BrapiV2Period[]>> {
@@ -221,6 +224,27 @@ async function fetchV2Statements(
   const body = (await response.json()) as { results?: BrapiV2Result[] };
   for (const item of body.results ?? []) {
     if (item.data && item.data.length > 0) result.set(item.symbol.toUpperCase(), item.data);
+  }
+  return result;
+}
+
+// Endpoints v2 (diferentes do /api/quote v1) — trazem o balanço patrimonial e a DRE
+// reportados de verdade (padrão CVM), com o ano mais recente primeiro em `data[]`.
+// Ao contrário do v1, aceitam vários tickers numa única chamada, até o limite de
+// V2_BATCH_SIZE do plano atual — daí o chunking em lotes, em paralelo.
+async function fetchV2Statements(
+  tickers: string[],
+  path: "balance-sheet" | "income-statement",
+): Promise<Map<string, BrapiV2Period[]>> {
+  const result = new Map<string, BrapiV2Period[]>();
+  const batches: string[][] = [];
+  for (let i = 0; i < tickers.length; i += V2_BATCH_SIZE) {
+    batches.push(tickers.slice(i, i + V2_BATCH_SIZE));
+  }
+
+  const batchResults = await Promise.all(batches.map((batch) => fetchV2StatementsBatch(batch, path)));
+  for (const batchResult of batchResults) {
+    for (const [ticker, periods] of batchResult) result.set(ticker, periods);
   }
   return result;
 }

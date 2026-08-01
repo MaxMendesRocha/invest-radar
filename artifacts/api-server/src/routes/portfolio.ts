@@ -2,9 +2,12 @@ import { Router, type IRouter } from "express";
 import { db, assetsTable, transactionsTable } from "@workspace/db";
 import { eq, sum } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, sectorFor } from "../lib/market-data";
+import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES } from "../lib/market-data";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
 import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
+import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/analysis-engine";
+import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
+import { getMacroSnapshot } from "../lib/macro-data";
 
 const router: IRouter = Router();
 
@@ -128,9 +131,61 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
   // for having no portfolio at all (that was a bug: an empty carteira showed Score 34).
   const diversification = assets.length > 0 ? Math.min(100, categories.size * 15 + sectors.size * 8) : 0;
   const concentration = assets.length > 0 ? Math.max(0, 100 - (100 / assets.length) * 2) : 0;
-  const risk = assets.length > 0 ? (assets.some(a => a.category === "acoes") ? 60 : 80) : 0;
-  const dividends = assets.length > 0 ? (assets.some(a => a.category === "fiis" || a.category === "acoes") ? 72 : 50) : 0;
-  const growth = assets.length > 0 ? 68 : 0;
+
+  const prices = await getPricesFor(assets);
+  const fundamentalsByTicker = await getFundamentals(
+    assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker)
+  );
+
+  // Risco/dividendos/crescimento são médias ponderadas pelo valor de cada posição,
+  // usando os mesmos buckets de evalVolatility/evalDividendYield/evalRevenueGrowth do
+  // motor de análise — só ativos com dado real contribuem peso; um ativo sem
+  // fundamentos disponível simplesmente não pesa nessa dimensão, nunca herda um valor
+  // chutado. Renda fixa não tem beta, mas segue o mesmo mapeamento de baixo risco já
+  // usado em /portfolio/distribution.
+  let totalValue = 0;
+  let riskWeighted = 0, riskWeight = 0;
+  let dividendsWeighted = 0, dividendsWeight = 0;
+  let growthWeighted = 0, growthWeight = 0;
+  const composition: { ticker: string; category: string; percent: number }[] = [];
+
+  for (const a of assets) {
+    const qty = parseFloat(a.quantity);
+    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const value = qty * price;
+    totalValue += value;
+    composition.push({ ticker: a.ticker, category: a.category, percent: 0 }); // percent preenchido depois de somar totalValue
+
+    const fundamentals = fundamentalsByTicker.get(a.ticker.toUpperCase());
+
+    if (a.category === "renda_fixa") {
+      riskWeighted += 85 * value; // mesmo score de baixa-volatilidade usado pra beta baixo
+      riskWeight += value;
+    } else {
+      const volatility = fundamentals ? evalVolatility(fundamentals.beta) : null;
+      if (volatility) { riskWeighted += volatility.score * value; riskWeight += value; }
+    }
+
+    const dividendYield = fundamentals ? evalDividendYield(fundamentals.dividendYield) : null;
+    if (dividendYield) { dividendsWeighted += dividendYield.score * value; dividendsWeight += value; }
+
+    const revenueGrowth = fundamentals ? evalRevenueGrowth(fundamentals.revenueGrowth) : null;
+    if (revenueGrowth) { growthWeighted += revenueGrowth.score * value; growthWeight += value; }
+  }
+
+  for (const c of composition) {
+    const a = assets.find((x) => x.ticker === c.ticker)!;
+    const qty = parseFloat(a.quantity);
+    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    c.percent = totalValue > 0 ? ((qty * price) / totalValue) * 100 : 0;
+  }
+
+  // Sem nenhum dado real disponível pra pesar a dimensão, cai num neutro documentado
+  // (mesmos valores do fallback anterior) em vez de inventar — só acontece se o
+  // provider falhar pra todos os ativos cotados da carteira.
+  const risk = riskWeight > 0 ? Math.round(riskWeighted / riskWeight) : assets.length > 0 ? 60 : 0;
+  const dividends = dividendsWeight > 0 ? Math.round(dividendsWeighted / dividendsWeight) : assets.length > 0 ? 50 : 0;
+  const growth = growthWeight > 0 ? Math.round(growthWeighted / growthWeight) : assets.length > 0 ? 55 : 0;
 
   const score = Math.round((diversification * 0.25 + concentration * 0.25 + risk * 0.2 + dividends * 0.15 + growth * 0.15));
 
@@ -140,7 +195,22 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
   else if (score >= 45) classification = "Regular";
   else classification = "Ruim";
 
-  res.json({ score, classification, diversification, risk, dividends, growth, concentration });
+  const aiDiagnosis =
+    assets.length > 0
+      ? await synthesizePortfolioDiagnosis({
+          score,
+          classification,
+          diversification,
+          concentration,
+          risk,
+          dividends,
+          growth,
+          composition,
+          macro: await getMacroSnapshot().then((m) => ({ selic: m.selic, selicTrend: m.selicTrend, ipca12m: m.ipca12m })),
+        })
+      : null;
+
+  res.json({ score, classification, diversification, risk, dividends, growth, concentration, aiDiagnosis });
 });
 
 router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void> => {

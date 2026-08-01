@@ -1,8 +1,11 @@
 import { db, pool, opportunitiesTable, type InsertOpportunity } from "@workspace/db";
 
-// Curated shortlist — not live-fetched fundamentals. Numbers are illustrative,
-// meant to give the Oportunidades screen something real to rank instead of an
-// empty table. Revisit once Fase 2 (real analysis engine) lands.
+// Curated shortlist — not live-fetched fundamentals, numbers are illustrative.
+// Superseded in production by lib/opportunities-engine.ts's regenerateOpportunities()
+// (real fundamentals, runs every 2 days via lib/scheduler.ts). This script is now
+// just a manual bootstrap — useful for a fresh DB or local dev without
+// BRAPI_TOKEN/ANTHROPIC_API_KEY configured, so the Oportunidades screen has
+// something to show before the real job ever runs.
 const OPPORTUNITIES: InsertOpportunity[] = [
   {
     ticker: "EGIE3", name: "Engie Brasil Energia", category: "acoes",

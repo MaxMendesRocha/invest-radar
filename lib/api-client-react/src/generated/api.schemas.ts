@@ -294,6 +294,8 @@ export interface PortfolioHealth {
   dividends: number;
   growth: number;
   concentration: number;
+  /** @nullable */
+  aiDiagnosis?: string | null;
 }
 
 export interface BenchmarkPoint {
