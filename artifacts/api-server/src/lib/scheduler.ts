@@ -34,13 +34,21 @@ export async function runJobAndRecord(job: JobDefinition): Promise<{ summary: st
     logger.info({ job: job.name, summary: result.summary }, "Job agendado executado com sucesso");
     return result;
   } catch (err) {
-    await db
-      .insert(jobRunsTable)
-      .values({ jobName: job.name, lastRunAt: new Date(), lastStatus: "erro", lastError: String(err) })
-      .onConflictDoUpdate({
-        target: jobRunsTable.jobName,
-        set: { lastRunAt: new Date(), lastStatus: "erro", lastError: String(err) },
-      });
+    // Best-effort: já vimos em produção o próprio insert de registro de erro
+    // colidir (upsert concorrente de duas instâncias durante um deploy) e
+    // mascarar o erro original com uma falha de escrita — nunca deixar essa
+    // gravação secundária sobrescrever ou impedir o `throw err` abaixo.
+    try {
+      await db
+        .insert(jobRunsTable)
+        .values({ jobName: job.name, lastRunAt: new Date(), lastStatus: "erro", lastError: String(err) })
+        .onConflictDoUpdate({
+          target: jobRunsTable.jobName,
+          set: { lastRunAt: new Date(), lastStatus: "erro", lastError: String(err) },
+        });
+    } catch (recordErr) {
+      logger.warn({ err: recordErr, job: job.name }, "Falha ao registrar erro do job em job_runs (ignorado)");
+    }
     logger.error({ err, job: job.name }, "Job agendado falhou");
     throw err;
   } finally {
