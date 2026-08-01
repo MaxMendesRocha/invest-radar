@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startScheduler } from "./lib/scheduler";
+import { OPPORTUNITIES_JOB } from "./lib/opportunities-engine";
 
 const rawPort = process.env["PORT"];
 
@@ -23,3 +25,5 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 });
+
+startScheduler([OPPORTUNITIES_JOB]);
