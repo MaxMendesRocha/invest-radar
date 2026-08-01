@@ -15,6 +15,7 @@ import {
 import { analysisForUnquotedAsset, pendingAnalysis, analyzeFundamentals, type AnalysisResult } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
+import { synthesizeAssetRecommendation } from "../lib/analysis-ai";
 
 const router: IRouter = Router();
 
@@ -292,8 +293,23 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   // ones have nothing real to save yet and shouldn't spam the Radar.
   const available = analyses.filter((a) => a.available);
 
+  // Buscado aqui (não só lá embaixo pros macroAlerts) porque a síntese via IA de cada
+  // ativo também usa o cenário macro como parte do contexto real que ela recebe.
+  const macro = await getMacroSnapshot();
+
   for (const analysis of available) {
     const newsItems = (newsByTicker.get(analysis.ticker) ?? []).map(formatHeadline);
+    const aiRecommendation = await synthesizeAssetRecommendation({
+      ticker: analysis.ticker,
+      score: analysis.score,
+      scoreClassification: analysis.scoreClassification,
+      status: analysis.status,
+      positives: analysis.positives,
+      risks: analysis.risks,
+      newsItems,
+      macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
+    });
+
     await db.insert(analysesTable).values({
       userId: req.session.userId!,
       ticker: analysis.ticker,
@@ -304,7 +320,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       risks: JSON.stringify(analysis.risks),
       newsItems: JSON.stringify(newsItems),
       alerts: JSON.stringify(analysis.risks.length > 0 ? [analysis.risks[0]] : []),
-      monitoringRecommendation: analysis.monitoringRecommendation,
+      monitoringRecommendation: aiRecommendation ?? analysis.monitoringRecommendation,
     });
   }
 
@@ -337,7 +353,6 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       }))
   );
 
-  const macro = await getMacroSnapshot();
   const macroAlerts: AlertToInsert[] = [];
   if (macro.ipca12m != null && macro.ipca12m > 4.5) {
     macroAlerts.push({
