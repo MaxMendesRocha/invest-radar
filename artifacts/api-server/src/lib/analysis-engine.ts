@@ -128,12 +128,9 @@ const NOT_QUOTED_RESULT: AnalysisResult = {
   monitoringRecommendation: "Ativo de renda fixa ou fundo sem ticker de bolsa — fora do escopo da análise fundamentalista automatizada.",
 };
 
-// P/VP, ROE, endividamento, margens e DY exigem o plano pago da brapi.dev
-// (?modules=defaultKeyStatistics,financialData); no plano atual essa chamada
-// falha com MODULES_NOT_AVAILABLE para qualquer ticker fora dos 4 liberados
-// para teste (PETR4, VALE3, ITUB4, MGLU3). Até decidirmos a fonte de dados
-// (upgrade de plano, CVM direto, ou outro provedor), a análise mostra "Em breve"
-// em vez de fingir um score completo — ver `computeAnalysis` em routes/analysis.ts.
+// Fallback pra quando getFundamentals() não devolve dado real pra um ticker
+// específico (falha pontual do provider, ticker sem cobertura) — "Em breve" em vez
+// de fingir um score completo. Ver `computeAnalysis` em routes/analysis.ts.
 const PENDING_RESULT: AnalysisResult = {
   available: false,
   score: 0,
@@ -141,7 +138,7 @@ const PENDING_RESULT: AnalysisResult = {
   status: "MANTER",
   positives: [],
   risks: [],
-  monitoringRecommendation: "Análise fundamentalista completa (P/L, P/VP, ROE, endividamento, margens) em breve — aguardando definição da fonte de dados.",
+  monitoringRecommendation: "Não foi possível obter os fundamentos deste ativo agora — tente gerar a análise novamente em alguns minutos.",
 };
 
 export function analysisForUnquotedAsset(): AnalysisResult {
@@ -159,9 +156,9 @@ export function pendingAnalysis(): AnalysisResult {
  * Notícias/Macro don't have a real data source yet (Fase 3), so they score neutral (60)
  * instead of being faked — Tendência (variação 12m) and Volatilidade (beta) are real.
  *
- * NOT CURRENTLY CALLED from routes/analysis.ts — kept ready for when the fundamentals
- * data source is decided (see PENDING_RESULT above). Requires the paid brapi.dev plan
- * for most of its inputs, which we don't have.
+ * Called from routes/analysis.ts via computeAnalysis(), fed by market-data.ts's
+ * getFundamentals() (brapi.dev — ver o comentário lá sobre como ROE/dívida-patrimônio/
+ * crescimento são calculados a partir do balanço e DRE reais, não do módulo pago).
  */
 export function analyzeFundamentals(f: Fundamentals): AnalysisResult {
   const fundamentalMetrics = [
