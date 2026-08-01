@@ -1,9 +1,10 @@
 import { useState, useMemo, type FormEvent } from "react";
-import { 
+import {
   useListTransactions,
   useCreateTransaction,
   useDeleteTransaction,
   useGetPortfolioSummary,
+  useGetPortfolioDividendsUpcoming,
   getListTransactionsQueryKey,
   getGetPortfolioSummaryQueryKey
 } from "@workspace/api-client-react";
@@ -13,15 +14,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
+import { Badge } from "@/components/ui/badge";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
-import { 
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger 
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
-import { Plus, Trash2, Coins, ArrowUpRight } from "lucide-react";
+import { Plus, Trash2, Coins, ArrowUpRight, CalendarClock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const TYPE_MAP: Record<string, string> = {
@@ -34,6 +36,7 @@ const TYPE_MAP: Record<string, string> = {
 export default function Dividendos() {
   const { data: summary } = useGetPortfolioSummary({ query: { queryKey: getGetPortfolioSummaryQueryKey() } });
   const { data: transactions, isLoading } = useListTransactions({ query: { queryKey: getListTransactionsQueryKey() } });
+  const { data: upcomingDividends, isLoading: isLoadingUpcoming } = useGetPortfolioDividendsUpcoming();
   
   const [isOpen, setIsOpen] = useState(false);
   const [ticker, setTicker] = useState("");
@@ -158,6 +161,50 @@ export default function Dividendos() {
           </DialogContent>
         </Dialog>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CalendarClock className="w-4 h-4 text-muted-foreground" />
+            Próximos Pagamentos
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoadingUpcoming ? (
+            <p className="text-sm text-muted-foreground">Carregando...</p>
+          ) : !upcomingDividends || upcomingDividends.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhum pagamento futuro confirmado pelo provedor de dados no momento para os ativos da sua carteira.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {upcomingDividends.map((d, i) => (
+                <div
+                  key={`${d.ticker}-${d.paymentDate}-${i}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/50 px-3 py-2 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <span className="font-bold shrink-0">{d.ticker}</span>
+                    <span className="text-muted-foreground shrink-0">{d.label}</span>
+                    <span className="text-muted-foreground shrink-0">
+                      {new Date(d.paymentDate).toLocaleDateString("pt-BR")}
+                    </span>
+                    <Badge variant={d.confirmed ? "default" : "outline"} className="shrink-0">
+                      {d.confirmed ? "Confirmado" : "Previsto"}
+                    </Badge>
+                  </div>
+                  <span className="font-mono font-medium text-primary shrink-0">
+                    {formatCurrency(d.expectedAmount)}
+                  </span>
+                </div>
+              ))}
+              <p className="text-[10px] text-muted-foreground pt-1">
+                Valores estimados com base na quantidade atual do ativo e no provento anunciado pelo provedor de dados — "Previsto" ainda não foi formalizado em ata.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>

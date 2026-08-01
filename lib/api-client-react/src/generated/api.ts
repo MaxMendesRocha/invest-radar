@@ -41,6 +41,7 @@ import type {
   SuccessResponse,
   Transaction,
   TransactionInput,
+  UpcomingDividend,
   User,
   UserLoginInput,
   UserRegisterInput
@@ -1329,6 +1330,83 @@ export function useGetPortfolioBenchmarks<TData = Awaited<ReturnType<typeof getP
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPortfolioBenchmarksQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPortfolioDividendsUpcomingUrl = () => {
+
+
+
+
+  return `/api/portfolio/dividends/upcoming`
+}
+
+/**
+ * @summary Upcoming dividend/JCP payments for assets currently held, based on real provider data
+ */
+export const getPortfolioDividendsUpcoming = async ( options?: RequestInit): Promise<UpcomingDividend[]> => {
+
+  return customFetch<UpcomingDividend[]>(getGetPortfolioDividendsUpcomingUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPortfolioDividendsUpcomingQueryKey = () => {
+    return [
+    `/api/portfolio/dividends/upcoming`
+    ] as const;
+    }
+
+
+export const getGetPortfolioDividendsUpcomingQueryOptions = <TData = Awaited<ReturnType<typeof getPortfolioDividendsUpcoming>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolioDividendsUpcoming>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPortfolioDividendsUpcomingQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPortfolioDividendsUpcoming>>> = ({ signal }) => getPortfolioDividendsUpcoming({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPortfolioDividendsUpcoming>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPortfolioDividendsUpcomingQueryResult = NonNullable<Awaited<ReturnType<typeof getPortfolioDividendsUpcoming>>>
+export type GetPortfolioDividendsUpcomingQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Upcoming dividend/JCP payments for assets currently held, based on real provider data
+ */
+
+export function useGetPortfolioDividendsUpcoming<TData = Awaited<ReturnType<typeof getPortfolioDividendsUpcoming>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolioDividendsUpcoming>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPortfolioDividendsUpcomingQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

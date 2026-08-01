@@ -365,6 +365,8 @@ export function sectorFor(asset: { ticker: string; sector: string | null }, real
 export interface DividendEvent {
   paymentDate: string; // ISO
   rate: number; // valor por cota/ação, em R$
+  label: string; // "DIVIDENDO" | "JCP" | "RENDIMENTO" etc., como vem da brapi.dev
+  approvedOn: string | null; // ISO da aprovação em ata; null = ainda não formalizado (ou fora do que a brapi rastreia, caso dos FIIs)
 }
 
 const DIVIDEND_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // anúncio de provento não muda de hora em hora
@@ -372,7 +374,7 @@ const dividendCache = new Map<string, { events: DividendEvent[]; fetchedAt: numb
 
 interface BrapiStockDividendsResult {
   symbol: string;
-  data?: { cashDividends?: { paymentDate: string; rate: number }[] };
+  data?: { cashDividends?: { paymentDate: string; rate: number; label: string; approvedOn: string | null }[] };
 }
 
 async function fetchStockDividendsBatch(tickers: string[]): Promise<Map<string, DividendEvent[]>> {
@@ -391,7 +393,9 @@ async function fetchStockDividendsBatch(tickers: string[]): Promise<Map<string, 
 
   const body = (await response.json()) as { results?: BrapiStockDividendsResult[] };
   for (const item of body.results ?? []) {
-    const events = (item.data?.cashDividends ?? []).map((d) => ({ paymentDate: d.paymentDate, rate: d.rate }));
+    const events = (item.data?.cashDividends ?? []).map((d) => ({
+      paymentDate: d.paymentDate, rate: d.rate, label: d.label, approvedOn: d.approvedOn ?? null,
+    }));
     result.set(item.symbol.toUpperCase(), events);
   }
   return result;
@@ -411,8 +415,11 @@ async function fetchFiiDividends(ticker: string): Promise<DividendEvent[]> {
   const response = await fetch(url, { headers });
   if (!response.ok) return [];
 
-  const body = (await response.json()) as { dividends?: { paymentDate: string; rate: number }[] };
-  return (body.dividends ?? []).map((d) => ({ paymentDate: d.paymentDate, rate: d.rate }));
+  const body = (await response.json()) as { dividends?: { paymentDate: string; rate: number; label: string; approvedOn: string | null }[] };
+  // approvedOn vem sempre null nesse endpoint (dado importado de CSV, ver comentário
+  // acima) — mesmo pra pagamentos já ocorridos no passado, então não serve pra
+  // distinguir "confirmado" de "previsto" em FIIs como serve pra ações.
+  return (body.dividends ?? []).map((d) => ({ paymentDate: d.paymentDate, rate: d.rate, label: d.label, approvedOn: d.approvedOn ?? null }));
 }
 
 /**

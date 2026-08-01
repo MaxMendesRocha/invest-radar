@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, assetsTable, transactionsTable } from "@workspace/db";
 import { eq, sum } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES } from "../lib/market-data";
+import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents } from "../lib/market-data";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
 import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
 import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/analysis-engine";
@@ -214,6 +214,39 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
       : null;
 
   res.json({ score, classification, diversification, risk, dividends, growth, concentration, aiDiagnosis });
+});
+
+// Cruza os eventos de provento já buscados (getDividendEvents, mesma fonte usada em
+// POST /analysis/generate pro total dos últimos 12 meses) com a quantidade atual de
+// cada ativo, filtrando só paymentDate futuro. "confirmed" reflete approvedOn: quando
+// a brapi já tem a aprovação em ata registrada é um valor formalizado; quando vem null
+// é só um cronograma projetado (ou, no caso de FIIs, um campo que a brapi não rastreia
+// nesse endpoint — nunca tratado como confirmado nesse caso, por segurança).
+router.get("/portfolio/dividends/upcoming", requireAuth, async (req, res): Promise<void> => {
+  const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
+  const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
+
+  const now = Date.now();
+  const upcoming: { ticker: string; paymentDate: string; label: string; rate: number; expectedAmount: number; confirmed: boolean }[] = [];
+
+  for (const a of assets) {
+    const qty = parseFloat(a.quantity);
+    const events = dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [];
+    for (const event of events) {
+      if (new Date(event.paymentDate).getTime() <= now) continue;
+      upcoming.push({
+        ticker: a.ticker,
+        paymentDate: event.paymentDate,
+        label: event.label,
+        rate: event.rate,
+        expectedAmount: Math.round(event.rate * qty * 100) / 100,
+        confirmed: event.approvedOn !== null,
+      });
+    }
+  }
+
+  upcoming.sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime());
+  res.json(upcoming);
 });
 
 router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void> => {
