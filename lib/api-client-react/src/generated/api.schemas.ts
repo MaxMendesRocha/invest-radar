@@ -298,6 +298,15 @@ export interface PortfolioHealth {
   aiDiagnosis?: string | null;
 }
 
+export interface UpcomingDividend {
+  ticker: string;
+  paymentDate: string;
+  label: string;
+  rate: number;
+  expectedAmount: number;
+  confirmed: boolean;
+}
+
 export interface BenchmarkPoint {
   label: string;
   portfolio: number;

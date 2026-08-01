@@ -53,6 +53,7 @@ export * from './transaction';
 export * from './transactionInput';
 export * from './transactionInputType';
 export * from './transactionType';
+export * from './upcomingDividend';
 export * from './user';
 export * from './userLoginInput';
 export * from './userRegisterInput';

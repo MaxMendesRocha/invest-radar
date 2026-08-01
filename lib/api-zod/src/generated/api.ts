@@ -326,6 +326,20 @@ export const GetPortfolioBenchmarksResponse = zod.object({
 
 
 /**
+ * @summary Upcoming dividend/JCP payments for assets currently held, based on real provider data
+ */
+export const GetPortfolioDividendsUpcomingResponseItem = zod.object({
+  "ticker": zod.string(),
+  "paymentDate": zod.string(),
+  "label": zod.string(),
+  "rate": zod.number(),
+  "expectedAmount": zod.number(),
+  "confirmed": zod.boolean()
+})
+export const GetPortfolioDividendsUpcomingResponse = zod.array(GetPortfolioDividendsUpcomingResponseItem)
+
+
+/**
  * @summary List radar alerts
  */
 export const ListAlertsResponseItem = zod.object({

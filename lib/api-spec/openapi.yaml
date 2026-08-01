@@ -349,6 +349,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/BenchmarkComparison"
 
+  /portfolio/dividends/upcoming:
+    get:
+      operationId: getPortfolioDividendsUpcoming
+      tags: [portfolio]
+      summary: Upcoming dividend/JCP payments for assets currently held, based on real provider data
+      responses:
+        "200":
+          description: List of upcoming dividend events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UpcomingDividend"
+
   # ─── ALERTS ──────────────────────────────────────────────────────────────────
   /alerts:
     get:
@@ -822,6 +837,23 @@ components:
           type: number
         aiDiagnosis:
           type: [string, "null"]
+
+    UpcomingDividend:
+      type: object
+      required: [ticker, paymentDate, label, rate, expectedAmount, confirmed]
+      properties:
+        ticker:
+          type: string
+        paymentDate:
+          type: string
+        label:
+          type: string
+        rate:
+          type: number
+        expectedAmount:
+          type: number
+        confirmed:
+          type: boolean
 
     BenchmarkPoint:
       type: object
