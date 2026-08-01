@@ -997,6 +997,21 @@ components:
             type: string
         monitoringRecommendation:
           type: string
+        taxEstimate:
+          type: [object, "null"]
+          description: Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível.
+          properties:
+            grossGain:
+              type: number
+            taxRate:
+              type: number
+            taxOwed:
+              type: number
+            netGain:
+              type: number
+            exempt:
+              type: boolean
+          required: [grossGain, taxRate, taxOwed, netGain, exempt]
         updatedAt:
           type: string
           format: date-time

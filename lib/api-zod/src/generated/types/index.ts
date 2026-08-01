@@ -13,6 +13,7 @@ export * from './asset';
 export * from './assetAnalysis';
 export * from './assetAnalysisScoreClassification';
 export * from './assetAnalysisStatus';
+export * from './assetAnalysisTaxEstimate';
 export * from './assetCategory';
 export * from './assetInput';
 export * from './assetInputCategory';
