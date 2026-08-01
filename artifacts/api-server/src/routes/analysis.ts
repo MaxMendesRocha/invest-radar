@@ -16,8 +16,9 @@ import {
 import { analysisForUnquotedAsset, pendingAnalysis, analyzeFundamentals, type AnalysisResult } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
-import { synthesizeAssetRecommendation } from "../lib/analysis-ai";
+import { synthesizeAssetRecommendation, type DividendTrend } from "../lib/analysis-ai";
 import { estimateCapitalGainsTax, type TaxEstimate } from "../lib/tax-engine";
+import type { DividendEvent } from "../lib/market-data";
 
 const router: IRouter = Router();
 
@@ -273,6 +274,39 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
   res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker), newsItems));
 });
 
+// Compara a soma de proventos pagos nos últimos 12 meses com os 12 meses anteriores
+// a esses, a partir do histórico real já buscado (getDividendEvents) — nunca projeta
+// nem estima nada, só retorna null quando não há pelo menos um evento real em cada
+// uma das duas janelas (histórico curto demais pra dizer se está crescendo ou não).
+function computeDividendTrend(events: DividendEvent[], now: number): DividendTrend | null {
+  const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+  let last12mTotal = 0;
+  let prior12mTotal = 0;
+  let hasLast12m = false;
+  let hasPrior12m = false;
+
+  for (const event of events) {
+    const paidAt = new Date(event.paymentDate).getTime();
+    if (paidAt > now) continue; // eventos futuros (ver /portfolio/dividends/upcoming) não contam pra tendência histórica
+    const ageMs = now - paidAt;
+    if (ageMs <= ONE_YEAR_MS) {
+      last12mTotal += event.rate;
+      hasLast12m = true;
+    } else if (ageMs <= ONE_YEAR_MS * 2) {
+      prior12mTotal += event.rate;
+      hasPrior12m = true;
+    }
+  }
+
+  if (!hasLast12m || !hasPrior12m || prior12mTotal === 0) return null;
+
+  return {
+    last12mTotal,
+    prior12mTotal,
+    growthPercent: ((last12mTotal - prior12mTotal) / prior12mTotal) * 100,
+  };
+}
+
 router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
 
@@ -310,9 +344,20 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   const macro = await getMacroSnapshot();
 
   // Movido pra antes do loop de IA (o resto do handler só precisava dele mais
-  // embaixo) porque o cálculo de IR precisa do preço atual de cada ativo.
+  // embaixo) porque o cálculo de IR e de % de concentração precisam do preço atual
+  // de cada ativo.
   const prices = await getPricesFor(assets);
   const assetsByTicker = new Map(assets.map((a) => [a.ticker.toUpperCase(), a]));
+
+  // Patrimônio total (reaproveitado lá embaixo pro summary da resposta) e histórico de
+  // proventos (pra tendência de dividendo) — os dois movidos pra antes do loop de IA
+  // pelo mesmo motivo dos preços acima.
+  let totalPatrimony = 0;
+  for (const a of assets) {
+    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    totalPatrimony += parseFloat(a.quantity) * price;
+  }
+  const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
 
   // Em paralelo — sequencial levava ~4s por ativo (chamada real à Anthropic), o que
   // deixava uma carteira de 5 ativos demorando ~20s pra gerar.
@@ -327,6 +372,12 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         : null;
       analysis.taxEstimate = tax; // mesma mutação intencional de monitoringRecommendation logo abaixo — flui pra resposta HTTP
 
+      const positionPercent =
+        asset && currentPrice != null && totalPatrimony > 0
+          ? ((parseFloat(asset.quantity) * currentPrice) / totalPatrimony) * 100
+          : 0;
+      const dividendTrend = computeDividendTrend(dividendEventsByTicker.get(analysis.ticker) ?? [], Date.now());
+
       const aiRecommendation = await synthesizeAssetRecommendation({
         ticker: analysis.ticker,
         score: analysis.score,
@@ -337,6 +388,8 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         newsItems,
         macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
         tax,
+        positionPercent,
+        dividendTrend,
       });
 
       // Mutação intencional: `analysis` é a mesma referência presente em `analyses`
@@ -422,13 +475,10 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
 
   const alertRows = await db.select().from(alertsTable).where(eq(alertsTable.userId, req.session.userId!));
 
-  let totalPatrimony = 0;
   let totalCost = 0;
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
     const avgPrice = parseFloat(a.averagePrice);
-    const price = prices.get(a.ticker.toUpperCase()) ?? avgPrice;
-    totalPatrimony += qty * price;
     totalCost += qty * avgPrice;
   }
   const totalProfitLoss = totalPatrimony - totalCost;
@@ -438,9 +488,9 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   // cada ativo (aproximação — não reconstrói o histórico de compras/vendas pra saber
   // quanto era detido em cada data de pagamento). FIIs sem cobertura no plano atual
   // (ver getDividendEvents) simplesmente não contribuem, nunca com valor inventado.
+  // dividendEventsByTicker já buscado antes do loop de IA — reaproveitado aqui.
   const TWELVE_MONTHS_MS = 365 * 24 * 60 * 60 * 1000;
   const now = Date.now();
-  const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
   let totalDividends = 0;
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
