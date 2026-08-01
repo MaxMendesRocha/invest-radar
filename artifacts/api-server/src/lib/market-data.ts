@@ -250,9 +250,15 @@ async function fetchV2Statements(
     batches.push(tickers.slice(i, i + V2_BATCH_SIZE));
   }
 
-  const batchResults = await Promise.all(batches.map((batch) => fetchV2StatementsBatch(batch, path)));
-  for (const batchResult of batchResults) {
-    for (const [ticker, periods] of batchResult) result.set(ticker, periods);
+  // allSettled, não all — um erro de rede (não só um HTTP não-2xx, já tratado dentro
+  // de fetchV2StatementsBatch) num lote não pode derrubar os outros lotes.
+  const batchResults = await Promise.allSettled(batches.map((batch) => fetchV2StatementsBatch(batch, path)));
+  for (const outcome of batchResults) {
+    if (outcome.status === "rejected") {
+      logger.warn({ err: outcome.reason, path }, "brapi.dev v2 statement batch errored");
+      continue;
+    }
+    for (const [ticker, periods] of outcome.value) result.set(ticker, periods);
   }
   return result;
 }
@@ -443,12 +449,16 @@ export async function getDividendEvents(
   for (let i = 0; i < staleStocks.length; i += V2_BATCH_SIZE) stockBatches.push(staleStocks.slice(i, i + V2_BATCH_SIZE));
 
   const [stockBatchResults, fiiResults] = await Promise.all([
-    Promise.all(stockBatches.map((batch) => fetchStockDividendsBatch(batch))),
+    Promise.allSettled(stockBatches.map((batch) => fetchStockDividendsBatch(batch))),
     Promise.allSettled(staleFiis.map((ticker) => fetchFiiDividends(ticker))),
   ]);
 
-  for (const batchResult of stockBatchResults) {
-    for (const [ticker, events] of batchResult) {
+  for (const outcome of stockBatchResults) {
+    if (outcome.status === "rejected") {
+      logger.warn({ err: outcome.reason }, "brapi.dev stock dividends batch errored");
+      continue;
+    }
+    for (const [ticker, events] of outcome.value) {
       dividendCache.set(ticker, { events, fetchedAt: now });
       fresh.set(ticker, events);
     }

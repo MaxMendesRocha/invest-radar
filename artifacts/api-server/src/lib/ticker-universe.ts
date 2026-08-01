@@ -70,6 +70,13 @@ async function fetchCategory(query: (typeof CATEGORY_QUERIES)[number]): Promise<
  * como falha e não mexe na tabela existente, em vez de esvaziá-la.
  */
 export async function fetchTickerUniverse(): Promise<UniverseEntry[]> {
-  const results = await Promise.all(CATEGORY_QUERIES.map(fetchCategory));
-  return results.flat();
+  // allSettled — uma categoria com erro de rede não deve descartar as outras três.
+  const outcomes = await Promise.allSettled(CATEGORY_QUERIES.map(fetchCategory));
+  return outcomes.flatMap((outcome, i) => {
+    if (outcome.status === "rejected") {
+      logger.warn({ err: outcome.reason, category: CATEGORY_QUERIES[i].category }, "brapi.dev quote/list category errored");
+      return [];
+    }
+    return outcome.value;
+  });
 }
