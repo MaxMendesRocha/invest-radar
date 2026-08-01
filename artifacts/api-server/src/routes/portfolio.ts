@@ -49,6 +49,9 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
 router.get("/portfolio/distribution", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
   const prices = await getPricesFor(assets);
+  const fundamentalsByTicker = await getFundamentals(
+    assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker)
+  );
 
   const byCategoryMap: Record<string, number> = {};
   const bySectorMap: Record<string, number> = {};
@@ -63,7 +66,7 @@ router.get("/portfolio/distribution", requireAuth, async (req, res): Promise<voi
     total += value;
 
     byCategoryMap[a.category] = (byCategoryMap[a.category] ?? 0) + value;
-    const sector = sectorFor(a);
+    const sector = sectorFor(a, fundamentalsByTicker.get(a.ticker.toUpperCase())?.sector);
     bySectorMap[sector] = (bySectorMap[sector] ?? 0) + value;
 
     const risk = a.category === "acoes" ? "Alto" : a.category === "renda_fixa" ? "Baixo" : "Médio";
@@ -123,19 +126,19 @@ router.get("/portfolio/evolution", requireAuth, async (req, res): Promise<void> 
 router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
 
+  const prices = await getPricesFor(assets);
+  const fundamentalsByTicker = await getFundamentals(
+    assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker)
+  );
+
   const categories = new Set(assets.map(a => a.category));
-  const sectors = new Set(assets.map(sectorFor));
+  const sectors = new Set(assets.map((a) => sectorFor(a, fundamentalsByTicker.get(a.ticker.toUpperCase())?.sector)));
 
   // With no assets, every dimension is honestly 0 — the risk/dividends/growth fallbacks
   // below are heuristics for an existing portfolio's composition, not a default score
   // for having no portfolio at all (that was a bug: an empty carteira showed Score 34).
   const diversification = assets.length > 0 ? Math.min(100, categories.size * 15 + sectors.size * 8) : 0;
   const concentration = assets.length > 0 ? Math.max(0, 100 - (100 / assets.length) * 2) : 0;
-
-  const prices = await getPricesFor(assets);
-  const fundamentalsByTicker = await getFundamentals(
-    assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker)
-  );
 
   // Risco/dividendos/crescimento são médias ponderadas pelo valor de cada posição,
   // usando os mesmos buckets de evalVolatility/evalDividendYield/evalRevenueGrowth do

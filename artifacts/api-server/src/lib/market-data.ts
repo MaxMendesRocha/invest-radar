@@ -108,6 +108,7 @@ export async function getQuotes(tickers: string[]): Promise<Map<string, Quote>> 
 export interface Fundamentals {
   price: number;
   name: string | null;
+  sector: string | null; // setor real (summaryProfile), em português — null se a brapi.dev não tiver perfil pro ticker
   priceEarnings: number | null; // P/L
   priceToBook: number | null; // P/VP
   dividendYield: number | null; // decimal, e.g. 0.05 = 5%
@@ -133,11 +134,15 @@ interface BrapiKeyStatsResult extends BrapiResult {
     beta?: number | null;
     profitMargins?: number | null;
   };
+  summaryProfile?: {
+    sector?: string | null;
+  };
 }
 
 interface KeyStats {
   price: number;
   name: string | null;
+  sector: string | null;
   priceEarnings: number | null;
   priceToBook: number | null;
   dividendYield: number | null;
@@ -152,10 +157,12 @@ interface KeyStats {
 // outro módulo na mesma chamada derruba a chamada INTEIRA com 403 MODULES_NOT_AVAILABLE,
 // não só o campo que falta. Por isso aqui só pedimos defaultKeyStatistics (P/L, P/VP,
 // DY, beta, margem líquida — todos no plano atual) e calculamos ROE/dívida-patrimônio/
-// crescimento a partir do balanço e DRE reais via fetchV2Statements abaixo.
+// crescimento a partir do balanço e DRE reais via fetchV2Statements abaixo. summaryProfile
+// (setor/indústria reais, em português) vem de graça na mesma chamada — confirmado que
+// combinar os dois não derruba a requisição, ao contrário de financialData.
 async function fetchKeyStatistics(ticker: string): Promise<KeyStats | null> {
   const token = process.env.BRAPI_TOKEN;
-  const url = `${BRAPI_BASE_URL}/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics`;
+  const url = `${BRAPI_BASE_URL}/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics,summaryProfile`;
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   const response = await fetch(url, { headers });
@@ -172,6 +179,7 @@ async function fetchKeyStatistics(ticker: string): Promise<KeyStats | null> {
   return {
     price: item.regularMarketPrice,
     name: item.longName ?? item.shortName ?? null,
+    sector: item.summaryProfile?.sector ?? null,
     priceEarnings: item.priceEarnings ?? null,
     priceToBook: stats.priceToBook ?? null,
     dividendYield: stats.dividendYield ?? null,
@@ -301,6 +309,7 @@ export async function getFundamentals(tickers: string[]): Promise<Map<string, Fu
         fundamentals = {
           price: keyStats.price,
           name: keyStats.name,
+          sector: keyStats.sector,
           priceEarnings: keyStats.priceEarnings,
           priceToBook: keyStats.priceToBook,
           dividendYield: keyStats.dividendYield,
@@ -328,9 +337,9 @@ export async function getFundamentals(tickers: string[]): Promise<Map<string, Fu
 // Categories traded on B3 and covered by brapi.dev quotes; renda_fixa/fundos have no ticker quote.
 export const QUOTED_CATEGORIES = new Set(["acoes", "fiis", "etfs", "bdrs"]);
 
-// Curated fallback for assets without an explicit sector set by the user — used by
-// portfolio.ts (distribution) and analysis.ts (concentration alerts), kept here so
-// both stay in sync instead of drifting into two separate copies.
+// Fallback pra quando não há setor real disponível (renda_fixa/fundos sem ticker
+// de bolsa, ou falha pontual do provider) — usado por portfolio.ts (distribution,
+// health) e analysis.ts (concentration alerts), kept here so all three stay in sync.
 const SECTOR_MAP: Record<string, string> = {
   PETR4: "Petróleo & Gás", VALE3: "Mineração", ITUB4: "Bancos", BBDC4: "Bancos",
   ABEV3: "Bebidas", WEGE3: "Indústria", RENT3: "Locação", MGLU3: "Varejo",
@@ -340,8 +349,119 @@ const SECTOR_MAP: Record<string, string> = {
   AAPL34: "Tecnologia", AMZO34: "Tecnologia", MSFT34: "Tecnologia",
 };
 
-export function sectorFor(asset: { ticker: string; sector: string | null }): string {
-  return asset.sector ?? SECTOR_MAP[asset.ticker.toUpperCase()] ?? "Outros";
+// Prioridade: setor definido manualmente pelo usuário no ativo > setor real da
+// brapi.dev (summaryProfile, via Fundamentals.sector — passar o resultado de
+// getFundamentals() como segundo argumento) > mapa curado de fallback > genérico.
+export function sectorFor(asset: { ticker: string; sector: string | null }, realSector?: string | null): string {
+  return asset.sector ?? realSector ?? SECTOR_MAP[asset.ticker.toUpperCase()] ?? "Outros";
+}
+
+export interface DividendEvent {
+  paymentDate: string; // ISO
+  rate: number; // valor por cota/ação, em R$
+}
+
+const DIVIDEND_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // anúncio de provento não muda de hora em hora
+const dividendCache = new Map<string, { events: DividendEvent[]; fetchedAt: number }>();
+
+interface BrapiStockDividendsResult {
+  symbol: string;
+  data?: { cashDividends?: { paymentDate: string; rate: number }[] };
+}
+
+async function fetchStockDividendsBatch(tickers: string[]): Promise<Map<string, DividendEvent[]>> {
+  const result = new Map<string, DividendEvent[]>();
+  if (tickers.length === 0) return result;
+
+  const token = process.env.BRAPI_TOKEN;
+  const url = `https://brapi.dev/api/v2/stocks/dividends?symbols=${tickers.map(encodeURIComponent).join(",")}`;
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    logger.warn({ status: response.status, tickers }, "brapi.dev stock dividends request failed");
+    return result;
+  }
+
+  const body = (await response.json()) as { results?: BrapiStockDividendsResult[] };
+  for (const item of body.results ?? []) {
+    const events = (item.data?.cashDividends ?? []).map((d) => ({ paymentDate: d.paymentDate, rate: d.rate }));
+    result.set(item.symbol.toUpperCase(), events);
+  }
+  return result;
+}
+
+// O endpoint de dividendos de FII (/api/v2/fii/dividends) é um recurso separado do
+// resto da v2 — testado e confirmado que retorna FEATURE_NOT_AVAILABLE (não
+// MODULES_NOT_AVAILABLE) pra maioria dos FIIs no plano atual, funcionando só pra
+// alguns poucos (ex: HGLG11, MXRF11). Por isso é best-effort por ticker, sem log de
+// warning quando falha (esperado, não é um erro de fato) — o FII que falhar
+// simplesmente não contribui pro total de dividendos, nunca com valor inventado.
+async function fetchFiiDividends(ticker: string): Promise<DividendEvent[]> {
+  const token = process.env.BRAPI_TOKEN;
+  const url = `https://brapi.dev/api/v2/fii/dividends?symbols=${encodeURIComponent(ticker)}`;
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) return [];
+
+  const body = (await response.json()) as { dividends?: { paymentDate: string; rate: number }[] };
+  return (body.dividends ?? []).map((d) => ({ paymentDate: d.paymentDate, rate: d.rate }));
+}
+
+/**
+ * Histórico real de proventos (dividendos, JCP) por ticker — ações/ETFs/BDRs via o
+ * endpoint em lote (até V2_BATCH_SIZE por chamada), FIIs por ticker individual e
+ * best-effort (ver fetchFiiDividends). Cache de 6h — usado por
+ * POST /analysis/generate pra calcular totalDividends/portfolioYield reais.
+ */
+export async function getDividendEvents(
+  items: { ticker: string; category: string }[],
+): Promise<Map<string, DividendEvent[]>> {
+  const now = Date.now();
+  const fresh = new Map<string, DividendEvent[]>();
+  const staleStocks: string[] = [];
+  const staleFiis: string[] = [];
+
+  const seen = new Set<string>();
+  for (const item of items) {
+    const ticker = item.ticker.toUpperCase();
+    if (seen.has(ticker) || !QUOTED_CATEGORIES.has(item.category)) continue;
+    seen.add(ticker);
+
+    const cached = dividendCache.get(ticker);
+    if (cached && now - cached.fetchedAt < DIVIDEND_CACHE_TTL_MS) {
+      fresh.set(ticker, cached.events);
+      continue;
+    }
+
+    if (item.category === "fiis") staleFiis.push(ticker);
+    else staleStocks.push(ticker);
+  }
+
+  const stockBatches: string[][] = [];
+  for (let i = 0; i < staleStocks.length; i += V2_BATCH_SIZE) stockBatches.push(staleStocks.slice(i, i + V2_BATCH_SIZE));
+
+  const [stockBatchResults, fiiResults] = await Promise.all([
+    Promise.all(stockBatches.map((batch) => fetchStockDividendsBatch(batch))),
+    Promise.allSettled(staleFiis.map((ticker) => fetchFiiDividends(ticker))),
+  ]);
+
+  for (const batchResult of stockBatchResults) {
+    for (const [ticker, events] of batchResult) {
+      dividendCache.set(ticker, { events, fetchedAt: now });
+      fresh.set(ticker, events);
+    }
+  }
+
+  staleFiis.forEach((ticker, i) => {
+    const outcome = fiiResults[i];
+    const events = outcome.status === "fulfilled" ? outcome.value : [];
+    dividendCache.set(ticker, { events, fetchedAt: now });
+    fresh.set(ticker, events);
+  });
+
+  return fresh;
 }
 
 export interface PriceHistory {

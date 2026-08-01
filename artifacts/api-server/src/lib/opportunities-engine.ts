@@ -1,7 +1,7 @@
 import { db, opportunitiesTable, type InsertOpportunity } from "@workspace/db";
 import { getFundamentals, type Fundamentals } from "./market-data";
 import { analyzeFundamentals, evalVolatility } from "./analysis-engine";
-import { TICKER_UNIVERSE } from "./ticker-universe";
+import { fetchTickerUniverse, type UniverseEntry } from "./ticker-universe";
 import { describeOpportunity } from "./opportunities-ai";
 import { logger } from "./logger";
 import type { JobDefinition } from "./scheduler";
@@ -42,17 +42,27 @@ function computePotentialReturn(score: number, f: Fundamentals): number {
  * manual (routes/internal.ts).
  */
 export async function regenerateOpportunities(): Promise<{ summary: string }> {
-  const fundamentalsByTicker = await getFundamentals(TICKER_UNIVERSE.map((u) => u.ticker));
+  const universe = await fetchTickerUniverse();
+
+  // Universo vazio quase sempre significa que a brapi.dev está fora do ar ou o
+  // token expirou — nesse caso não mexe na tabela existente (fica com os dados da
+  // última rodada bem-sucedida) em vez de esvaziá-la sem ter nada real pra colocar.
+  if (universe.length === 0) {
+    logger.warn("regenerateOpportunities abortado: fetchTickerUniverse devolveu universo vazio");
+    return { summary: "0 oportunidades geradas — universo de tickers indisponível, tabela não foi alterada" };
+  }
+
+  const fundamentalsByTicker = await getFundamentals(universe.map((u) => u.ticker));
 
   // Em paralelo — sequencial levava ~90s pra varrer o universo inteiro (uma
   // chamada real à Anthropic por ativo qualificado).
-  const candidates = TICKER_UNIVERSE.map((entry) => {
+  const candidates = universe.map((entry) => {
     const fundamentals = fundamentalsByTicker.get(entry.ticker);
     if (!fundamentals) return null;
     const analysis = analyzeFundamentals(fundamentals);
     if (!analysis.available || analysis.score < MIN_OPPORTUNITY_SCORE) return null;
     return { entry, fundamentals, analysis };
-  }).filter((c): c is { entry: (typeof TICKER_UNIVERSE)[number]; fundamentals: Fundamentals; analysis: ReturnType<typeof analyzeFundamentals> } => c != null);
+  }).filter((c): c is { entry: UniverseEntry; fundamentals: Fundamentals; analysis: ReturnType<typeof analyzeFundamentals> } => c != null);
 
   const rows: InsertOpportunity[] = await Promise.all(
     candidates.map(async ({ entry, fundamentals, analysis }) => {
@@ -84,8 +94,8 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
     if (rows.length > 0) await tx.insert(opportunitiesTable).values(rows);
   });
 
-  const summary = `${rows.length} oportunidades geradas de ${TICKER_UNIVERSE.length} tickers varridos`;
-  logger.info({ generated: rows.length, universeSize: TICKER_UNIVERSE.length }, "regenerateOpportunities concluído");
+  const summary = `${rows.length} oportunidades geradas de ${universe.length} tickers varridos`;
+  logger.info({ generated: rows.length, universeSize: universe.length }, "regenerateOpportunities concluído");
   return { summary };
 }
 

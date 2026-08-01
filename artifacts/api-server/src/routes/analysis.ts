@@ -7,6 +7,7 @@ import {
   getPricesFor,
   getPriceHistories,
   getFundamentals,
+  getDividendEvents,
   sectorFor,
   QUOTED_CATEGORIES,
   type PriceHistory,
@@ -37,6 +38,7 @@ const MIN_DISTINCT_ASSETS = 3;
 function computeConcentrationAlerts(
   assets: { ticker: string; quantity: string; averagePrice: string; sector: string | null }[],
   prices: Map<string, number>,
+  fundamentalsByTicker: Map<string, Fundamentals>,
   userId: number,
 ): AlertToInsert[] {
   const byTicker = new Map<string, number>();
@@ -52,7 +54,7 @@ function computeConcentrationAlerts(
     const ticker = a.ticker.toUpperCase();
     byTicker.set(ticker, (byTicker.get(ticker) ?? 0) + value);
 
-    const sector = sectorFor(a);
+    const sector = sectorFor(a, fundamentalsByTicker.get(ticker)?.sector);
     bySector.set(sector, (bySector.get(sector) ?? 0) + value);
   }
 
@@ -386,7 +388,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     });
   }
 
-  const concentrationAlerts = computeConcentrationAlerts(assets, prices, req.session.userId!);
+  const concentrationAlerts = computeConcentrationAlerts(assets, prices, fundamentalsByTicker, req.session.userId!);
   const priceAlerts = computePriceAlerts(assets, priceHistories, req.session.userId!);
 
   const alertsToInsert = [...fundamentalAlerts, ...newsAlerts, ...macroAlerts, ...concentrationAlerts, ...priceAlerts];
@@ -408,6 +410,24 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   const totalProfitLoss = totalPatrimony - totalCost;
   const totalProfitLossPercent = totalCost > 0 ? (totalProfitLoss / totalCost) * 100 : 0;
 
+  // Dividendos/JCP reais pagos nos últimos 12 meses, aplicados à quantidade ATUAL de
+  // cada ativo (aproximação — não reconstrói o histórico de compras/vendas pra saber
+  // quanto era detido em cada data de pagamento). FIIs sem cobertura no plano atual
+  // (ver getDividendEvents) simplesmente não contribuem, nunca com valor inventado.
+  const TWELVE_MONTHS_MS = 365 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
+  let totalDividends = 0;
+  for (const a of assets) {
+    const qty = parseFloat(a.quantity);
+    const events = dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [];
+    for (const event of events) {
+      const paidAt = new Date(event.paymentDate).getTime();
+      if (paidAt <= now && now - paidAt <= TWELVE_MONTHS_MS) totalDividends += event.rate * qty;
+    }
+  }
+  const portfolioYield = totalPatrimony > 0 ? (totalDividends / totalPatrimony) * 100 : 0;
+
   const opportunities = await db.select().from(opportunitiesTable);
 
   res.json({
@@ -416,8 +436,8 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       totalPatrimony,
       totalProfitLoss,
       totalProfitLossPercent,
-      totalDividends: 0,
-      portfolioYield: 0,
+      totalDividends,
+      portfolioYield,
       assetCount: assets.length,
     },
     analyses: analyses.map((a) => ({
