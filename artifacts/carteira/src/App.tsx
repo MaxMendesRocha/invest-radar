@@ -14,6 +14,7 @@ import Dashboard from '@/pages/dashboard';
 import Carteira from '@/pages/carteira';
 import Radar from '@/pages/radar';
 import Analise from '@/pages/analise';
+import Parecer from '@/pages/parecer';
 import Oportunidades from '@/pages/oportunidades';
 import Dividendos from '@/pages/dividendos';
 import Saude from '@/pages/saude';
@@ -37,6 +38,7 @@ function ProtectedRoutes() {
           <Route path="/carteira" component={Carteira} />
           <Route path="/radar" component={Radar} />
           <Route path="/analise" component={Analise} />
+          <Route path="/parecer" component={Parecer} />
           <Route path="/oportunidades" component={Oportunidades} />
           <Route path="/dividendos" component={Dividendos} />
           <Route path="/saude" component={Saude} />

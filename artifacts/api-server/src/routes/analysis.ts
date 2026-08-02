@@ -8,17 +8,19 @@ import {
   getPriceHistories,
   getFundamentals,
   getDividendEvents,
+  getDividendEventsForTicker,
+  computeDividendTrend,
   sectorFor,
   QUOTED_CATEGORIES,
   type PriceHistory,
   type Fundamentals,
 } from "../lib/market-data";
-import { analysisForUnquotedAsset, pendingAnalysis, analyzeFundamentals, type AnalysisResult } from "../lib/analysis-engine";
+import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, type AnalysisResult } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
-import { synthesizeAssetRecommendation, type DividendTrend } from "../lib/analysis-ai";
+import { synthesizeAssetRecommendation } from "../lib/analysis-ai";
+import { synthesizePrePurchaseOpinion } from "../lib/opinion-ai";
 import { estimateCapitalGainsTax, type TaxEstimate } from "../lib/tax-engine";
-import type { DividendEvent } from "../lib/market-data";
 
 const router: IRouter = Router();
 
@@ -274,38 +276,89 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
   res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker), newsItems));
 });
 
-// Compara a soma de proventos pagos nos últimos 12 meses com os 12 meses anteriores
-// a esses, a partir do histórico real já buscado (getDividendEvents) — nunca projeta
-// nem estima nada, só retorna null quando não há pelo menos um evento real em cada
-// uma das duas janelas (histórico curto demais pra dizer se está crescendo ou não).
-function computeDividendTrend(events: DividendEvent[], now: number): DividendTrend | null {
-  const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
-  let last12mTotal = 0;
-  let prior12mTotal = 0;
-  let hasLast12m = false;
-  let hasPrior12m = false;
+// Cacheado por ticker (não por usuário nem por carteira) — o parecer não depende de
+// posição/quantidade, então a resposta é a mesma pra qualquer usuário perguntando
+// sobre o mesmo ticker no mesmo período. TTL de 12h controla tanto chamadas repetidas
+// à brapi.dev quanto o custo de IA em buscas populares.
+const OPINION_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const opinionResponseCache = new Map<string, { response: object; fetchedAt: number }>();
 
-  for (const event of events) {
-    const paidAt = new Date(event.paymentDate).getTime();
-    if (paidAt > now) continue; // eventos futuros (ver /portfolio/dividends/upcoming) não contam pra tendência histórica
-    const ageMs = now - paidAt;
-    if (ageMs <= ONE_YEAR_MS) {
-      last12mTotal += event.rate;
-      hasLast12m = true;
-    } else if (ageMs <= ONE_YEAR_MS * 2) {
-      prior12mTotal += event.rate;
-      hasPrior12m = true;
-    }
+router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<void> => {
+  const params = GetAssetAnalysisParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const ticker = params.data.ticker.toUpperCase();
+
+  const cached = opinionResponseCache.get(ticker);
+  if (cached && Date.now() - cached.fetchedAt < OPINION_CACHE_TTL_MS) {
+    res.json(cached.response);
+    return;
   }
 
-  if (!hasLast12m || !hasPrior12m || prior12mTotal === 0) return null;
+  const [fundamentalsByTicker, priceHistories, dividendEvents, newsHeadlines, macro] = await Promise.all([
+    getFundamentals([ticker]),
+    getPriceHistories([ticker]),
+    getDividendEventsForTicker(ticker),
+    getNewsFor(resolveSearchTerm(ticker), 3),
+    getMacroSnapshot(),
+  ]);
 
-  return {
-    last12mTotal,
-    prior12mTotal,
-    growthPercent: ((last12mTotal - prior12mTotal) / prior12mTotal) * 100,
+  const fundamentals = fundamentalsByTicker.get(ticker);
+  const priceHistory = priceHistories.get(ticker);
+  const price = priceHistory?.price ?? fundamentals?.price ?? null;
+
+  // Nem fetchPriceHistory (endpoint gratuito, funciona pra qualquer ticker cotável) nem
+  // getFundamentals encontraram cotação — ticker inválido, delistado ou fora de B3.
+  if (price == null) {
+    res.status(404).json({ error: "Ticker não encontrado ou sem cotação disponível" });
+    return;
+  }
+
+  const analysis = fundamentals ? analyzeFundamentals(fundamentals) : noFundamentalsAnalysis();
+  const dividendTrend = computeDividendTrend(dividendEvents, Date.now());
+  const newsItems = newsHeadlines.map(formatHeadline);
+  const name = fundamentals?.name ?? null;
+
+  const aiOpinion = await synthesizePrePurchaseOpinion({
+    ticker,
+    name,
+    available: analysis.available,
+    score: analysis.score,
+    scoreClassification: analysis.scoreClassification,
+    positives: analysis.positives,
+    risks: analysis.risks,
+    price,
+    fiftyTwoWeekHigh: priceHistory?.fiftyTwoWeekHigh ?? null,
+    fiftyTwoWeekLow: priceHistory?.fiftyTwoWeekLow ?? null,
+    fiveDayChangePercent: priceHistory?.fiveDayChangePercent ?? null,
+    dividendTrend,
+    newsItems,
+    macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
+  });
+
+  const response = {
+    ticker,
+    name,
+    available: analysis.available,
+    score: analysis.score,
+    scoreClassification: analysis.scoreClassification,
+    positives: analysis.positives,
+    risks: analysis.risks,
+    price,
+    fiftyTwoWeekHigh: priceHistory?.fiftyTwoWeekHigh ?? null,
+    fiftyTwoWeekLow: priceHistory?.fiftyTwoWeekLow ?? null,
+    fiveDayChangePercent: priceHistory?.fiveDayChangePercent ?? null,
+    dividendTrend,
+    newsItems,
+    opinion: aiOpinion ?? analysis.monitoringRecommendation,
+    updatedAt: new Date().toISOString(),
   };
-}
+
+  opinionResponseCache.set(ticker, { response, fetchedAt: Date.now() });
+  res.json(response);
+});
 
 router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));

@@ -531,6 +531,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /analysis/opinion/{ticker}:
+    get:
+      operationId: getAssetOpinion
+      tags: [analysis]
+      summary: Pre-purchase opinion on a ticker not necessarily held in the portfolio
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pre-purchase opinion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetOpinion"
+        "404":
+          description: Ticker not found or no quote available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /analysis/generate:
     post:
       operationId: generatePortfolioAnalysis
@@ -1044,6 +1069,60 @@ components:
             exempt:
               type: boolean
           required: [grossGain, taxRate, taxOwed, netGain, exempt]
+        updatedAt:
+          type: string
+          format: date-time
+
+    AssetOpinion:
+      type: object
+      required: [ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, newsItems, opinion, updatedAt]
+      description: Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER/REAVALIAR/etc).
+      properties:
+        ticker:
+          type: string
+        name:
+          type: [string, "null"]
+        available:
+          type: boolean
+          description: False quando o ticker tem cotação mas não há fundamentos aproveitáveis — score/positivos/riscos são placeholders nesse caso.
+        score:
+          type: number
+        scoreClassification:
+          type: string
+          enum: [Excelente, Forte, Estavel, Atencao, Critico]
+        positives:
+          type: array
+          items:
+            type: string
+        risks:
+          type: array
+          items:
+            type: string
+        price:
+          type: number
+        fiftyTwoWeekHigh:
+          type: [number, "null"]
+        fiftyTwoWeekLow:
+          type: [number, "null"]
+        fiveDayChangePercent:
+          type: [number, "null"]
+        dividendTrend:
+          type: [object, "null"]
+          description: Crescimento real de provento (últimos 12 meses vs. 12 anteriores) por unidade — null quando o histórico não cobre os dois períodos.
+          properties:
+            last12mTotal:
+              type: number
+            prior12mTotal:
+              type: number
+            growthPercent:
+              type: number
+          required: [last12mTotal, prior12mTotal, growthPercent]
+        newsItems:
+          type: array
+          items:
+            type: string
+        opinion:
+          type: string
         updatedAt:
           type: string
           format: date-time
