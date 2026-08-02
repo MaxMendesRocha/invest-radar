@@ -24,6 +24,7 @@ import type {
   Asset,
   AssetAnalysis,
   AssetInput,
+  AssetOpinion,
   AssetUpdate,
   AuthResponse,
   BenchmarkComparison,
@@ -2076,6 +2077,83 @@ export function useGetAssetAnalysis<TData = Awaited<ReturnType<typeof getAssetAn
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAssetAnalysisQueryOptions(ticker,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAssetOpinionUrl = (ticker: string,) => {
+
+
+
+
+  return `/api/analysis/opinion/${ticker}`
+}
+
+/**
+ * @summary Pre-purchase opinion on a ticker not necessarily held in the portfolio
+ */
+export const getAssetOpinion = async (ticker: string, options?: RequestInit): Promise<AssetOpinion> => {
+
+  return customFetch<AssetOpinion>(getGetAssetOpinionUrl(ticker),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssetOpinionQueryKey = (ticker: string,) => {
+    return [
+    `/api/analysis/opinion/${ticker}`
+    ] as const;
+    }
+
+
+export const getGetAssetOpinionQueryOptions = <TData = Awaited<ReturnType<typeof getAssetOpinion>>, TError = ErrorType<ErrorResponse>>(ticker: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssetOpinion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssetOpinionQueryKey(ticker);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssetOpinion>>> = ({ signal }) => getAssetOpinion(ticker, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: ticker !== null && ticker !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssetOpinion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssetOpinionQueryResult = NonNullable<Awaited<ReturnType<typeof getAssetOpinion>>>
+export type GetAssetOpinionQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Pre-purchase opinion on a ticker not necessarily held in the portfolio
+ */
+
+export function useGetAssetOpinion<TData = Awaited<ReturnType<typeof getAssetOpinion>>, TError = ErrorType<ErrorResponse>>(
+ ticker: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssetOpinion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssetOpinionQueryOptions(ticker,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

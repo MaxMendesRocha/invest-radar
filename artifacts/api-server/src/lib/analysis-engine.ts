@@ -149,6 +149,13 @@ export function pendingAnalysis(): AnalysisResult {
   return PENDING_RESULT;
 }
 
+// Exportado pra GET /analysis/opinion/:ticker (routes/analysis.ts) reaproveitar o mesmo
+// fallback quando um ticker tem cotação mas nenhum fundamento aproveitável — em vez de
+// duplicar a mensagem.
+export function noFundamentalsAnalysis(): AnalysisResult {
+  return NO_FUNDAMENTALS_RESULT;
+}
+
 /**
  * Deterministic, rules-based analysis over real fundamentals (brapi.dev) — no AI/LLM
  * involved. Weights mirror the "Score do Radar" formula from the product spec:

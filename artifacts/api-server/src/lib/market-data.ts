@@ -481,6 +481,63 @@ export async function getDividendEvents(
   return fresh;
 }
 
+/**
+ * Histórico de proventos pra UM ticker sem saber a categoria antecipadamente — caso do
+ * parecer pré-compra, onde o usuário busca um ticker que não está na carteira (logo
+ * sem `category` cadastrado). Tenta o endpoint de ações/ETFs/BDRs; se vier vazio,
+ * tenta o de FII. Não usa o dividendCache de getDividendEvents (chave por categoria
+ * conhecida) — o chamador é responsável por cachear a resposta inteira do parecer.
+ */
+export async function getDividendEventsForTicker(ticker: string): Promise<DividendEvent[]> {
+  const upper = ticker.toUpperCase();
+  const [stockResult, fiiEvents] = await Promise.all([
+    fetchStockDividendsBatch([upper]),
+    fetchFiiDividends(upper),
+  ]);
+  const stockEvents = stockResult.get(upper) ?? [];
+  return stockEvents.length > 0 ? stockEvents : fiiEvents;
+}
+
+export interface DividendTrend {
+  last12mTotal: number; // R$ por unidade, soma dos proventos pagos nos últimos 12 meses
+  prior12mTotal: number; // R$ por unidade, soma dos 12 meses anteriores a esses
+  growthPercent: number; // (last12m - prior12m) / prior12m * 100
+}
+
+// Compara a soma de proventos pagos nos últimos 12 meses com os 12 meses anteriores a
+// esses, a partir do histórico real (getDividendEvents/getDividendEventsForTicker) —
+// nunca projeta nem estima nada, só retorna null quando não há pelo menos um evento
+// real em cada uma das duas janelas (histórico curto demais pra dizer se está
+// crescendo ou não).
+export function computeDividendTrend(events: DividendEvent[], now: number): DividendTrend | null {
+  const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+  let last12mTotal = 0;
+  let prior12mTotal = 0;
+  let hasLast12m = false;
+  let hasPrior12m = false;
+
+  for (const event of events) {
+    const paidAt = new Date(event.paymentDate).getTime();
+    if (paidAt > now) continue; // eventos futuros (ver /portfolio/dividends/upcoming) não contam pra tendência histórica
+    const ageMs = now - paidAt;
+    if (ageMs <= ONE_YEAR_MS) {
+      last12mTotal += event.rate;
+      hasLast12m = true;
+    } else if (ageMs <= ONE_YEAR_MS * 2) {
+      prior12mTotal += event.rate;
+      hasPrior12m = true;
+    }
+  }
+
+  if (!hasLast12m || !hasPrior12m || prior12mTotal === 0) return null;
+
+  return {
+    last12mTotal,
+    prior12mTotal,
+    growthPercent: ((last12mTotal - prior12mTotal) / prior12mTotal) * 100,
+  };
+}
+
 export interface PriceHistory {
   price: number;
   fiftyTwoWeekHigh: number | null;

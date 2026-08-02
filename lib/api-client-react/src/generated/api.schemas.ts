@@ -479,6 +479,57 @@ export interface AssetAnalysis {
   updatedAt: string;
 }
 
+export type AssetOpinionScoreClassification = typeof AssetOpinionScoreClassification[keyof typeof AssetOpinionScoreClassification];
+
+
+export const AssetOpinionScoreClassification = {
+  Excelente: 'Excelente',
+  Forte: 'Forte',
+  Estavel: 'Estavel',
+  Atencao: 'Atencao',
+  Critico: 'Critico',
+} as const;
+
+/**
+ * Crescimento real de provento (últimos 12 meses vs. 12 anteriores) por unidade — null quando o histórico não cobre os dois períodos.
+ * @nullable
+ */
+export type AssetOpinionDividendTrend = {
+  last12mTotal: number;
+  prior12mTotal: number;
+  growthPercent: number;
+} | null;
+
+/**
+ * Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER/REAVALIAR/etc).
+ */
+export interface AssetOpinion {
+  ticker: string;
+  /** @nullable */
+  name: string | null;
+  /** False quando o ticker tem cotação mas não há fundamentos aproveitáveis — score/positivos/riscos são placeholders nesse caso. */
+  available: boolean;
+  score: number;
+  scoreClassification: AssetOpinionScoreClassification;
+  positives: string[];
+  risks: string[];
+  price: number;
+  /** @nullable */
+  fiftyTwoWeekHigh: number | null;
+  /** @nullable */
+  fiftyTwoWeekLow: number | null;
+  /** @nullable */
+  fiveDayChangePercent: number | null;
+  /**
+     * Crescimento real de provento (últimos 12 meses vs. 12 anteriores) por unidade — null quando o histórico não cobre os dois períodos.
+     * @nullable
+     */
+  dividendTrend: AssetOpinionDividendTrend;
+  newsItems: string[];
+  opinion: string;
+  updatedAt: string;
+}
+
 /**
  * @nullable
  */

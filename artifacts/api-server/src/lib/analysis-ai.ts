@@ -1,14 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "./logger";
 import type { TaxEstimate } from "./tax-engine";
+import type { DividendTrend } from "./market-data";
 
 const RECOMMENDATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // score/status não mudam mais de uma vez por dia
-
-export interface DividendTrend {
-  last12mTotal: number; // R$ por unidade, soma dos proventos pagos nos últimos 12 meses
-  prior12mTotal: number; // R$ por unidade, soma dos 12 meses anteriores a esses
-  growthPercent: number; // (last12m - prior12m) / prior12m * 100
-}
 
 export interface AssetRecommendationInput {
   ticker: string;
@@ -21,7 +16,7 @@ export interface AssetRecommendationInput {
   macro: { selic: number | null; selicTrend: string | null; ipca12m: number | null };
   tax: TaxEstimate | null; // null pra renda_fixa/fundos (regras de IR diferentes, fora do escopo daqui)
   positionPercent: number; // % do patrimônio total da carteira que esse ativo representa
-  dividendTrend: DividendTrend | null; // null quando não há histórico real dos dois períodos (ver computeDividendTrend em analysis.ts) — nunca estimado
+  dividendTrend: DividendTrend | null; // null quando não há histórico real dos dois períodos (ver computeDividendTrend em market-data.ts) — nunca estimado
 }
 
 let anthropicClient: Anthropic | null | undefined;

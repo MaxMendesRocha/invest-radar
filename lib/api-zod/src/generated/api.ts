@@ -512,6 +512,36 @@ export const GetAssetAnalysisResponse = zod.object({
 
 
 /**
+ * @summary Pre-purchase opinion on a ticker not necessarily held in the portfolio
+ */
+export const GetAssetOpinionParams = zod.object({
+  "ticker": zod.coerce.string()
+})
+
+export const GetAssetOpinionResponse = zod.object({
+  "ticker": zod.string(),
+  "name": zod.string().nullable(),
+  "available": zod.boolean().describe('False quando o ticker tem cotação mas não há fundamentos aproveitáveis — score\/positivos\/riscos são placeholders nesse caso.'),
+  "score": zod.number(),
+  "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
+  "positives": zod.array(zod.string()),
+  "risks": zod.array(zod.string()),
+  "price": zod.number(),
+  "fiftyTwoWeekHigh": zod.number().nullable(),
+  "fiftyTwoWeekLow": zod.number().nullable(),
+  "fiveDayChangePercent": zod.number().nullable(),
+  "dividendTrend": zod.object({
+  "last12mTotal": zod.number(),
+  "prior12mTotal": zod.number(),
+  "growthPercent": zod.number()
+}).nullable().describe('Crescimento real de provento (últimos 12 meses vs. 12 anteriores) por unidade — null quando o histórico não cobre os dois períodos.'),
+  "newsItems": zod.array(zod.string()),
+  "opinion": zod.string(),
+  "updatedAt": zod.coerce.date()
+}).describe('Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER\/REAVALIAR\/etc).')
+
+
+/**
  * @summary Regenerate rules-based analysis for the entire portfolio
  */
 export const GeneratePortfolioAnalysisResponse = zod.object({
