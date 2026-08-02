@@ -84,7 +84,10 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `NÃO invente nenhum dado que não esteja listado acima. NÃO proponha um score ou status diferente do ` +
     `informado — a decisão de score é sempre do motor determinístico, você só interpreta. NÃO trate o ` +
     `valor de IR como exato — é uma estimativa isolada, deixe isso implícito no texto sem precisar repetir ` +
-    `a ressalva inteira.\n\n` +
+    `a ressalva inteira. Evite muletas vagas como "observe", "acompanhe" ou "fique atento" — só recorra a ` +
+    `esse tipo de linguagem quando genuinamente não houver dado suficiente pra uma conclusão mais forte. A ` +
+    `última frase do parágrafo deve indicar claramente a implicação prática (manter, aumentar, reduzir, ` +
+    `vender ou reavaliar a posição), coerente com o status informado.\n\n` +
     `Formato de saída: texto plano, sem markdown, 2-6 frases.`
   );
 }
