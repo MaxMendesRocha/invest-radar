@@ -1,6 +1,50 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
-import { useGetMe } from '@workspace/api-client-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useGetMe, useLogout, getGetMeQueryKey } from '@workspace/api-client-react';
+import { useToast } from '@/hooks/use-toast';
+
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const IDLE_CHECK_INTERVAL_MS = 30 * 1000;
+// Eventos que contam como "usuário ativo" — deliberadamente sem chamada de rede
+// nenhuma nessa lista, pra não resetar o timer sozinho a cada poll automático.
+const ACTIVITY_EVENTS = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'] as const;
+
+/** Desloga por inatividade real do usuário (30min sem interação na aba), não por
+ * expiração de cookie — reaproveita o mesmo fluxo de logout manual (destrói a sessão
+ * no servidor, limpa o cache, redireciona), só que disparado por um timer local em vez
+ * de clique no botão "Sair". */
+function useIdleLogout(enabled: boolean) {
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const logout = useLogout();
+  const { toast } = useToast();
+  const lastActivityRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const markActive = () => { lastActivityRef.current = Date.now(); };
+    ACTIVITY_EVENTS.forEach((event) => window.addEventListener(event, markActive, { passive: true }));
+
+    const interval = setInterval(() => {
+      if (Date.now() - lastActivityRef.current < IDLE_TIMEOUT_MS) return;
+      logout.mutate(undefined, {
+        onSuccess: () => {
+          queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
+          toast({ title: 'Sessão expirada por inatividade.' });
+          setLocation('/login');
+        },
+      });
+    }, IDLE_CHECK_INTERVAL_MS);
+
+    return () => {
+      ACTIVITY_EVENTS.forEach((event) => window.removeEventListener(event, markActive));
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled]);
+}
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading, isError } = useGetMe();
@@ -11,6 +55,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       setLocation('/login');
     }
   }, [isLoading, isError, setLocation]);
+
+  useIdleLogout(!isLoading && !isError && !!user);
 
   if (isLoading) {
     return (
