@@ -150,35 +150,35 @@ export default function Radar() {
                   <div className="mt-1">
                     <Icon className="w-5 h-5" />
                   </div>
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
+                  <div className="flex-1 space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
                         {alert.ticker && (
-                          <Badge variant="outline" className="font-mono bg-background">
+                          <Badge variant="outline" className="font-mono bg-background shrink-0">
                             {alert.ticker}
                           </Badge>
                         )}
-                        <h3 className={`font-semibold ${!alert.isRead ? '' : 'text-muted-foreground'}`}>
+                        <h3 className={`font-semibold break-words ${!alert.isRead ? '' : 'text-muted-foreground'}`}>
                           {alert.title}
                         </h3>
-                        <Badge variant={config.badge as any} className="text-[10px] uppercase tracking-wider h-5">
+                        <Badge variant={config.badge as any} className="text-[10px] uppercase tracking-wider h-5 shrink-0">
                           {alert.severity}
                         </Badge>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 shrink-0">
                         {!alert.isRead && (
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => handleMarkRead(alert.id)}
                             className="h-8 text-xs"
                           >
                             Marcar lido
                           </Button>
                         )}
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           onClick={() => handleDelete(alert.id)}
                           className="h-8 w-8 text-muted-foreground hover:text-destructive"
                         >
