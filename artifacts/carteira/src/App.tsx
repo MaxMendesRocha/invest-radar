@@ -17,6 +17,7 @@ import Analise from '@/pages/analise';
 import Parecer from '@/pages/parecer';
 import Oportunidades from '@/pages/oportunidades';
 import Dividendos from '@/pages/dividendos';
+import Vendas from '@/pages/vendas';
 import Saude from '@/pages/saude';
 import Settings from '@/pages/settings';
 
@@ -41,6 +42,7 @@ function ProtectedRoutes() {
           <Route path="/parecer" component={Parecer} />
           <Route path="/oportunidades" component={Oportunidades} />
           <Route path="/dividendos" component={Dividendos} />
+          <Route path="/vendas" component={Vendas} />
           <Route path="/saude" component={Saude} />
           <Route path="/settings" component={Settings} />
           <Route component={NotFound} />

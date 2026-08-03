@@ -8,6 +8,7 @@ import {
   Search,
   Lightbulb,
   Coins,
+  Banknote,
   Stethoscope,
   Settings as SettingsIcon,
   LogOut,
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { href: "/parecer", label: "Parecer de Ativo", icon: Search },
   { href: "/oportunidades", label: "Oportunidades", icon: Lightbulb },
   { href: "/dividendos", label: "Dividendos", icon: Coins },
+  { href: "/vendas", label: "Operações Encerradas", icon: Banknote },
   { href: "/saude", label: "Saúde do Portfólio", icon: Stethoscope },
 ];
 

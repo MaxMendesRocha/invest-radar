@@ -1,12 +1,15 @@
 import { useState } from "react";
-import { 
-  useListAssets, 
-  useCreateAsset, 
-  useUpdateAsset, 
+import {
+  useListAssets,
+  useCreateAsset,
+  useUpdateAsset,
   useDeleteAsset,
+  useSellAsset,
   useListAssetAnalyses,
   getListAssetsQueryKey,
-  getListAssetAnalysesQueryKey
+  getListAssetAnalysesQueryKey,
+  getListSalesQueryKey,
+  type Asset,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatPercent } from "@/lib/utils";
@@ -15,14 +18,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { 
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
-import { 
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger 
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Edit2, Trash2 } from "lucide-react";
+import { Plus, Edit2, Trash2, Banknote } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const CATEGORY_MAP: Record<string, string> = {
@@ -48,19 +51,27 @@ export default function Carteira() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  
+  const [isSellOpen, setIsSellOpen] = useState(false);
+  const [sellingAsset, setSellingAsset] = useState<Asset | null>(null);
+
   // Form State
   const [ticker, setTicker] = useState("");
   const [quantity, setQuantity] = useState("");
   const [averagePrice, setAveragePrice] = useState("");
   const [category, setCategory] = useState("acoes");
-  
+
+  // Sell Form State
+  const [salePrice, setSalePrice] = useState("");
+  const [saleDate, setSaleDate] = useState("");
+  const [saleQuantity, setSaleQuantity] = useState("");
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
+
   const createAsset = useCreateAsset();
   const updateAsset = useUpdateAsset();
   const deleteAsset = useDeleteAsset();
+  const sellAsset = useSellAsset();
 
   const resetForm = () => {
     setTicker("");
@@ -72,19 +83,29 @@ export default function Carteira() {
 
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const enteredQuantity = Number(quantity);
+    const existing = assets?.find((a) => a.ticker === ticker.toUpperCase() && a.category === category);
+
     createAsset.mutate({
       data: {
         ticker,
-        quantity: Number(quantity),
+        quantity: enteredQuantity,
         averagePrice: Number(averagePrice),
         category: category as any
       }
     }, {
-      onSuccess: () => {
+      onSuccess: (asset) => {
         queryClient.invalidateQueries({ queryKey: getListAssetsQueryKey() });
         setIsCreateOpen(false);
         resetForm();
-        toast({ title: "Ativo adicionado com sucesso." });
+        // existing != null é o mesmo critério que o backend usa pra decidir entre
+        // consolidar na linha existente ou criar uma posição nova — refletir isso no
+        // toast evita o usuário achar que virou uma segunda linha duplicada.
+        toast({
+          title: existing
+            ? `Posição atualizada — ${asset.quantity} unidades a ${formatCurrency(asset.averagePrice)} de preço médio.`
+            : "Ativo adicionado com sucesso.",
+        });
       },
       onError: () => {
         toast({ title: "Erro ao adicionar ativo.", variant: "destructive" });
@@ -136,6 +157,70 @@ export default function Carteira() {
       });
     }
   };
+
+  const handleSellOpen = (asset: Asset) => {
+    setSellingAsset(asset);
+    setSalePrice("");
+    setSaleDate(new Date().toISOString().slice(0, 10));
+    setSaleQuantity(String(asset.quantity));
+    setIsSellOpen(true);
+  };
+
+  const handleSellSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sellingAsset) return;
+    const qty = Number(saleQuantity);
+    const isFullSale = qty >= sellingAsset.quantity;
+
+    sellAsset.mutate({
+      id: sellingAsset.id,
+      data: {
+        salePrice: Number(salePrice),
+        saleDate,
+        quantity: isFullSale ? undefined : qty,
+      }
+    }, {
+      onSuccess: (sale) => {
+        queryClient.invalidateQueries({ queryKey: getListAssetsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListSalesQueryKey() });
+        setIsSellOpen(false);
+        const gainLabel = sale.grossGain >= 0
+          ? `ganho de ${formatCurrency(sale.grossGain)}`
+          : `prejuízo de ${formatCurrency(Math.abs(sale.grossGain))}`;
+        const taxLabel = sale.taxOwed ? `, IR de ${formatCurrency(sale.taxOwed)}` : "";
+        toast({ title: `Venda registrada — ${gainLabel}${taxLabel}.` });
+      },
+      onError: () => {
+        toast({ title: "Erro ao registrar venda.", variant: "destructive" });
+      }
+    });
+  };
+
+  // Prévia client-side só pra feedback visual imediato no dialog — o valor de
+  // verdade (persistido em `sales`) sempre vem da resposta de POST /assets/:id/sell,
+  // calculado pelo mesmo tax-engine.ts usado no resto do app.
+  const sellPreview = (() => {
+    if (!sellingAsset || !salePrice || !saleQuantity) return null;
+    const qty = Number(saleQuantity);
+    const price = Number(salePrice);
+    if (!qty || !price || qty <= 0) return null;
+
+    const grossGain = qty * (price - sellingAsset.averagePrice);
+    if (grossGain <= 0) return { grossGain, taxLabel: "Sem IR (prejuízo nessa venda)" };
+
+    const saleValue = qty * price;
+    let taxLabel: string;
+    if (sellingAsset.category === "acoes") {
+      taxLabel = saleValue <= 20000 ? "Isento (venda ≤ R$20 mil no mês)" : "15% de IR sobre o ganho";
+    } else if (sellingAsset.category === "fiis") {
+      taxLabel = "20% de IR sobre o ganho (FII, sem faixa de isenção)";
+    } else if (sellingAsset.category === "etfs" || sellingAsset.category === "bdrs") {
+      taxLabel = "15% de IR sobre o ganho (sem faixa de isenção)";
+    } else {
+      taxLabel = "IR não se aplica a esta categoria";
+    }
+    return { grossGain, taxLabel };
+  })();
 
   return (
     <div className="space-y-6">
@@ -257,6 +342,9 @@ export default function Carteira() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          <Button variant="ghost" size="icon" onClick={() => handleSellOpen(asset)} title="Vender" className="text-muted-foreground hover:text-foreground">
+                            <Banknote className="w-4 h-4" />
+                          </Button>
                           <Button variant="ghost" size="icon" onClick={() => handleEditOpen(asset)}>
                             <Edit2 className="w-4 h-4" />
                           </Button>
@@ -299,6 +387,9 @@ export default function Carteira() {
                       ) : analysis?.status ? (
                         <Badge variant={STATUS_COLOR_MAP[analysis.status] || "default"}>{analysis.status}</Badge>
                       ) : null}
+                      <Button variant="ghost" size="icon" onClick={() => handleSellOpen(asset)} title="Vender" className="text-muted-foreground hover:text-foreground">
+                        <Banknote className="w-4 h-4" />
+                      </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleEditOpen(asset)}>
                         <Edit2 className="w-4 h-4" />
                       </Button>
@@ -379,6 +470,55 @@ export default function Carteira() {
             <DialogFooter>
               <Button type="submit" disabled={updateAsset.isPending}>
                 {updateAsset.isPending ? "Salvando..." : "Salvar Alterações"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sell Dialog */}
+      <Dialog open={isSellOpen} onOpenChange={setIsSellOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Vender {sellingAsset?.ticker}</DialogTitle>
+            <DialogDescription>
+              Encerra a posição (total ou parcialmente) e registra o ganho/perda realizado em "Operações Encerradas".
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSellSubmit} className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Quantidade</Label>
+                <Input
+                  type="number"
+                  step="0.0001"
+                  max={sellingAsset?.quantity}
+                  value={saleQuantity}
+                  onChange={(e) => setSaleQuantity(e.target.value)}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">Você tem {sellingAsset?.quantity} unidades.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Preço de Venda</Label>
+                <Input type="number" step="0.01" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} required />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Data da Venda</Label>
+              <Input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} required />
+            </div>
+            {sellPreview && (
+              <div className="bg-muted/50 p-3 rounded-md text-sm border border-border/50 space-y-1">
+                <div className={`font-medium ${sellPreview.grossGain >= 0 ? "text-green-600 dark:text-green-500" : "text-destructive"}`}>
+                  {sellPreview.grossGain >= 0 ? "Ganho" : "Prejuízo"} estimado: {formatCurrency(Math.abs(sellPreview.grossGain))}
+                </div>
+                <div className="text-xs text-muted-foreground">{sellPreview.taxLabel}</div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button type="submit" disabled={sellAsset.isPending}>
+                {sellAsset.isPending ? "Registrando..." : "Confirmar Venda"}
               </Button>
             </DialogFooter>
           </form>

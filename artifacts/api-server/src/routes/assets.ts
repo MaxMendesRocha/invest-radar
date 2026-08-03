@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
-import { db, assetsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
-import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams } from "@workspace/api-zod";
+import { db, assetsTable, salesTable } from "@workspace/db";
+import { eq, and, desc } from "drizzle-orm";
+import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams, SellAssetParams, SellAssetBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor } from "../lib/market-data";
+import { estimateCapitalGainsTax } from "../lib/tax-engine";
 
 const router: IRouter = Router();
 
@@ -51,9 +52,35 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const { ticker, quantity, averagePrice, purchaseDate, category, sector, notes } = parsed.data;
+  const tickerUpper = ticker.toUpperCase();
+
+  // Comprar mais de um ticker que já está na carteira consolida na mesma linha em vez
+  // de criar uma segunda posição — soma a quantidade e recalcula o preço médio
+  // ponderado, igual a qualquer corretora faria. Só considera a mesma categoria (o
+  // preço médio de "acoes" e "bdrs" do mesmo ticker, por exemplo, nunca deveriam se
+  // misturar, embora isso praticamente não aconteça na prática).
+  const [existing] = await db.select().from(assetsTable).where(
+    and(eq(assetsTable.userId, req.session.userId!), eq(assetsTable.ticker, tickerUpper), eq(assetsTable.category, category))
+  );
+
+  if (existing) {
+    const existingQty = parseFloat(existing.quantity);
+    const existingAvg = parseFloat(existing.averagePrice);
+    const newQty = existingQty + quantity;
+    const newAvg = (existingQty * existingAvg + quantity * averagePrice) / newQty;
+
+    const [updated] = await db.update(assetsTable)
+      .set({ quantity: String(newQty), averagePrice: String(newAvg) })
+      .where(eq(assetsTable.id, existing.id))
+      .returning();
+    const prices = await getPricesFor([updated]);
+    res.status(200).json(enrichAsset(updated, prices.get(updated.ticker.toUpperCase()) ?? null));
+    return;
+  }
+
   const [asset] = await db.insert(assetsTable).values({
     userId: req.session.userId!,
-    ticker: ticker.toUpperCase(),
+    ticker: tickerUpper,
     quantity: String(quantity),
     averagePrice: String(averagePrice),
     purchaseDate: typeof purchaseDate === "string" ? purchaseDate : null,
@@ -125,6 +152,97 @@ router.delete("/assets/:id", requireAuth, async (req, res): Promise<void> => {
     and(eq(assetsTable.id, params.data.id), eq(assetsTable.userId, req.session.userId!))
   );
   res.sendStatus(204);
+});
+
+function serializeSale(sale: typeof salesTable.$inferSelect) {
+  return {
+    id: sale.id,
+    userId: sale.userId,
+    ticker: sale.ticker,
+    category: sale.category,
+    quantity: parseFloat(sale.quantity),
+    averagePrice: parseFloat(sale.averagePrice),
+    salePrice: parseFloat(sale.salePrice),
+    saleDate: sale.saleDate,
+    grossGain: parseFloat(sale.grossGain),
+    taxOwed: sale.taxOwed != null ? parseFloat(sale.taxOwed) : null,
+    notes: sale.notes,
+    createdAt: sale.createdAt.toISOString(),
+  };
+}
+
+// Tolerância pra erro de arredondamento de ponto flutuante ao comparar a quantidade
+// vendida com a quantidade restante da posição — sem isso, vender "a posição toda"
+// podia deixar um resíduo tipo 0.000000003 e nunca encerrar o asset de verdade.
+const QUANTITY_EPSILON = 1e-6;
+
+router.post("/assets/:id/sell", requireAuth, async (req, res): Promise<void> => {
+  const params = SellAssetParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const parsed = SellAssetBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const [asset] = await db.select().from(assetsTable).where(
+    and(eq(assetsTable.id, params.data.id), eq(assetsTable.userId, req.session.userId!))
+  );
+  if (!asset) {
+    res.status(404).json({ error: "Asset não encontrado" });
+    return;
+  }
+
+  const existingQty = parseFloat(asset.quantity);
+  const { salePrice, saleDate, quantity } = parsed.data;
+  const soldQty = quantity ?? existingQty;
+
+  if (soldQty <= 0 || soldQty > existingQty + QUANTITY_EPSILON) {
+    res.status(400).json({ error: "Quantidade vendida inválida — deve ser maior que zero e não pode superar a posição atual." });
+    return;
+  }
+
+  // Reaproveita o mesmo motor de IR usado no parecer de ativos (tax-engine.ts), mas
+  // agora com o preço de venda REAL, não mais uma estimativa de "e se eu vendesse
+  // hoje" — esta venda já aconteceu de verdade. null pra renda_fixa/fundos, categorias
+  // fora do escopo de ganho de capital em renda variável.
+  const averagePrice = parseFloat(asset.averagePrice);
+  const tax = estimateCapitalGainsTax(asset.category, soldQty, averagePrice, salePrice);
+  const grossGain = tax ? tax.grossGain : (salePrice - averagePrice) * soldQty;
+
+  const [sale] = await db.insert(salesTable).values({
+    userId: req.session.userId!,
+    ticker: asset.ticker,
+    category: asset.category,
+    quantity: String(soldQty),
+    averagePrice: String(averagePrice),
+    salePrice: String(salePrice),
+    saleDate: saleDate.toISOString().slice(0, 10),
+    grossGain: String(grossGain),
+    taxOwed: tax ? String(tax.taxOwed) : null,
+  }).returning();
+
+  const remainingQty = existingQty - soldQty;
+  if (remainingQty > QUANTITY_EPSILON) {
+    // Venda parcial: reduz a quantidade, preço médio de compra não muda.
+    await db.update(assetsTable).set({ quantity: String(remainingQty) }).where(eq(assetsTable.id, asset.id));
+  } else {
+    // Venda total: a posição encerrou de verdade, não faz sentido mostrar quantidade
+    // zero em "Minha Carteira".
+    await db.delete(assetsTable).where(eq(assetsTable.id, asset.id));
+  }
+
+  res.status(201).json(serializeSale(sale));
+});
+
+router.get("/sales", requireAuth, async (req, res): Promise<void> => {
+  const sales = await db.select().from(salesTable)
+    .where(eq(salesTable.userId, req.session.userId!))
+    .orderBy(desc(salesTable.saleDate), desc(salesTable.id));
+  res.json(sales.map(serializeSale));
 });
 
 export default router;
