@@ -84,8 +84,8 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex flex-col h-full">
       <div className="p-6 flex items-center gap-3">
-        <div className="w-8 h-8 bg-primary-foreground text-primary flex items-center justify-center rounded-sm font-bold">
-          IR
+        <div className="w-8 h-8 bg-primary-foreground text-primary flex items-center justify-center rounded-sm">
+          <Radar className="w-5 h-5" />
         </div>
         <span className="font-bold text-lg tracking-tight">InvestRadar</span>
       </div>
@@ -150,8 +150,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Button variant="ghost" size="icon" onClick={() => setMobileNavOpen(true)} aria-label="Abrir menu">
           <Menu className="w-5 h-5" />
         </Button>
-        <div className="w-6 h-6 bg-primary-foreground text-primary flex items-center justify-center rounded-sm font-bold text-xs">
-          IR
+        <div className="w-6 h-6 bg-primary-foreground text-primary flex items-center justify-center rounded-sm">
+          <Radar className="w-4 h-4" />
         </div>
         <span className="font-bold tracking-tight">InvestRadar</span>
       </header>
