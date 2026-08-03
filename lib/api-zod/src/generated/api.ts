@@ -204,6 +204,55 @@ export const DeleteAssetResponse = zod.void()
 
 
 /**
+ * @summary Close (fully or partially) a position, recording a real sale with realized gain/tax
+ */
+export const SellAssetParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SellAssetBody = zod.object({
+  "salePrice": zod.number(),
+  "saleDate": zod.coerce.date(),
+  "quantity": zod.number().nullish().describe('Omitido ou igual à posição inteira = venda total (a posição é encerrada). Menor que a posição = venda parcial (a posição continua com a quantidade restante).')
+})
+
+export const SellAssetResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "ticker": zod.string(),
+  "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']),
+  "quantity": zod.number(),
+  "averagePrice": zod.number(),
+  "salePrice": zod.number(),
+  "saleDate": zod.coerce.date(),
+  "grossGain": zod.number(),
+  "taxOwed": zod.number().nullable(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List closed positions (sales), most recent first
+ */
+export const ListSalesResponseItem = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "ticker": zod.string(),
+  "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']),
+  "quantity": zod.number(),
+  "averagePrice": zod.number(),
+  "salePrice": zod.number(),
+  "saleDate": zod.coerce.date(),
+  "grossGain": zod.number(),
+  "taxOwed": zod.number().nullable(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const ListSalesResponse = zod.array(ListSalesResponseItem)
+
+
+/**
  * @summary Get the current user's investor risk profile, if set
  */
 export const GetInvestorProfileResponse = zod.object({

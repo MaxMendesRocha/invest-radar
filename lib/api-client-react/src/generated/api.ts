@@ -39,6 +39,8 @@ import type {
   PortfolioHealth,
   PortfolioReport,
   PortfolioSummary,
+  Sale,
+  SellAssetInput,
   SuccessResponse,
   Transaction,
   TransactionInput,
@@ -809,6 +811,155 @@ export const useDeleteAsset = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getDeleteAssetMutationOptions(options));
     }
+
+export const getSellAssetUrl = (id: number,) => {
+
+
+
+
+  return `/api/assets/${id}/sell`
+}
+
+/**
+ * @summary Close (fully or partially) a position, recording a real sale with realized gain/tax
+ */
+export const sellAsset = async (id: number,
+    sellAssetInput: SellAssetInput, options?: RequestInit): Promise<Sale> => {
+
+  return customFetch<Sale>(getSellAssetUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sellAssetInput)
+  }
+);}
+
+
+
+
+
+export const getSellAssetMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sellAsset>>, TError,{id: number;data: BodyType<SellAssetInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sellAsset>>, TError,{id: number;data: BodyType<SellAssetInput>}, TContext> => {
+
+const mutationKey = ['sellAsset'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sellAsset>>, {id: number;data: BodyType<SellAssetInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  sellAsset(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SellAssetMutationResult = NonNullable<Awaited<ReturnType<typeof sellAsset>>>
+    export type SellAssetMutationBody = BodyType<SellAssetInput>
+    export type SellAssetMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Close (fully or partially) a position, recording a real sale with realized gain/tax
+ */
+export const useSellAsset = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sellAsset>>, TError,{id: number;data: BodyType<SellAssetInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sellAsset>>,
+        TError,
+        {id: number;data: BodyType<SellAssetInput>},
+        TContext
+      > => {
+      return useMutation(getSellAssetMutationOptions(options));
+    }
+
+export const getListSalesUrl = () => {
+
+
+
+
+  return `/api/sales`
+}
+
+/**
+ * @summary List closed positions (sales), most recent first
+ */
+export const listSales = async ( options?: RequestInit): Promise<Sale[]> => {
+
+  return customFetch<Sale[]>(getListSalesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalesQueryKey = () => {
+    return [
+    `/api/sales`
+    ] as const;
+    }
+
+
+export const getListSalesQueryOptions = <TData = Awaited<ReturnType<typeof listSales>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSales>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSales>>> = ({ signal }) => listSales({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSales>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalesQueryResult = NonNullable<Awaited<ReturnType<typeof listSales>>>
+export type ListSalesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List closed positions (sales), most recent first
+ */
+
+export function useListSales<TData = Awaited<ReturnType<typeof listSales>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSales>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetInvestorProfileUrl = () => {
 

@@ -28,6 +28,8 @@ tags:
     description: Rules-based fundamentalist asset analysis
   - name: macro
     description: Macroeconomic indicators
+  - name: sales
+    description: Closed positions (asset sales) with realized capital gains
 
 paths:
   /healthz:
@@ -237,6 +239,59 @@ paths:
       responses:
         "204":
           description: Deleted
+
+  /assets/{id}/sell:
+    post:
+      operationId: sellAsset
+      tags: [assets, sales]
+      summary: Close (fully or partially) a position, recording a real sale with realized gain/tax
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellAssetInput"
+      responses:
+        "201":
+          description: Sale recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sale"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── SALES (closed positions) ─────────────────────────────────────────────────
+  /sales:
+    get:
+      operationId: listSales
+      tags: [sales]
+      summary: List closed positions (sales), most recent first
+      responses:
+        "200":
+          description: List of sales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Sale"
 
   # ─── INVESTOR PROFILE ────────────────────────────────────────────────────────
   /profile:
@@ -728,6 +783,51 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
+
+    SellAssetInput:
+      type: object
+      required: [salePrice, saleDate]
+      properties:
+        salePrice:
+          type: number
+        saleDate:
+          type: string
+          format: date
+        quantity:
+          type: ["number", "null"]
+          description: Omitido ou igual à posição inteira = venda total (a posição é encerrada). Menor que a posição = venda parcial (a posição continua com a quantidade restante).
+
+    Sale:
+      type: object
+      required: [id, userId, ticker, category, quantity, averagePrice, salePrice, saleDate, grossGain, taxOwed, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        ticker:
+          type: string
+        category:
+          type: string
+          enum: [acoes, fiis, etfs, bdrs, fundos, renda_fixa]
+        quantity:
+          type: number
+        averagePrice:
+          type: number
+        salePrice:
+          type: number
+        saleDate:
+          type: string
+          format: date
+        grossGain:
+          type: number
+        taxOwed:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
 
     # ─── INVESTOR PROFILE SCHEMAS ─────────────────────────────────────────────
     InvestorProfile:

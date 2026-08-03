@@ -128,6 +128,45 @@ export interface AssetUpdate {
   notes?: string | null;
 }
 
+export interface SellAssetInput {
+  salePrice: number;
+  saleDate: string;
+  /**
+     * Omitido ou igual à posição inteira = venda total (a posição é encerrada). Menor que a posição = venda parcial (a posição continua com a quantidade restante).
+     * @nullable
+     */
+  quantity?: number | null;
+}
+
+export type SaleCategory = typeof SaleCategory[keyof typeof SaleCategory];
+
+
+export const SaleCategory = {
+  acoes: 'acoes',
+  fiis: 'fiis',
+  etfs: 'etfs',
+  bdrs: 'bdrs',
+  fundos: 'fundos',
+  renda_fixa: 'renda_fixa',
+} as const;
+
+export interface Sale {
+  id: number;
+  userId: number;
+  ticker: string;
+  category: SaleCategory;
+  quantity: number;
+  averagePrice: number;
+  salePrice: number;
+  saleDate: string;
+  grossGain: number;
+  /** @nullable */
+  taxOwed: number | null;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+}
+
 export type InvestorProfileHorizon = typeof InvestorProfileHorizon[keyof typeof InvestorProfileHorizon];
 
 
