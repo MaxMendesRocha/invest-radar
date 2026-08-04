@@ -5,8 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Search, Check, AlertTriangle, Newspaper, Sparkles, TrendingUp, Coins } from "lucide-react";
+import { Search, Check, AlertTriangle, Newspaper, Sparkles, TrendingUp, Coins, LineChart } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+
+const CROSS_SIGNAL_LABELS: Record<string, string> = {
+  golden_cross_recente: "Cruzamento dourado recente",
+  death_cross_recente: "Cruzamento da morte recente",
+  acima_sma200: "Tendência de alta (longo prazo)",
+  abaixo_sma200: "Tendência de baixa (longo prazo)",
+};
 
 export default function Parecer() {
   const [ticker, setTicker] = useState("");
@@ -154,6 +161,20 @@ export default function Parecer() {
                     <Coins className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                     <span className="font-medium">
                       Provento {opinion.dividendTrend.growthPercent >= 0 ? "cresceu" : "caiu"} {Math.abs(opinion.dividendTrend.growthPercent).toFixed(1)}% nos últimos 12 meses
+                    </span>
+                  </div>
+                )}
+
+                {opinion.technical && (opinion.technical.rsi14 != null || opinion.technical.crossSignal) && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs px-3 py-2 rounded-md border bg-muted/40 border-border/50">
+                    <LineChart className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    <span className="font-medium">
+                      {[
+                        opinion.technical.rsi14 != null
+                          ? `RSI ${opinion.technical.rsi14.toFixed(0)} (${opinion.technical.rsi14 >= 70 ? "sobrecomprado" : opinion.technical.rsi14 <= 30 ? "sobrevendido" : "neutro"})`
+                          : null,
+                        opinion.technical.crossSignal ? CROSS_SIGNAL_LABELS[opinion.technical.crossSignal] ?? opinion.technical.crossSignal : null,
+                      ].filter(Boolean).join(" · ")}
                     </span>
                   </div>
                 )}

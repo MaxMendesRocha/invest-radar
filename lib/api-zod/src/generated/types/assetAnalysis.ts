@@ -8,6 +8,7 @@
 import type { AssetAnalysisScoreClassification } from './assetAnalysisScoreClassification';
 import type { AssetAnalysisStatus } from './assetAnalysisStatus';
 import type { AssetAnalysisTaxEstimate } from './assetAnalysisTaxEstimate';
+import type { TechnicalIndicators } from './technicalIndicators';
 
 export interface AssetAnalysis {
   ticker: string;
@@ -26,5 +27,6 @@ export interface AssetAnalysis {
      * @nullable
      */
   taxEstimate?: AssetAnalysisTaxEstimate;
+  technical: TechnicalIndicators | null;
   updatedAt: Date;
 }

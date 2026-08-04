@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "./logger";
 import type { DividendTrend } from "./market-data";
+import { describeTechnicalIndicators, type TechnicalIndicators } from "./technical-engine";
 
 const OPINION_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // preço/notícias mudam ao longo do dia, mas não a ponto de justificar cache mais curto pra um parecer sob demanda
 
@@ -17,6 +18,7 @@ export interface PrePurchaseOpinionInput {
   fiftyTwoWeekLow: number | null;
   fiveDayChangePercent: number | null;
   dividendTrend: DividendTrend | null;
+  technical: TechnicalIndicators | null; // null quando não há candles suficientes (technical-engine.ts)
   newsItems: string[]; // já formatadas com "[Impacto] título"
   macro: { selic: number | null; selicTrend: string | null; ipca12m: number | null };
 }
@@ -33,7 +35,7 @@ function getClient(): Anthropic | null {
 const opinionCache = new Map<string, { text: string; fetchedAt: number }>();
 
 function buildPrompt(input: PrePurchaseOpinionInput): string {
-  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, newsItems, macro } = input;
+  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, newsItems, macro } = input;
 
   const fundamentalsLine = available
     ? `Score do Radar: ${score}/100 (${scoreClassification})\nPontos positivos (fundamentos reais): ${positives.join("; ") || "nenhum"}\nPontos de atenção (fundamentos reais): ${risks.join("; ") || "nenhum"}`
@@ -48,6 +50,8 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     ? `Proventos pagos nos últimos 12 meses: R$${dividendTrend.last12mTotal.toFixed(2)}/unidade, vs. R$${dividendTrend.prior12mTotal.toFixed(2)}/unidade nos 12 meses anteriores (variação de ${dividendTrend.growthPercent >= 0 ? "+" : ""}${dividendTrend.growthPercent.toFixed(1)}%).`
     : "Histórico de provento insuficiente pra avaliar tendência (não avalie isso, apenas não mencione).";
 
+  const technicalLine = describeTechnicalIndicators(technical);
+
   return (
     `Você é um analista financeiro sênior dando uma PRIMEIRA LEITURA sobre um ativo pra alguém que ` +
     `está avaliando comprar — a pessoa ainda não tem posição nesse ativo, então isso não é sobre segurar ` +
@@ -58,6 +62,7 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     `${fundamentalsLine}\n` +
     `${rangeLine}\n` +
     `${dividendLine}\n` +
+    `Indicadores técnicos (candles reais, 1 ano): ${technicalLine}\n` +
     `Notícias recentes classificadas: ${newsItems.join(" | ") || "nenhuma"}\n` +
     `Cenário macro: Selic ${macro.selic ?? "?"}% (tendência ${macro.selicTrend ?? "?"}), IPCA 12m ${macro.ipca12m ?? "?"}%\n\n` +
     `Escreva um parecer curto (2-6 frases) cruzando TODOS os fatores acima. Pode dizer diretamente se o ` +
@@ -65,7 +70,10 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     `com os fundamentos (quando disponíveis): comprar perto da máxima de 52 semanas com fundamentos ` +
     `fracos pede mais cautela do que comprar perto da mínima com fundamentos sólidos, por exemplo. Quando ` +
     `os pontos de atenção envolverem piora de ROE, dívida subindo ou desaceleração de crescimento, pode ` +
-    `enquadrar isso como enfraquecimento da vantagem competitiva do negócio (moat). NÃO invente nenhum ` +
+    `enquadrar isso como enfraquecimento da vantagem competitiva do negócio (moat). Use o indicador ` +
+    `técnico como contexto de TIMING de entrada, complementar aos fundamentos — nunca como fator decisório ` +
+    `principal (ex.: "fundamentos bons e RSI em sobrevenda pode ser um bom ponto de entrada" ou ` +
+    `"fundamentos bons mas tecnicamente esticado — talvez valha esperar uma correção"). NÃO invente nenhum ` +
     `dado que não esteja listado acima. NÃO proponha um score diferente do informado quando os ` +
     `fundamentos estiverem disponíveis — a decisão de score é sempre do motor determinístico, você só ` +
     `interpreta.\n\n` +
@@ -86,14 +94,17 @@ export async function synthesizePrePurchaseOpinion(input: PrePurchaseOpinionInpu
   if (!client) return null;
 
   const dividendKeyPart = input.dividendTrend ? Math.round(input.dividendTrend.growthPercent) : "na";
-  const cacheKey = `${input.ticker}:${input.score}:${Math.round(input.price)}:${dividendKeyPart}`;
+  const technicalKeyPart = input.technical
+    ? `${input.technical.crossSignal ?? "na"}:${input.technical.rsi14 != null ? Math.round(input.technical.rsi14 / 5) * 5 : "na"}`
+    : "na";
+  const cacheKey = `${input.ticker}:${input.score}:${Math.round(input.price)}:${dividendKeyPart}:${technicalKeyPart}`;
   const cached = opinionCache.get(cacheKey);
   if (cached && Date.now() - cached.fetchedAt < OPINION_CACHE_TTL_MS) return cached.text;
 
   try {
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 650,
+      max_tokens: 750, // 2-6 frases cruzando fundamentos+range+dividendo+técnico+notícias+macro passam de 650 com o prompt maior
       messages: [{ role: "user", content: buildPrompt(input) }],
     });
 

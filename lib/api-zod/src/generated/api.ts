@@ -526,6 +526,24 @@ export const ListAssetAnalysesResponseItem = zod.object({
   "netGain": zod.number(),
   "exempt": zod.boolean()
 }).nullish().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
+  "technical": zod.union([zod.object({
+  "sma20": zod.number().nullable(),
+  "sma50": zod.number().nullable(),
+  "sma200": zod.number().nullable().describe('Null quando há menos de 200 candles de histórico (ticker novo\/pouco líquido).'),
+  "rsi14": zod.number().nullable(),
+  "macd": zod.object({
+  "line": zod.number(),
+  "signal": zod.number(),
+  "histogram": zod.number()
+}).nullable(),
+  "bollinger": zod.object({
+  "upper": zod.number(),
+  "middle": zod.number(),
+  "lower": zod.number(),
+  "pricePosition": zod.number().describe('0-100%, posição do preço atual dentro da banda.')
+}).nullable(),
+  "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
+}).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
   "updatedAt": zod.coerce.date()
 })
 export const ListAssetAnalysesResponse = zod.array(ListAssetAnalysesResponseItem)
@@ -556,6 +574,24 @@ export const GetAssetAnalysisResponse = zod.object({
   "netGain": zod.number(),
   "exempt": zod.boolean()
 }).nullish().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
+  "technical": zod.union([zod.object({
+  "sma20": zod.number().nullable(),
+  "sma50": zod.number().nullable(),
+  "sma200": zod.number().nullable().describe('Null quando há menos de 200 candles de histórico (ticker novo\/pouco líquido).'),
+  "rsi14": zod.number().nullable(),
+  "macd": zod.object({
+  "line": zod.number(),
+  "signal": zod.number(),
+  "histogram": zod.number()
+}).nullable(),
+  "bollinger": zod.object({
+  "upper": zod.number(),
+  "middle": zod.number(),
+  "lower": zod.number(),
+  "pricePosition": zod.number().describe('0-100%, posição do preço atual dentro da banda.')
+}).nullable(),
+  "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
+}).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
   "updatedAt": zod.coerce.date()
 })
 
@@ -584,6 +620,24 @@ export const GetAssetOpinionResponse = zod.object({
   "prior12mTotal": zod.number(),
   "growthPercent": zod.number()
 }).nullable().describe('Crescimento real de provento (últimos 12 meses vs. 12 anteriores) por unidade — null quando o histórico não cobre os dois períodos.'),
+  "technical": zod.union([zod.object({
+  "sma20": zod.number().nullable(),
+  "sma50": zod.number().nullable(),
+  "sma200": zod.number().nullable().describe('Null quando há menos de 200 candles de histórico (ticker novo\/pouco líquido).'),
+  "rsi14": zod.number().nullable(),
+  "macd": zod.object({
+  "line": zod.number(),
+  "signal": zod.number(),
+  "histogram": zod.number()
+}).nullable(),
+  "bollinger": zod.object({
+  "upper": zod.number(),
+  "middle": zod.number(),
+  "lower": zod.number(),
+  "pricePosition": zod.number().describe('0-100%, posição do preço atual dentro da banda.')
+}).nullable(),
+  "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
+}).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
   "newsItems": zod.array(zod.string()),
   "opinion": zod.string(),
   "updatedAt": zod.coerce.date()
@@ -621,6 +675,24 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "netGain": zod.number(),
   "exempt": zod.boolean()
 }).nullish().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
+  "technical": zod.union([zod.object({
+  "sma20": zod.number().nullable(),
+  "sma50": zod.number().nullable(),
+  "sma200": zod.number().nullable().describe('Null quando há menos de 200 candles de histórico (ticker novo\/pouco líquido).'),
+  "rsi14": zod.number().nullable(),
+  "macd": zod.object({
+  "line": zod.number(),
+  "signal": zod.number(),
+  "histogram": zod.number()
+}).nullable(),
+  "bollinger": zod.object({
+  "upper": zod.number(),
+  "middle": zod.number(),
+  "lower": zod.number(),
+  "pricePosition": zod.number().describe('0-100%, posição do preço atual dentro da banda.')
+}).nullable(),
+  "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
+}).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
   "updatedAt": zod.coerce.date()
 })),
   "topAlerts": zod.array(zod.object({

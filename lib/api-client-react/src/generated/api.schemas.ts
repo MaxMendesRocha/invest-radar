@@ -465,6 +465,62 @@ export interface TransactionInput {
   notes?: string | null;
 }
 
+/**
+ * @nullable
+ */
+export type TechnicalIndicatorsMacd = {
+  line: number;
+  signal: number;
+  histogram: number;
+} | null;
+
+/**
+ * @nullable
+ */
+export type TechnicalIndicatorsBollinger = {
+  upper: number;
+  middle: number;
+  lower: number;
+  /** 0-100%, posição do preço atual dentro da banda. */
+  pricePosition: number;
+} | null;
+
+/**
+ * @nullable
+ */
+export type TechnicalIndicatorsCrossSignal = typeof TechnicalIndicatorsCrossSignal[keyof typeof TechnicalIndicatorsCrossSignal] | null;
+
+
+export const TechnicalIndicatorsCrossSignal = {
+  golden_cross_recente: 'golden_cross_recente',
+  death_cross_recente: 'death_cross_recente',
+  acima_sma200: 'acima_sma200',
+  abaixo_sma200: 'abaixo_sma200',
+} as const;
+
+/**
+ * Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.
+ */
+export interface TechnicalIndicators {
+  /** @nullable */
+  sma20: number | null;
+  /** @nullable */
+  sma50: number | null;
+  /**
+     * Null quando há menos de 200 candles de histórico (ticker novo/pouco líquido).
+     * @nullable
+     */
+  sma200: number | null;
+  /** @nullable */
+  rsi14: number | null;
+  /** @nullable */
+  macd: TechnicalIndicatorsMacd;
+  /** @nullable */
+  bollinger: TechnicalIndicatorsBollinger;
+  /** @nullable */
+  crossSignal: TechnicalIndicatorsCrossSignal;
+}
+
 export type AssetAnalysisStatus = typeof AssetAnalysisStatus[keyof typeof AssetAnalysisStatus];
 
 
@@ -515,6 +571,7 @@ export interface AssetAnalysis {
      * @nullable
      */
   taxEstimate?: AssetAnalysisTaxEstimate;
+  technical: TechnicalIndicators | null;
   updatedAt: string;
 }
 
@@ -564,6 +621,7 @@ export interface AssetOpinion {
      * @nullable
      */
   dividendTrend: AssetOpinionDividendTrend;
+  technical: TechnicalIndicators | null;
   newsItems: string[];
   opinion: string;
   updatedAt: string;
