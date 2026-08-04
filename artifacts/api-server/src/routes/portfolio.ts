@@ -138,7 +138,7 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
   // below are heuristics for an existing portfolio's composition, not a default score
   // for having no portfolio at all (that was a bug: an empty carteira showed Score 34).
   const diversification = assets.length > 0 ? Math.min(100, categories.size * 15 + sectors.size * 8) : 0;
-  const concentration = assets.length > 0 ? Math.max(0, 100 - (100 / assets.length) * 2) : 0;
+  const concentration = assets.length > 0 ? Math.round(Math.max(0, 100 - (100 / assets.length) * 2)) : 0;
 
   // Risco/dividendos/crescimento são médias ponderadas pelo valor de cada posição,
   // usando os mesmos buckets de evalVolatility/evalDividendYield/evalRevenueGrowth do
