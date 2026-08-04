@@ -2,7 +2,7 @@ import { db, pool, opportunitiesTable, type InsertOpportunity } from "@workspace
 
 // Curated shortlist — not live-fetched fundamentals, numbers are illustrative.
 // Superseded in production by lib/opportunities-engine.ts's regenerateOpportunities()
-// (real fundamentals, runs every 2 days via lib/scheduler.ts). This script is now
+// (real fundamentals, runs every week via lib/scheduler.ts). This script is now
 // just a manual bootstrap — useful for a fresh DB or local dev without
 // BRAPI_TOKEN/ANTHROPIC_API_KEY configured, so the Oportunidades screen has
 // something to show before the real job ever runs.

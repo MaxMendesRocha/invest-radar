@@ -6,7 +6,7 @@ import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-// Dispara manualmente o mesmo job que o scheduler roda a cada 2 dias — útil pra
+// Dispara manualmente o mesmo job que o scheduler roda a cada semana — útil pra
 // testar sem esperar. Ignora o minGapMs de propósito (chamada manual sempre
 // executa), mas passa por runJobAndRecord pra atualizar job_runs.lastRunAt, então
 // não faz o scheduler automático rodar de novo 1h depois. runJobAndRecord pode

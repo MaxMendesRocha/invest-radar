@@ -9,7 +9,7 @@ export interface UniverseEntry {
 const BRAPI_LIST_URL = "https://brapi.dev/api/quote/list";
 
 // Quantos tickers por categoria entram no universo de screening — limitado pra
-// manter o tempo/custo do job de regeneração (a cada 2 dias) razoável. Ordenado por
+// manter o tempo/custo do job de regeneração (a cada semana) razoável. Ordenado por
 // market cap desc, então cobre os mais relevantes/líquidos de cada categoria antes
 // de qualquer coisa obscura. Ajustável sem mudar arquitetura.
 // "acoes" pede o dobro do alvo porque ~metade dos tickers de ação no plano atual
