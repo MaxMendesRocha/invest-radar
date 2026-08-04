@@ -375,6 +375,56 @@ export interface UpcomingDividend {
   confirmed: boolean;
 }
 
+export type DividendProjectionAssetCategory = typeof DividendProjectionAssetCategory[keyof typeof DividendProjectionAssetCategory];
+
+
+export const DividendProjectionAssetCategory = {
+  acoes: 'acoes',
+  fiis: 'fiis',
+  etfs: 'etfs',
+  bdrs: 'bdrs',
+} as const;
+
+export interface DividendProjectionAsset {
+  ticker: string;
+  category: DividendProjectionAssetCategory;
+  quantity: number;
+  /**
+     * Dividendos/JCP reais por unidade pagos nos últimos 12 meses. Null quando não há histórico suficiente (nunca estimado).
+     * @nullable
+     */
+  dps12m: number | null;
+  /**
+     * dps12m × quantidade atual. Null quando dps12m é null.
+     * @nullable
+     */
+  projectedAnnualIncome: number | null;
+  /**
+     * dps12m / preço atual, em % (ex. 6.5 = 6.5%).
+     * @nullable
+     */
+  dyOnPrice: number | null;
+  /**
+     * dps12m / preço médio de compra, em %.
+     * @nullable
+     */
+  dyOnCost: number | null;
+}
+
+export interface DividendProjectionMonth {
+  /** Formato YYYY-MM */
+  month: string;
+  /** Soma real de proventos pagos nesse mês, aplicada à quantidade atual de cada ativo. */
+  amount: number;
+}
+
+export interface PortfolioDividendsProjection {
+  projectedAnnualIncome: number;
+  projectedMonthlyAverage: number;
+  byAsset: DividendProjectionAsset[];
+  byMonth: DividendProjectionMonth[];
+}
+
 export interface BenchmarkPoint {
   label: string;
   portfolio: number;
@@ -451,6 +501,19 @@ export interface Opportunity {
   horizon: string;
   /** @nullable */
   currentPrice?: number | null;
+}
+
+export interface OpportunitiesNextRefresh {
+  /**
+     * Quando o job de regeneração rodou pela última vez com sucesso. Null se nunca rodou (banco novo, só com seed manual).
+     * @nullable
+     */
+  lastRefreshedAt: string | null;
+  /**
+     * lastRefreshedAt + intervalo alvo do scheduler. Null se lastRefreshedAt for null.
+     * @nullable
+     */
+  nextRefreshAt: string | null;
 }
 
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];

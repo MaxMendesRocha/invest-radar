@@ -448,7 +448,15 @@ export async function getDividendEvents(
       continue;
     }
 
-    if (item.category === "fiis") staleFiis.push(ticker);
+    // ETFs entram no mesmo caminho best-effort dos FIIs, não no lote de ações — testado
+    // e confirmado que a brapi.dev rejeita o lote INTEIRO de /v2/stocks/dividends
+    // (FII_DIVIDENDS_MISUSE) quando qualquer ticker de sufixo "11" (todo ETF B3, ex.
+    // BOVA11) entra na mesma chamada, derrubando silenciosamente o dado real de ações
+    // que estariam no mesmo lote de até V2_BATCH_SIZE. Isolando por ticker aqui, o pior
+    // caso vira o próprio ETF sem histórico (nenhum módulo real disponível pra ETF no
+    // plano atual — confirmado, FEATURE_NOT_AVAILABLE também no endpoint de FII), nunca
+    // mais contamina o resto do lote.
+    if (item.category === "fiis" || item.category === "etfs") staleFiis.push(ticker);
     else staleStocks.push(ticker);
   }
 
@@ -498,6 +506,30 @@ export async function getDividendEventsForTicker(ticker: string): Promise<Divide
   return stockEvents.length > 0 ? stockEvents : fiiEvents;
 }
 
+const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+
+// DPS real dos últimos 12 meses, sem exigir os 12 meses anteriores (diferente de
+// computeDividendTrend, que precisa das duas janelas pra calcular tendência de
+// crescimento). Usado por payout ratio (analysis-engine.ts) e projeção de renda
+// passiva (/portfolio/dividends/projection) — nenhum dos dois precisa de comparação
+// ano a ano, só do total real recebido, então exigir 24 meses descartaria dado real
+// disponível (ex. FIIs cujo provider só cobre os últimos ~12 meses) sem necessidade.
+export function sumLast12Months(events: DividendEvent[], now: number): number | null {
+  let total = 0;
+  let hasAny = false;
+
+  for (const event of events) {
+    const paidAt = new Date(event.paymentDate).getTime();
+    if (paidAt > now) continue;
+    if (now - paidAt <= ONE_YEAR_MS) {
+      total += event.rate;
+      hasAny = true;
+    }
+  }
+
+  return hasAny ? total : null;
+}
+
 export interface DividendTrend {
   last12mTotal: number; // R$ por unidade, soma dos proventos pagos nos últimos 12 meses
   prior12mTotal: number; // R$ por unidade, soma dos 12 meses anteriores a esses
@@ -510,7 +542,6 @@ export interface DividendTrend {
 // real em cada uma das duas janelas (histórico curto demais pra dizer se está
 // crescendo ou não).
 export function computeDividendTrend(events: DividendEvent[], now: number): DividendTrend | null {
-  const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
   let last12mTotal = 0;
   let prior12mTotal = 0;
   let hasLast12m = false;

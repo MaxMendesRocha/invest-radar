@@ -434,6 +434,19 @@ paths:
                 items:
                   $ref: "#/components/schemas/UpcomingDividend"
 
+  /portfolio/dividends/projection:
+    get:
+      operationId: getPortfolioDividendsProjection
+      tags: [portfolio]
+      summary: Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price per asset and monthly distribution
+      responses:
+        "200":
+          description: Dividend income projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioDividendsProjection"
+
   # ─── ALERTS ──────────────────────────────────────────────────────────────────
   /alerts:
     get:
@@ -505,6 +518,19 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Opportunity"
+
+  /opportunities/next-refresh:
+    get:
+      operationId: getOpportunitiesNextRefresh
+      tags: [opportunities]
+      summary: When the opportunities list was last regenerated and when the scheduler will run it again
+      responses:
+        "200":
+          description: Last/next refresh timestamps
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpportunitiesNextRefresh"
 
   # ─── TRANSACTIONS ────────────────────────────────────────────────────────────
   /transactions:
@@ -1024,6 +1050,58 @@ components:
         confirmed:
           type: boolean
 
+    DividendProjectionAsset:
+      type: object
+      required: [ticker, category, quantity, dps12m, projectedAnnualIncome, dyOnPrice, dyOnCost]
+      properties:
+        ticker:
+          type: string
+        category:
+          type: string
+          enum: [acoes, fiis, etfs, bdrs]
+        quantity:
+          type: number
+        dps12m:
+          type: ["number", "null"]
+          description: Dividendos/JCP reais por unidade pagos nos últimos 12 meses. Null quando não há histórico suficiente (nunca estimado).
+        projectedAnnualIncome:
+          type: ["number", "null"]
+          description: dps12m × quantidade atual. Null quando dps12m é null.
+        dyOnPrice:
+          type: ["number", "null"]
+          description: dps12m / preço atual, em % (ex. 6.5 = 6.5%).
+        dyOnCost:
+          type: ["number", "null"]
+          description: dps12m / preço médio de compra, em %.
+
+    DividendProjectionMonth:
+      type: object
+      required: [month, amount]
+      properties:
+        month:
+          type: string
+          description: "Formato YYYY-MM"
+        amount:
+          type: number
+          description: Soma real de proventos pagos nesse mês, aplicada à quantidade atual de cada ativo.
+
+    PortfolioDividendsProjection:
+      type: object
+      required: [projectedAnnualIncome, projectedMonthlyAverage, byAsset, byMonth]
+      properties:
+        projectedAnnualIncome:
+          type: number
+        projectedMonthlyAverage:
+          type: number
+        byAsset:
+          type: array
+          items:
+            $ref: "#/components/schemas/DividendProjectionAsset"
+        byMonth:
+          type: array
+          items:
+            $ref: "#/components/schemas/DividendProjectionMonth"
+
     BenchmarkPoint:
       type: object
       required: [label, portfolio, cdi, ibov, ifix]
@@ -1119,6 +1197,17 @@ components:
           type: string
         currentPrice:
           type: ["number", "null"]
+
+    OpportunitiesNextRefresh:
+      type: object
+      required: [lastRefreshedAt, nextRefreshAt]
+      properties:
+        lastRefreshedAt:
+          type: ["string", "null"]
+          description: Quando o job de regeneração rodou pela última vez com sucesso. Null se nunca rodou (banco novo, só com seed manual).
+        nextRefreshAt:
+          type: ["string", "null"]
+          description: lastRefreshedAt + intervalo alvo do scheduler. Null se lastRefreshedAt for null.
 
     # ─── TRANSACTION SCHEMAS ──────────────────────────────────────────────────
     Transaction:

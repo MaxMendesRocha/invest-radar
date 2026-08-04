@@ -406,6 +406,28 @@ export const GetPortfolioDividendsUpcomingResponse = zod.array(GetPortfolioDivid
 
 
 /**
+ * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price per asset and monthly distribution
+ */
+export const GetPortfolioDividendsProjectionResponse = zod.object({
+  "projectedAnnualIncome": zod.number(),
+  "projectedMonthlyAverage": zod.number(),
+  "byAsset": zod.array(zod.object({
+  "ticker": zod.string(),
+  "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs']),
+  "quantity": zod.number(),
+  "dps12m": zod.number().nullable().describe('Dividendos\/JCP reais por unidade pagos nos últimos 12 meses. Null quando não há histórico suficiente (nunca estimado).'),
+  "projectedAnnualIncome": zod.number().nullable().describe('dps12m × quantidade atual. Null quando dps12m é null.'),
+  "dyOnPrice": zod.number().nullable().describe('dps12m \/ preço atual, em % (ex. 6.5 = 6.5%).'),
+  "dyOnCost": zod.number().nullable().describe('dps12m \/ preço médio de compra, em %.')
+})),
+  "byMonth": zod.array(zod.object({
+  "month": zod.string().describe('Formato YYYY-MM'),
+  "amount": zod.number().describe('Soma real de proventos pagos nesse mês, aplicada à quantidade atual de cada ativo.')
+}))
+})
+
+
+/**
  * @summary List radar alerts
  */
 export const ListAlertsResponseItem = zod.object({
@@ -471,6 +493,15 @@ export const ListOpportunitiesResponseItem = zod.object({
   "currentPrice": zod.number().nullish()
 })
 export const ListOpportunitiesResponse = zod.array(ListOpportunitiesResponseItem)
+
+
+/**
+ * @summary When the opportunities list was last regenerated and when the scheduler will run it again
+ */
+export const GetOpportunitiesNextRefreshResponse = zod.object({
+  "lastRefreshedAt": zod.string().nullable().describe('Quando o job de regeneração rodou pela última vez com sucesso. Null se nunca rodou (banco novo, só com seed manual).'),
+  "nextRefreshAt": zod.string().nullable().describe('lastRefreshedAt + intervalo alvo do scheduler. Null se lastRefreshedAt for null.')
+})
 
 
 /**

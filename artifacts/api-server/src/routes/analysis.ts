@@ -11,6 +11,7 @@ import {
   getDividendEventsForTicker,
   getTechnicalSeries,
   computeDividendTrend,
+  sumLast12Months,
   sectorFor,
   QUOTED_CATEGORIES,
   type PriceHistory,
@@ -166,10 +167,32 @@ function computePriceAlerts(
 // Real fundamentals via getFundamentals() (brapi.dev, ver market-data.ts). Se o
 // provider não devolver dado pra um ticker específico (falha pontual, ticker sem
 // cobertura), cai em pendingAnalysis() — "Em breve" nunca virou score inventado.
-function computeAnalysis(ticker: string, category: string, fundamentalsByTicker: Map<string, Fundamentals>): AnalysisResult {
+function computeAnalysis(
+  ticker: string,
+  category: string,
+  fundamentalsByTicker: Map<string, Fundamentals>,
+  dps12mByTicker: Map<string, number | null>,
+): AnalysisResult {
   if (!QUOTED_CATEGORIES.has(category)) return analysisForUnquotedAsset();
-  const fundamentals = fundamentalsByTicker.get(ticker.toUpperCase());
-  return fundamentals ? analyzeFundamentals(fundamentals) : pendingAnalysis();
+  const upper = ticker.toUpperCase();
+  const fundamentals = fundamentalsByTicker.get(upper);
+  return fundamentals ? analyzeFundamentals(fundamentals, dps12mByTicker.get(upper) ?? null) : pendingAnalysis();
+}
+
+// Reaproveitado pelos 3 pontos que chamam computeAnalysis — busca o histórico real de
+// proventos e já devolve o Map de DPS 12m pronto pra passar direto (payout ratio),
+// em vez de cada call site recalcular na mão. sumLast12Months, não computeDividendTrend
+// — payout ratio só precisa do total de 12 meses, não da comparação com o ano anterior.
+async function buildDps12mMap(
+  items: { ticker: string; category: string }[],
+): Promise<Map<string, number | null>> {
+  const eventsByTicker = await getDividendEvents(items);
+  const now = Date.now();
+  const dps12mByTicker = new Map<string, number | null>();
+  for (const [ticker, events] of eventsByTicker) {
+    dps12mByTicker.set(ticker, sumLast12Months(events, now));
+  }
+  return dps12mByTicker;
 }
 
 function formatHeadline(item: NewsHeadline): string {
@@ -234,14 +257,17 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
   const analysisMap = new Map(existingAnalyses.map((a) => [a.ticker, a]));
 
   const pendingAssets = assets.filter((a) => !analysisMap.has(a.ticker) && QUOTED_CATEGORIES.has(a.category));
-  const fundamentalsByTicker = await getFundamentals(pendingAssets.map((a) => a.ticker));
+  const [fundamentalsByTicker, dps12mByTicker] = await Promise.all([
+    getFundamentals(pendingAssets.map((a) => a.ticker)),
+    buildDps12mMap(pendingAssets.map((a) => ({ ticker: a.ticker, category: a.category }))),
+  ]);
 
   const result = await Promise.all(
     assets.map(async (asset) => {
       const existing = analysisMap.get(asset.ticker);
       if (existing) return serializePersisted(existing);
       const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-      return toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker), newsItems);
+      return toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker), newsItems);
     })
   );
 
@@ -274,10 +300,13 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
   }
 
   const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-  const fundamentalsByTicker = QUOTED_CATEGORIES.has(asset.category)
-    ? await getFundamentals([asset.ticker])
-    : new Map<string, Fundamentals>();
-  res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker), newsItems));
+  const [fundamentalsByTicker, dps12mByTicker] = QUOTED_CATEGORIES.has(asset.category)
+    ? await Promise.all([
+        getFundamentals([asset.ticker]),
+        buildDps12mMap([{ ticker: asset.ticker, category: asset.category }]),
+      ])
+    : [new Map<string, Fundamentals>(), new Map<string, number | null>()];
+  res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker), newsItems));
 });
 
 // Cacheado por ticker (não por usuário nem por carteira) — o parecer não depende de
@@ -321,8 +350,10 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     return;
   }
 
-  const analysis = fundamentals ? analyzeFundamentals(fundamentals) : noFundamentalsAnalysis();
-  const dividendTrend = computeDividendTrend(dividendEvents, Date.now());
+  const opinionNow = Date.now();
+  const dividendTrend = computeDividendTrend(dividendEvents, opinionNow);
+  const dps12m = sumLast12Months(dividendEvents, opinionNow);
+  const analysis = fundamentals ? analyzeFundamentals(fundamentals, dps12m) : noFundamentalsAnalysis();
   const technicalPoints = technicalSeries.get(ticker) ?? [];
   const technical = technicalPoints.length > 0 ? computeTechnicalIndicators(technicalPoints) : null;
   const newsItems = newsHeadlines.map(formatHeadline);
@@ -391,9 +422,24 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker)
   );
 
+  // Buscado aqui (antes de computeAnalysis) porque o payout ratio — um dos fundamentos
+  // avaliados por analyzeFundamentals — precisa do histórico real de proventos pra
+  // calcular DPS 12m. Reaproveitado mais embaixo pro dividendTrend passado pra IA e
+  // pro cálculo de totalDividends, sem buscar duas vezes. dps12mByTicker (payout
+  // ratio) e dividendTrendByTicker (contexto de tendência pra IA) vêm do mesmo
+  // histórico, mas dps12m só exige a janela de 12 meses — ver sumLast12Months.
+  const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
+  const dividendTrendNow = Date.now();
+  const dps12mByTicker = new Map(
+    Array.from(dividendEventsByTicker.entries()).map(([ticker, events]) => [ticker, sumLast12Months(events, dividendTrendNow)])
+  );
+  const dividendTrendByTicker = new Map(
+    Array.from(dividendEventsByTicker.entries()).map(([ticker, events]) => [ticker, computeDividendTrend(events, dividendTrendNow)])
+  );
+
   const analyses = assets.map((a) => ({
     ticker: a.ticker.toUpperCase(),
-    ...computeAnalysis(a.ticker, a.category, fundamentalsByTicker),
+    ...computeAnalysis(a.ticker, a.category, fundamentalsByTicker, dps12mByTicker),
     taxEstimate: null as TaxEstimate | null,
     technical: null as TechnicalIndicators | null,
   }));
@@ -420,7 +466,6 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
     totalPatrimony += parseFloat(a.quantity) * price;
   }
-  const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
   const technicalSeriesByTicker = await getTechnicalSeries(available.map((a) => a.ticker));
 
   // Em paralelo — sequencial levava ~4s por ativo (chamada real à Anthropic), o que
@@ -440,7 +485,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         asset && currentPrice != null && totalPatrimony > 0
           ? ((parseFloat(asset.quantity) * currentPrice) / totalPatrimony) * 100
           : 0;
-      const dividendTrend = computeDividendTrend(dividendEventsByTicker.get(analysis.ticker) ?? [], Date.now());
+      const dividendTrend = dividendTrendByTicker.get(analysis.ticker) ?? null;
       const technicalPoints = technicalSeriesByTicker.get(analysis.ticker) ?? [];
       const technical = technicalPoints.length > 0 ? computeTechnicalIndicators(technicalPoints) : null;
       analysis.technical = technical;
