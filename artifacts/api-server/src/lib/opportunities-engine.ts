@@ -38,7 +38,7 @@ function computePotentialReturn(score: number, f: Fundamentals): number {
  * de cada um (mesmo analyzeFundamentals do Radar por ativo) e substitui inteiramente
  * a tabela `opportunities` pelos que batem o score mínimo — tickers sem fundamentos
  * disponíveis simplesmente não entram, nunca com dado inventado. Chamada pelo
- * scheduler a cada 2 dias (ver lib/scheduler.ts) e pelo endpoint interno de disparo
+ * scheduler a cada semana (ver lib/scheduler.ts) e pelo endpoint interno de disparo
  * manual (routes/internal.ts).
  */
 export async function regenerateOpportunities(): Promise<{ summary: string }> {
@@ -103,6 +103,6 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
 // (routes/internal.ts), pra manter nome e intervalo alvo num único lugar.
 export const OPPORTUNITIES_JOB: JobDefinition = {
   name: "regenerate-opportunities",
-  minGapMs: 48 * 60 * 60 * 1000, // 2 dias
+  minGapMs: 7 * 24 * 60 * 60 * 1000, // 1 semana
   run: regenerateOpportunities,
 };
