@@ -7,6 +7,7 @@
  */
 import type { AssetOpinionDividendTrend } from './assetOpinionDividendTrend';
 import type { AssetOpinionScoreClassification } from './assetOpinionScoreClassification';
+import type { TechnicalIndicators } from './technicalIndicators';
 
 /**
  * Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER/REAVALIAR/etc).
@@ -33,6 +34,7 @@ export interface AssetOpinion {
      * @nullable
      */
   dividendTrend: AssetOpinionDividendTrend;
+  technical: TechnicalIndicators | null;
   newsItems: string[];
   opinion: string;
   updatedAt: Date;

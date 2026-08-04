@@ -638,6 +638,94 @@ export async function getPriceHistories(tickers: string[]): Promise<Map<string, 
   return fresh;
 }
 
+export interface OhlcPoint {
+  date: string; // ISO
+  close: number;
+  adjustedClose: number; // usado em todo cálculo técnico (technical-engine.ts), nunca `close` puro — evita que desdobramento/provento vire um "gap" falso no gráfico
+  volume: number;
+}
+
+interface BrapiOhlcPoint {
+  date: number; // unix seconds
+  close: number;
+  adjustedClose?: number;
+  volume?: number;
+}
+
+interface BrapiExtendedHistoryResult extends BrapiResult {
+  historicalDataPrice?: BrapiOhlcPoint[];
+}
+
+const TECHNICAL_SERIES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // indicador é de fechamento diário, não precisa ser mais fresco que isso
+const technicalSeriesCache = new Map<string, { points: OhlcPoint[]; fetchedAt: number }>();
+
+async function fetchTechnicalSeries(ticker: string): Promise<OhlcPoint[]> {
+  const token = process.env.BRAPI_TOKEN;
+  // 1 ano de candles diários (~249 pontos reais, testado) — suficiente pra SMA200,
+  // o indicador que exige mais histórico entre os que technical-engine.ts calcula.
+  const url = `${BRAPI_BASE_URL}/${encodeURIComponent(ticker)}?range=1y&interval=1d`;
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    logger.warn({ status: response.status, ticker }, "brapi.dev technical series request failed");
+    return [];
+  }
+
+  const body = (await response.json()) as { results?: BrapiExtendedHistoryResult[] };
+  const item = body.results?.[0];
+  const history = item?.historicalDataPrice ?? [];
+
+  return history
+    .filter((p): p is Required<BrapiOhlcPoint> => typeof p.close === "number" && typeof p.adjustedClose === "number")
+    .map((p) => ({
+      date: new Date(p.date * 1000).toISOString().slice(0, 10),
+      close: p.close,
+      adjustedClose: p.adjustedClose,
+      volume: p.volume ?? 0,
+    }));
+}
+
+/**
+ * Série diária de 1 ano (fechamento ajustado) por ticker, usada por
+ * technical-engine.ts pra calcular indicadores técnicos reais (médias móveis, RSI,
+ * MACD, Bollinger). Cache de 24h — separado de getPriceHistories porque é um payload
+ * bem mais pesado (a série inteira, não só min/max/variação) que só quem calcula
+ * indicador técnico precisa buscar.
+ */
+export async function getTechnicalSeries(tickers: string[]): Promise<Map<string, OhlcPoint[]>> {
+  const uniqueTickers = Array.from(new Set(tickers.map((t) => t.toUpperCase())));
+  if (uniqueTickers.length === 0) return new Map();
+
+  const now = Date.now();
+  const fresh = new Map<string, OhlcPoint[]>();
+  const stale: string[] = [];
+
+  for (const ticker of uniqueTickers) {
+    const cached = technicalSeriesCache.get(ticker);
+    if (cached && now - cached.fetchedAt < TECHNICAL_SERIES_CACHE_TTL_MS) {
+      fresh.set(ticker, cached.points);
+    } else {
+      stale.push(ticker);
+    }
+  }
+
+  if (stale.length > 0) {
+    const settled = await Promise.allSettled(stale.map((ticker) => fetchTechnicalSeries(ticker)));
+    stale.forEach((ticker, i) => {
+      const outcome = settled[i];
+      const points = outcome.status === "fulfilled" ? outcome.value : [];
+      if (outcome.status === "rejected") {
+        logger.warn({ err: outcome.reason, ticker }, "brapi.dev technical series request errored");
+      }
+      technicalSeriesCache.set(ticker, { points, fetchedAt: now });
+      fresh.set(ticker, points);
+    });
+  }
+
+  return fresh;
+}
+
 /**
  * Convenience wrapper around getQuotes for a list of { ticker, category } records
  * (assets, opportunities, ...): filters to quotable categories and returns a

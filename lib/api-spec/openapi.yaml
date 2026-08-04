@@ -1119,9 +1119,50 @@ components:
           type: ["string", "null"]
 
     # ─── ANALYSIS SCHEMAS ─────────────────────────────────────────────────────
+    TechnicalIndicators:
+      type: object
+      description: Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.
+      required: [sma20, sma50, sma200, rsi14, macd, bollinger, crossSignal]
+      properties:
+        sma20:
+          type: [number, "null"]
+        sma50:
+          type: [number, "null"]
+        sma200:
+          type: [number, "null"]
+          description: Null quando há menos de 200 candles de histórico (ticker novo/pouco líquido).
+        rsi14:
+          type: [number, "null"]
+        macd:
+          type: [object, "null"]
+          properties:
+            line:
+              type: number
+            signal:
+              type: number
+            histogram:
+              type: number
+          required: [line, signal, histogram]
+        bollinger:
+          type: [object, "null"]
+          properties:
+            upper:
+              type: number
+            middle:
+              type: number
+            lower:
+              type: number
+            pricePosition:
+              type: number
+              description: 0-100%, posição do preço atual dentro da banda.
+          required: [upper, middle, lower, pricePosition]
+        crossSignal:
+          type: [string, "null"]
+          enum: [golden_cross_recente, death_cross_recente, acima_sma200, abaixo_sma200, null]
+
     AssetAnalysis:
       type: object
-      required: [ticker, available, status, score, scoreClassification, positives, risks, newsItems, alerts, monitoringRecommendation, updatedAt]
+      required: [ticker, available, status, score, scoreClassification, positives, risks, newsItems, alerts, monitoringRecommendation, technical, updatedAt]
       properties:
         ticker:
           type: string
@@ -1169,13 +1210,17 @@ components:
             exempt:
               type: boolean
           required: [grossGain, taxRate, taxOwed, netGain, exempt]
+        technical:
+          anyOf:
+            - $ref: "#/components/schemas/TechnicalIndicators"
+            - type: "null"
         updatedAt:
           type: string
           format: date-time
 
     AssetOpinion:
       type: object
-      required: [ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, newsItems, opinion, updatedAt]
+      required: [ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, newsItems, opinion, updatedAt]
       description: Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER/REAVALIAR/etc).
       properties:
         ticker:
@@ -1217,6 +1262,10 @@ components:
             growthPercent:
               type: number
           required: [last12mTotal, prior12mTotal, growthPercent]
+        technical:
+          anyOf:
+            - $ref: "#/components/schemas/TechnicalIndicators"
+            - type: "null"
         newsItems:
           type: array
           items:

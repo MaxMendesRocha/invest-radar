@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity, Clock, Receipt } from "lucide-react";
+import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity, Clock, Receipt, LineChart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
 
@@ -35,6 +35,43 @@ function TaxBadge({ tax }: { tax: AssetAnalysis["taxEstimate"] }) {
       <Receipt className="w-3.5 h-3.5 shrink-0" />
       <span className="font-medium">{label}</span>
       <span className="text-[10px] opacity-70 sm:ml-auto">estimativa isolada, não considera outras vendas do mês</span>
+    </div>
+  );
+}
+
+const CROSS_SIGNAL_LABELS: Record<string, string> = {
+  golden_cross_recente: "Cruzamento dourado recente",
+  death_cross_recente: "Cruzamento da morte recente",
+  acima_sma200: "Tendência de alta (longo prazo)",
+  abaixo_sma200: "Tendência de baixa (longo prazo)",
+};
+
+function TechnicalBadge({ technical }: { technical: AssetAnalysis["technical"] }) {
+  if (!technical) return null;
+
+  const parts: string[] = [];
+  if (technical.rsi14 != null) {
+    const label = technical.rsi14 >= 70 ? "sobrecomprado" : technical.rsi14 <= 30 ? "sobrevendido" : "neutro";
+    parts.push(`RSI ${technical.rsi14.toFixed(0)} (${label})`);
+  }
+  if (technical.crossSignal) {
+    parts.push(CROSS_SIGNAL_LABELS[technical.crossSignal] ?? technical.crossSignal);
+  }
+  if (parts.length === 0) return null;
+
+  const isCaution = technical.crossSignal === "death_cross_recente" || technical.crossSignal === "abaixo_sma200" || (technical.rsi14 != null && technical.rsi14 >= 70);
+  const isFavorable = technical.crossSignal === "golden_cross_recente" || technical.crossSignal === "acima_sma200" || (technical.rsi14 != null && technical.rsi14 <= 30);
+  const colorClass = isCaution
+    ? "bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400"
+    : isFavorable
+    ? "bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400"
+    : "bg-muted/40 border-border/50 text-muted-foreground";
+
+  return (
+    <div className={`flex flex-wrap items-center gap-2 text-xs px-3 py-2 rounded-md border mb-3 ${colorClass}`}>
+      <LineChart className="w-3.5 h-3.5 shrink-0" />
+      <span className="font-medium">{parts.join(" · ")}</span>
+      <span className="text-[10px] opacity-70 sm:ml-auto">indicador técnico, 1 ano de candles reais</span>
     </div>
   );
 }
@@ -203,6 +240,7 @@ export default function Analise() {
                             <Activity className="w-4 h-4" /> Recomendação Tática
                           </h4>
                           <TaxBadge tax={analysis.taxEstimate} />
+                          <TechnicalBadge technical={analysis.technical} />
                           <div className="bg-muted/50 p-4 rounded-md text-sm leading-relaxed border border-border/50">
                             {analysis.monitoringRecommendation}
                           </div>

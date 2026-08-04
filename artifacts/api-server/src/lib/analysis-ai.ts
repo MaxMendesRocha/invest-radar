@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "./logger";
 import type { TaxEstimate } from "./tax-engine";
 import type { DividendTrend } from "./market-data";
+import { describeTechnicalIndicators, type TechnicalIndicators } from "./technical-engine";
 
 const RECOMMENDATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // score/status não mudam mais de uma vez por dia
 
@@ -17,6 +18,7 @@ export interface AssetRecommendationInput {
   tax: TaxEstimate | null; // null pra renda_fixa/fundos (regras de IR diferentes, fora do escopo daqui)
   positionPercent: number; // % do patrimônio total da carteira que esse ativo representa
   dividendTrend: DividendTrend | null; // null quando não há histórico real dos dois períodos (ver computeDividendTrend em market-data.ts) — nunca estimado
+  technical: TechnicalIndicators | null; // null quando não há candles suficientes (technical-engine.ts)
 }
 
 let anthropicClient: Anthropic | null | undefined;
@@ -37,7 +39,7 @@ const CONCENTRATION_HIGH = 25;
 const CONCENTRATION_CRITICAL = 40;
 
 function buildPrompt(input: AssetRecommendationInput): string {
-  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, dividendTrend } = input;
+  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, dividendTrend, technical } = input;
 
   const taxLine = tax
     ? tax.exempt
@@ -56,6 +58,8 @@ function buildPrompt(input: AssetRecommendationInput): string {
     ? `Proventos pagos nos últimos 12 meses: R$${dividendTrend.last12mTotal.toFixed(2)}/unidade, vs. R$${dividendTrend.prior12mTotal.toFixed(2)}/unidade nos 12 meses anteriores (variação de ${dividendTrend.growthPercent >= 0 ? "+" : ""}${dividendTrend.growthPercent.toFixed(1)}%). Provento crescendo de forma consistente é, historicamente, um sinal de qualidade mais forte que só o yield atual estar alto.`
     : "Histórico de provento nos últimos 24 meses insuficiente para avaliar tendência de crescimento (não avalie isso, apenas não mencione).";
 
+  const technicalLine = describeTechnicalIndicators(technical);
+
   return (
     `Você é um analista financeiro sênior atuando como consultor pessoal do dono desta carteira — ` +
     `não é um produto vendido a terceiros, é uma ferramenta de uso individual, então pode e deve ser ` +
@@ -69,7 +73,8 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `Cenário macro: Selic ${macro.selic ?? "?"}% (tendência ${macro.selicTrend ?? "?"}), IPCA 12m ${macro.ipca12m ?? "?"}%\n` +
     `${taxLine}\n` +
     `${concentrationLine}\n` +
-    `${dividendTrendLine}\n\n` +
+    `${dividendTrendLine}\n` +
+    `Indicadores técnicos (candles reais, 1 ano): ${technicalLine}\n\n` +
     `Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos ` +
     `justificarem (status REAVALIAR ou POSSIVEL_SAIDA, ou risco relevante nos pontos de atenção), pode ` +
     `dizer explicitamente que faz sentido considerar reduzir ou encerrar a posição — não fique só em ` +
@@ -81,7 +86,11 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `fundamentos pioraram, mas o IR torna a saída agora pouco vantajosa, vale reavaliar perto de ` +
     `[condição]" em vez de uma saída imediata. Se a concentração estiver alta ou crítica, pondere isso ` +
     `mesmo quando os fundamentos estiverem bons — risco de posição é risco de carteira, não só de ativo. ` +
-    `NÃO invente nenhum dado que não esteja listado acima. NÃO proponha um score ou status diferente do ` +
+    `Use o indicador técnico como contexto de TIMING, nunca como fator decisório principal — os ` +
+    `fundamentos sempre vêm primeiro; mencione o técnico só quando ele reforçar ou contradizer de forma ` +
+    `relevante a leitura fundamentalista (ex.: "fundamentos deterioraram e o RSI já mostra sobrevenda, ` +
+    `pouco espaço pra piorar mais no curto prazo" ou "fundamentos sólidos, mas tecnicamente esticado pelo ` +
+    `RSI, talvez valha esperar uma correção pra reforçar"). NÃO invente nenhum dado que não esteja listado acima. NÃO proponha um score ou status diferente do ` +
     `informado — a decisão de score é sempre do motor determinístico, você só interpreta. NÃO trate o ` +
     `valor de IR como exato — é uma estimativa isolada, deixe isso implícito no texto sem precisar repetir ` +
     `a ressalva inteira. Evite muletas vagas como "observe", "acompanhe" ou "fique atento" — só recorra a ` +
@@ -105,20 +114,23 @@ export async function synthesizeAssetRecommendation(input: AssetRecommendationIn
   const client = getClient();
   if (!client) return null;
 
-  // Inclui IR, % de concentração (bucket de 5 em 5) e tendência de dividendo
-  // (arredondados) na chave — mudam com o preço/patrimônio todo dia, mesmo quando
+  // Inclui IR, % de concentração, tendência de dividendo e sinal técnico (arredondados/
+  // bucketizados) na chave — mudam com o preço/patrimônio todo dia, mesmo quando
   // score/status ficam parados dentro do TTL de 24h.
   const taxKeyPart = input.tax ? Math.round(input.tax.taxOwed) : "na";
   const positionKeyPart = Math.round(input.positionPercent / 5) * 5;
   const dividendKeyPart = input.dividendTrend ? Math.round(input.dividendTrend.growthPercent) : "na";
-  const cacheKey = `${input.ticker}:${input.score}:${input.status}:${taxKeyPart}:${positionKeyPart}:${dividendKeyPart}`;
+  const technicalKeyPart = input.technical
+    ? `${input.technical.crossSignal ?? "na"}:${input.technical.rsi14 != null ? Math.round(input.technical.rsi14 / 5) * 5 : "na"}`
+    : "na";
+  const cacheKey = `${input.ticker}:${input.score}:${input.status}:${taxKeyPart}:${positionKeyPart}:${dividendKeyPart}:${technicalKeyPart}`;
   const cached = recommendationCache.get(cacheKey);
   if (cached && Date.now() - cached.fetchedAt < RECOMMENDATION_CACHE_TTL_MS) return cached.text;
 
   try {
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 650, // 2-6 frases cruzando fundamentos+notícias+macro+IR+concentração+dividendo passam de 500 com o prompt maior — mesma lição da truncagem anterior
+      max_tokens: 750, // 2-6 frases cruzando fundamentos+notícias+macro+IR+concentração+dividendo+técnico passam de 650 com o prompt maior — mesma lição da truncagem anterior
       messages: [{ role: "user", content: buildPrompt(input) }],
     });
 

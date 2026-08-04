@@ -9,6 +9,7 @@ import {
   getFundamentals,
   getDividendEvents,
   getDividendEventsForTicker,
+  getTechnicalSeries,
   computeDividendTrend,
   sectorFor,
   QUOTED_CATEGORIES,
@@ -21,6 +22,7 @@ import { getMacroSnapshot } from "../lib/macro-data";
 import { synthesizeAssetRecommendation } from "../lib/analysis-ai";
 import { synthesizePrePurchaseOpinion } from "../lib/opinion-ai";
 import { estimateCapitalGainsTax, type TaxEstimate } from "../lib/tax-engine";
+import { computeTechnicalIndicators, type TechnicalIndicators } from "../lib/technical-engine";
 
 const router: IRouter = Router();
 
@@ -199,6 +201,7 @@ function serializePersisted(row: typeof analysesTable.$inferSelect) {
     // fica parado até a próxima geração, igual ao resto da análise (score,
     // positivos, riscos). Não recalculado a cada leitura.
     taxEstimate: row.taxEstimate ? (JSON.parse(row.taxEstimate) as TaxEstimate) : null,
+    technical: row.technical ? (JSON.parse(row.technical) as TechnicalIndicators) : null,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -219,6 +222,7 @@ function toApiShape(ticker: string, result: AnalysisResult, newsItems: string[])
     // rotas GET não buscam pra ficarem leves) — sempre presente no shape, mesmo
     // que null, pra quem consome a API não precisar tratar campo ausente.
     taxEstimate: null as TaxEstimate | null,
+    technical: null as TechnicalIndicators | null,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -297,10 +301,11 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     return;
   }
 
-  const [fundamentalsByTicker, priceHistories, dividendEvents, newsHeadlines, macro] = await Promise.all([
+  const [fundamentalsByTicker, priceHistories, dividendEvents, technicalSeries, newsHeadlines, macro] = await Promise.all([
     getFundamentals([ticker]),
     getPriceHistories([ticker]),
     getDividendEventsForTicker(ticker),
+    getTechnicalSeries([ticker]),
     getNewsFor(resolveSearchTerm(ticker), 3),
     getMacroSnapshot(),
   ]);
@@ -318,6 +323,8 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
 
   const analysis = fundamentals ? analyzeFundamentals(fundamentals) : noFundamentalsAnalysis();
   const dividendTrend = computeDividendTrend(dividendEvents, Date.now());
+  const technicalPoints = technicalSeries.get(ticker) ?? [];
+  const technical = technicalPoints.length > 0 ? computeTechnicalIndicators(technicalPoints) : null;
   const newsItems = newsHeadlines.map(formatHeadline);
   const name = fundamentals?.name ?? null;
 
@@ -334,6 +341,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     fiftyTwoWeekLow: priceHistory?.fiftyTwoWeekLow ?? null,
     fiveDayChangePercent: priceHistory?.fiveDayChangePercent ?? null,
     dividendTrend,
+    technical,
     newsItems,
     macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
   });
@@ -351,6 +359,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     fiftyTwoWeekLow: priceHistory?.fiftyTwoWeekLow ?? null,
     fiveDayChangePercent: priceHistory?.fiveDayChangePercent ?? null,
     dividendTrend,
+    technical,
     newsItems,
     opinion: aiOpinion ?? analysis.monitoringRecommendation,
     updatedAt: new Date().toISOString(),
@@ -386,6 +395,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     ticker: a.ticker.toUpperCase(),
     ...computeAnalysis(a.ticker, a.category, fundamentalsByTicker),
     taxEstimate: null as TaxEstimate | null,
+    technical: null as TechnicalIndicators | null,
   }));
 
   // Only persist (and alert on) results that are actually available — pending
@@ -411,6 +421,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     totalPatrimony += parseFloat(a.quantity) * price;
   }
   const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
+  const technicalSeriesByTicker = await getTechnicalSeries(available.map((a) => a.ticker));
 
   // Em paralelo — sequencial levava ~4s por ativo (chamada real à Anthropic), o que
   // deixava uma carteira de 5 ativos demorando ~20s pra gerar.
@@ -430,6 +441,9 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
           ? ((parseFloat(asset.quantity) * currentPrice) / totalPatrimony) * 100
           : 0;
       const dividendTrend = computeDividendTrend(dividendEventsByTicker.get(analysis.ticker) ?? [], Date.now());
+      const technicalPoints = technicalSeriesByTicker.get(analysis.ticker) ?? [];
+      const technical = technicalPoints.length > 0 ? computeTechnicalIndicators(technicalPoints) : null;
+      analysis.technical = technical;
 
       const aiRecommendation = await synthesizeAssetRecommendation({
         ticker: analysis.ticker,
@@ -443,6 +457,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         tax,
         positionPercent,
         dividendTrend,
+        technical,
       });
 
       // Mutação intencional: `analysis` é a mesma referência presente em `analyses`
@@ -462,6 +477,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         alerts: JSON.stringify(analysis.risks.length > 0 ? [analysis.risks[0]] : []),
         monitoringRecommendation: analysis.monitoringRecommendation,
         taxEstimate: tax ? JSON.stringify(tax) : null,
+        technical: technical ? JSON.stringify(technical) : null,
       });
     })
   );
