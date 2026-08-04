@@ -496,6 +496,15 @@ export const ListOpportunitiesResponse = zod.array(ListOpportunitiesResponseItem
 
 
 /**
+ * @summary When the opportunities list was last regenerated and when the scheduler will run it again
+ */
+export const GetOpportunitiesNextRefreshResponse = zod.object({
+  "lastRefreshedAt": zod.string().nullable().describe('Quando o job de regeneração rodou pela última vez com sucesso. Null se nunca rodou (banco novo, só com seed manual).'),
+  "nextRefreshAt": zod.string().nullable().describe('lastRefreshedAt + intervalo alvo do scheduler. Null se lastRefreshedAt for null.')
+})
+
+
+/**
  * @summary List dividend transactions
  */
 export const ListTransactionsResponseItem = zod.object({

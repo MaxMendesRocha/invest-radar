@@ -49,6 +49,7 @@ export * from './macroSnapshot';
 export * from './macroSnapshotSelicTrend';
 export * from './monthlyCategoryTax';
 export * from './monthlyCategoryTaxCategory';
+export * from './opportunitiesNextRefresh';
 export * from './opportunity';
 export * from './opportunityRiskLevel';
 export * from './portfolioDistribution';

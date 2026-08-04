@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
-import { db, opportunitiesTable, investorProfilesTable } from "@workspace/db";
+import { db, opportunitiesTable, investorProfilesTable, jobRunsTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor } from "../lib/market-data";
+import { OPPORTUNITIES_JOB } from "../lib/opportunities-engine";
 
 const router: IRouter = Router();
 
@@ -48,6 +49,21 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
   // Only fetch quotes for what's actually shown, not the full curated list.
   const prices = await getPricesFor(top10);
   res.json(top10.map((item) => ({ ...item, currentPrice: prices.get(item.ticker.toUpperCase()) ?? null })));
+});
+
+// Quando a lista foi atualizada pela última vez e quando o scheduler (lib/scheduler.ts)
+// deve rodar de novo — lastRunAt + minGapMs do mesmo OPPORTUNITIES_JOB usado pelo
+// scheduler e pelo disparo manual (routes/internal.ts), então nunca dessincroniza.
+// Ambos null se o job nunca rodou (banco novo, só com o seed manual).
+router.get("/opportunities/next-refresh", requireAuth, async (req, res): Promise<void> => {
+  const [row] = await db.select().from(jobRunsTable).where(eq(jobRunsTable.jobName, OPPORTUNITIES_JOB.name));
+  const lastRefreshedAt = row?.lastRunAt ?? null;
+  const nextRefreshAt = lastRefreshedAt ? new Date(lastRefreshedAt.getTime() + OPPORTUNITIES_JOB.minGapMs) : null;
+
+  res.json({
+    lastRefreshedAt: lastRefreshedAt ? lastRefreshedAt.toISOString() : null,
+    nextRefreshAt: nextRefreshAt ? nextRefreshAt.toISOString() : null,
+  });
 });
 
 export default router;

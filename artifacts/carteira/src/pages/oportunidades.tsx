@@ -3,11 +3,12 @@ import {
   getListOpportunitiesQueryKey,
   useGetInvestorProfile,
   getGetInvestorProfileQueryKey,
+  useGetOpportunitiesNextRefresh,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Lightbulb, TrendingUp, ShieldAlert, ArrowRight, Target } from "lucide-react";
+import { Lightbulb, TrendingUp, ShieldAlert, ArrowRight, Target, RefreshCw } from "lucide-react";
 
 const RISK_MAP = {
   Baixo: "default",
@@ -24,6 +25,7 @@ const CLASSIFICATION_BADGE: Record<string, "default" | "secondary" | "destructiv
 export default function Oportunidades() {
   const { data: opportunities, isLoading } = useListOpportunities({ query: { queryKey: getListOpportunitiesQueryKey() } });
   const { data: profile } = useGetInvestorProfile({ query: { queryKey: getGetInvestorProfileQueryKey(), retry: false } });
+  const { data: nextRefresh } = useGetOpportunitiesNextRefresh();
 
   return (
     <div className="space-y-6">
@@ -38,6 +40,12 @@ export default function Oportunidades() {
         ) : (
           <p className="text-sm text-muted-foreground">
             Defina seu perfil de investidor em Configurações para priorizar essa lista pelo seu apetite a risco.
+          </p>
+        )}
+        {nextRefresh?.nextRefreshAt && (
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5" />
+            Próxima atualização da lista: {new Date(nextRefresh.nextRefreshAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}
           </p>
         )}
       </div>

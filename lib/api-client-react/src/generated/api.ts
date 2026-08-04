@@ -35,6 +35,7 @@ import type {
   InvestorProfileInput,
   MacroSnapshot,
   MonthlyCategoryTax,
+  OpportunitiesNextRefresh,
   Opportunity,
   PortfolioDistribution,
   PortfolioDividendsProjection,
@@ -2011,6 +2012,83 @@ export function useListOpportunities<TData = Awaited<ReturnType<typeof listOppor
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListOpportunitiesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetOpportunitiesNextRefreshUrl = () => {
+
+
+
+
+  return `/api/opportunities/next-refresh`
+}
+
+/**
+ * @summary When the opportunities list was last regenerated and when the scheduler will run it again
+ */
+export const getOpportunitiesNextRefresh = async ( options?: RequestInit): Promise<OpportunitiesNextRefresh> => {
+
+  return customFetch<OpportunitiesNextRefresh>(getGetOpportunitiesNextRefreshUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOpportunitiesNextRefreshQueryKey = () => {
+    return [
+    `/api/opportunities/next-refresh`
+    ] as const;
+    }
+
+
+export const getGetOpportunitiesNextRefreshQueryOptions = <TData = Awaited<ReturnType<typeof getOpportunitiesNextRefresh>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOpportunitiesNextRefresh>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOpportunitiesNextRefreshQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOpportunitiesNextRefresh>>> = ({ signal }) => getOpportunitiesNextRefresh({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOpportunitiesNextRefresh>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOpportunitiesNextRefreshQueryResult = NonNullable<Awaited<ReturnType<typeof getOpportunitiesNextRefresh>>>
+export type GetOpportunitiesNextRefreshQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary When the opportunities list was last regenerated and when the scheduler will run it again
+ */
+
+export function useGetOpportunitiesNextRefresh<TData = Awaited<ReturnType<typeof getOpportunitiesNextRefresh>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOpportunitiesNextRefresh>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOpportunitiesNextRefreshQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

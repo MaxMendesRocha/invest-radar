@@ -503,6 +503,19 @@ export interface Opportunity {
   currentPrice?: number | null;
 }
 
+export interface OpportunitiesNextRefresh {
+  /**
+     * Quando o job de regeneração rodou pela última vez com sucesso. Null se nunca rodou (banco novo, só com seed manual).
+     * @nullable
+     */
+  lastRefreshedAt: string | null;
+  /**
+     * lastRefreshedAt + intervalo alvo do scheduler. Null se lastRefreshedAt for null.
+     * @nullable
+     */
+  nextRefreshAt: string | null;
+}
+
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
 
 

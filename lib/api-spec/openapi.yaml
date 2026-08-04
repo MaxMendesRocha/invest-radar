@@ -519,6 +519,19 @@ paths:
                 items:
                   $ref: "#/components/schemas/Opportunity"
 
+  /opportunities/next-refresh:
+    get:
+      operationId: getOpportunitiesNextRefresh
+      tags: [opportunities]
+      summary: When the opportunities list was last regenerated and when the scheduler will run it again
+      responses:
+        "200":
+          description: Last/next refresh timestamps
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpportunitiesNextRefresh"
+
   # ─── TRANSACTIONS ────────────────────────────────────────────────────────────
   /transactions:
     get:
@@ -1184,6 +1197,17 @@ components:
           type: string
         currentPrice:
           type: ["number", "null"]
+
+    OpportunitiesNextRefresh:
+      type: object
+      required: [lastRefreshedAt, nextRefreshAt]
+      properties:
+        lastRefreshedAt:
+          type: ["string", "null"]
+          description: Quando o job de regeneração rodou pela última vez com sucesso. Null se nunca rodou (banco novo, só com seed manual).
+        nextRefreshAt:
+          type: ["string", "null"]
+          description: lastRefreshedAt + intervalo alvo do scheduler. Null se lastRefreshedAt for null.
 
     # ─── TRANSACTION SCHEMAS ──────────────────────────────────────────────────
     Transaction:
