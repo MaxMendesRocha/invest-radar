@@ -253,6 +253,23 @@ export const ListSalesResponse = zod.array(ListSalesResponseItem)
 
 
 /**
+ * @summary Monthly capital gains tax consolidation by category, computed from real sale history (exemption + loss carryforward)
+ */
+export const GetMonthlySalesTaxResponseItem = zod.object({
+  "month": zod.string().describe('Formato YYYY-MM'),
+  "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs']),
+  "totalSaleValue": zod.number(),
+  "totalGrossGain": zod.number(),
+  "lossOffset": zod.number().describe('Quanto de prejuízo acumulado de meses anteriores foi usado pra abater o ganho deste mês.'),
+  "taxableGain": zod.number(),
+  "exempt": zod.boolean().describe('Só pra ações, quando o total vendido no mês foi ≤ R$20 mil.'),
+  "taxOwed": zod.number(),
+  "lossCarriedForward": zod.number().describe('Prejuízo acumulado que sobra pro próximo mês dessa categoria.')
+}).describe('Apuração mensal de IR por categoria a partir do histórico real de vendas — evolução da estimativa isolada de Sale\/taxOwed, agora com faixa de isenção e prejuízo compensado considerando todas as vendas do mês\/categoria, não só uma venda isolada.')
+export const GetMonthlySalesTaxResponse = zod.array(GetMonthlySalesTaxResponseItem)
+
+
+/**
  * @summary Get the current user's investor risk profile, if set
  */
 export const GetInvestorProfileResponse = zod.object({

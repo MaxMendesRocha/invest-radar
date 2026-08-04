@@ -6,6 +6,16 @@ export interface TaxEstimate {
   exempt: boolean; // true quando dentro da isenção de ações (venda ≤ R$20.000 no mês)
 }
 
+// Compartilhado com monthly-tax-engine.ts — mesma fonte pra alíquota/faixa de
+// isenção usada tanto na estimativa isolada por venda quanto na consolidação mensal.
+export const ACOES_EXEMPTION_THRESHOLD = 20000;
+export const TAX_RATE_BY_CATEGORY: Record<string, number> = {
+  acoes: 0.15,
+  fiis: 0.2,
+  etfs: 0.15,
+  bdrs: 0.15,
+};
+
 // Regras de IR sobre ganho de capital em renda variável (Lei 11.033/2004, IN RFB
 // 1.585/2015) — não muda com frequência, mas é lei tributária real, não uma
 // heurística nossa; se a Receita mudar a faixa de isenção ou as alíquotas, isso
@@ -52,18 +62,11 @@ export function estimateCapitalGainsTax(
   let taxRate: number;
   let exempt = false;
 
-  switch (category) {
-    case "acoes":
-      if (saleValue <= 20000) {
-        taxRate = 0;
-        exempt = true;
-      } else {
-        taxRate = 0.15;
-      }
-      break;
-    default: // fiis | etfs | bdrs
-      taxRate = category === "fiis" ? 0.2 : 0.15;
-      break;
+  if (category === "acoes" && saleValue <= ACOES_EXEMPTION_THRESHOLD) {
+    taxRate = 0;
+    exempt = true;
+  } else {
+    taxRate = TAX_RATE_BY_CATEGORY[category];
   }
 
   const taxOwed = grossGain * taxRate;

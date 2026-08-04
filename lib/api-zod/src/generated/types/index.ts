@@ -44,6 +44,8 @@ export * from './investorProfileLossTolerance';
 export * from './investorProfileObjective';
 export * from './macroSnapshot';
 export * from './macroSnapshotSelicTrend';
+export * from './monthlyCategoryTax';
+export * from './monthlyCategoryTaxCategory';
 export * from './opportunity';
 export * from './opportunityRiskLevel';
 export * from './portfolioDistribution';

@@ -293,6 +293,21 @@ paths:
                 items:
                   $ref: "#/components/schemas/Sale"
 
+  /sales/monthly-tax:
+    get:
+      operationId: getMonthlySalesTax
+      tags: [sales]
+      summary: Monthly capital gains tax consolidation by category, computed from real sale history (exemption + loss carryforward)
+      responses:
+        "200":
+          description: Monthly tax summary per category, most recent month first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MonthlyCategoryTax"
+
   # ─── INVESTOR PROFILE ────────────────────────────────────────────────────────
   /profile:
     get:
@@ -828,6 +843,35 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    MonthlyCategoryTax:
+      type: object
+      description: Apuração mensal de IR por categoria a partir do histórico real de vendas — evolução da estimativa isolada de Sale/taxOwed, agora com faixa de isenção e prejuízo compensado considerando todas as vendas do mês/categoria, não só uma venda isolada.
+      required: [month, category, totalSaleValue, totalGrossGain, lossOffset, taxableGain, exempt, taxOwed, lossCarriedForward]
+      properties:
+        month:
+          type: string
+          description: "Formato YYYY-MM"
+        category:
+          type: string
+          enum: [acoes, fiis, etfs, bdrs]
+        totalSaleValue:
+          type: number
+        totalGrossGain:
+          type: number
+        lossOffset:
+          type: number
+          description: Quanto de prejuízo acumulado de meses anteriores foi usado pra abater o ganho deste mês.
+        taxableGain:
+          type: number
+        exempt:
+          type: boolean
+          description: Só pra ações, quando o total vendido no mês foi ≤ R$20 mil.
+        taxOwed:
+          type: number
+        lossCarriedForward:
+          type: number
+          description: Prejuízo acumulado que sobra pro próximo mês dessa categoria.
 
     # ─── INVESTOR PROFILE SCHEMAS ─────────────────────────────────────────────
     InvestorProfile:

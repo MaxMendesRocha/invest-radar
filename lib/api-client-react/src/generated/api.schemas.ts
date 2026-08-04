@@ -167,6 +167,35 @@ export interface Sale {
   createdAt: string;
 }
 
+export type MonthlyCategoryTaxCategory = typeof MonthlyCategoryTaxCategory[keyof typeof MonthlyCategoryTaxCategory];
+
+
+export const MonthlyCategoryTaxCategory = {
+  acoes: 'acoes',
+  fiis: 'fiis',
+  etfs: 'etfs',
+  bdrs: 'bdrs',
+} as const;
+
+/**
+ * Apuração mensal de IR por categoria a partir do histórico real de vendas — evolução da estimativa isolada de Sale/taxOwed, agora com faixa de isenção e prejuízo compensado considerando todas as vendas do mês/categoria, não só uma venda isolada.
+ */
+export interface MonthlyCategoryTax {
+  /** Formato YYYY-MM */
+  month: string;
+  category: MonthlyCategoryTaxCategory;
+  totalSaleValue: number;
+  totalGrossGain: number;
+  /** Quanto de prejuízo acumulado de meses anteriores foi usado pra abater o ganho deste mês. */
+  lossOffset: number;
+  taxableGain: number;
+  /** Só pra ações, quando o total vendido no mês foi ≤ R$20 mil. */
+  exempt: boolean;
+  taxOwed: number;
+  /** Prejuízo acumulado que sobra pro próximo mês dessa categoria. */
+  lossCarriedForward: number;
+}
+
 export type InvestorProfileHorizon = typeof InvestorProfileHorizon[keyof typeof InvestorProfileHorizon];
 
 

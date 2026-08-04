@@ -5,6 +5,7 @@ import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, De
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor } from "../lib/market-data";
 import { estimateCapitalGainsTax } from "../lib/tax-engine";
+import { computeMonthlyTaxSummary } from "../lib/monthly-tax-engine";
 
 const router: IRouter = Router();
 
@@ -243,6 +244,23 @@ router.get("/sales", requireAuth, async (req, res): Promise<void> => {
     .where(eq(salesTable.userId, req.session.userId!))
     .orderBy(desc(salesTable.saleDate), desc(salesTable.id));
   res.json(sales.map(serializeSale));
+});
+
+// Consolidação mensal por categoria — sempre recalculada a partir do histórico real
+// de vendas (nunca persistida), então reflete automaticamente qualquer venda nova
+// registrada. Ordenado por mês mais recente primeiro (mesmo sentido de GET /sales).
+router.get("/sales/monthly-tax", requireAuth, async (req, res): Promise<void> => {
+  const sales = await db.select().from(salesTable).where(eq(salesTable.userId, req.session.userId!));
+  const summary = computeMonthlyTaxSummary(
+    sales.map((s) => ({
+      category: s.category,
+      saleDate: s.saleDate,
+      quantity: parseFloat(s.quantity),
+      salePrice: parseFloat(s.salePrice),
+      grossGain: parseFloat(s.grossGain),
+    }))
+  );
+  res.json(summary);
 });
 
 export default router;

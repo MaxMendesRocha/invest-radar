@@ -34,6 +34,7 @@ import type {
   InvestorProfile,
   InvestorProfileInput,
   MacroSnapshot,
+  MonthlyCategoryTax,
   Opportunity,
   PortfolioDistribution,
   PortfolioHealth,
@@ -949,6 +950,83 @@ export function useListSales<TData = Awaited<ReturnType<typeof listSales>>, TErr
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListSalesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetMonthlySalesTaxUrl = () => {
+
+
+
+
+  return `/api/sales/monthly-tax`
+}
+
+/**
+ * @summary Monthly capital gains tax consolidation by category, computed from real sale history (exemption + loss carryforward)
+ */
+export const getMonthlySalesTax = async ( options?: RequestInit): Promise<MonthlyCategoryTax[]> => {
+
+  return customFetch<MonthlyCategoryTax[]>(getGetMonthlySalesTaxUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMonthlySalesTaxQueryKey = () => {
+    return [
+    `/api/sales/monthly-tax`
+    ] as const;
+    }
+
+
+export const getGetMonthlySalesTaxQueryOptions = <TData = Awaited<ReturnType<typeof getMonthlySalesTax>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonthlySalesTax>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMonthlySalesTaxQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMonthlySalesTax>>> = ({ signal }) => getMonthlySalesTax({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMonthlySalesTax>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMonthlySalesTaxQueryResult = NonNullable<Awaited<ReturnType<typeof getMonthlySalesTax>>>
+export type GetMonthlySalesTaxQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Monthly capital gains tax consolidation by category, computed from real sale history (exemption + loss carryforward)
+ */
+
+export function useGetMonthlySalesTax<TData = Awaited<ReturnType<typeof getMonthlySalesTax>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonthlySalesTax>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMonthlySalesTaxQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
