@@ -1,5 +1,5 @@
 import { db, opportunitiesTable, type InsertOpportunity } from "@workspace/db";
-import { getFundamentals, type Fundamentals } from "./market-data";
+import { getFundamentals, getDividendEvents, sumLast12Months, type Fundamentals } from "./market-data";
 import { analyzeFundamentals, evalVolatility } from "./analysis-engine";
 import { fetchTickerUniverse, type UniverseEntry } from "./ticker-universe";
 import { describeOpportunity } from "./opportunities-ai";
@@ -52,14 +52,22 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
     return { summary: "0 oportunidades geradas — universo de tickers indisponível, tabela não foi alterada" };
   }
 
-  const fundamentalsByTicker = await getFundamentals(universe.map((u) => u.ticker));
+  // dividendEvents em paralelo com fundamentals — o payout ratio avaliado dentro de
+  // analyzeFundamentals precisa do DPS real dos últimos 12 meses, mesma fonte já usada
+  // pra dividendTrend no Parecer de Ativo e em POST /analysis/generate.
+  const [fundamentalsByTicker, dividendEventsByTicker] = await Promise.all([
+    getFundamentals(universe.map((u) => u.ticker)),
+    getDividendEvents(universe.map((u) => ({ ticker: u.ticker, category: u.category }))),
+  ]);
+  const now = Date.now();
 
   // Em paralelo — sequencial levava ~90s pra varrer o universo inteiro (uma
   // chamada real à Anthropic por ativo qualificado).
   const candidates = universe.map((entry) => {
     const fundamentals = fundamentalsByTicker.get(entry.ticker);
     if (!fundamentals) return null;
-    const analysis = analyzeFundamentals(fundamentals);
+    const dps12m = sumLast12Months(dividendEventsByTicker.get(entry.ticker) ?? [], now);
+    const analysis = analyzeFundamentals(fundamentals, dps12m);
     if (!analysis.available || analysis.score < MIN_OPPORTUNITY_SCORE) return null;
     return { entry, fundamentals, analysis };
   }).filter((c): c is { entry: UniverseEntry; fundamentals: Fundamentals; analysis: ReturnType<typeof analyzeFundamentals> } => c != null);

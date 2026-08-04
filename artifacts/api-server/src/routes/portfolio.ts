@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, assetsTable, transactionsTable, investorProfilesTable } from "@workspace/db";
 import { eq, sum } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents } from "../lib/market-data";
+import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months } from "../lib/market-data";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
 import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
 import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/analysis-engine";
@@ -249,6 +249,75 @@ router.get("/portfolio/dividends/upcoming", requireAuth, async (req, res): Promi
 
   upcoming.sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime());
   res.json(upcoming);
+});
+
+const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+
+// Renda passiva projetada a partir de DPS real dos últimos 12 meses (sumLast12Months,
+// não o dividendYield agregado do provider) × quantidade atual de cada ativo — mais
+// preciso porque usa o histórico real de pagamentos, não uma métrica só do preço/DY do
+// momento. sumLast12Months (não computeDividendTrend) porque só a janela de 12 meses
+// importa aqui — exigir os 24 meses de computeDividendTrend descartaria dado real de
+// ativos cujo provider só cobre os últimos ~12 meses (comum em FIIs). Ativo sem
+// histórico suficiente entra com dps12m null e não soma na projeção, nunca via atalho.
+// byMonth reflete quando os proventos REALMENTE caíram nos últimos 12 meses — mostra
+// se a carteira está concentrada em poucos meses do ano ou bem distribuída, insumo
+// direto pra quem está montando a carteira pensando em fluxo de caixa mensal.
+router.get("/portfolio/dividends/projection", requireAuth, async (req, res): Promise<void> => {
+  const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
+  const prices = await getPricesFor(assets);
+  const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
+  const now = Date.now();
+
+  const byAsset: {
+    ticker: string; category: string; quantity: number;
+    dps12m: number | null; projectedAnnualIncome: number | null;
+    dyOnPrice: number | null; dyOnCost: number | null;
+  }[] = [];
+  const byMonthMap = new Map<string, number>();
+  let projectedAnnualIncome = 0;
+
+  for (const a of assets) {
+    if (!QUOTED_CATEGORIES.has(a.category)) continue; // renda fixa/fundos não têm provento de bolsa
+
+    const qty = parseFloat(a.quantity);
+    const averagePrice = parseFloat(a.averagePrice);
+    const currentPrice = prices.get(a.ticker.toUpperCase()) ?? null;
+    const events = dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [];
+    const dps12m = sumLast12Months(events, now);
+    const assetAnnualIncome = dps12m != null ? dps12m * qty : null;
+    if (assetAnnualIncome != null) projectedAnnualIncome += assetAnnualIncome;
+
+    byAsset.push({
+      ticker: a.ticker,
+      category: a.category,
+      quantity: qty,
+      dps12m,
+      projectedAnnualIncome: assetAnnualIncome != null ? Math.round(assetAnnualIncome * 100) / 100 : null,
+      dyOnPrice: dps12m != null && currentPrice ? Math.round((dps12m / currentPrice) * 10000) / 100 : null,
+      dyOnCost: dps12m != null && averagePrice > 0 ? Math.round((dps12m / averagePrice) * 10000) / 100 : null,
+    });
+
+    for (const event of events) {
+      const paidAt = new Date(event.paymentDate).getTime();
+      if (paidAt > now || now - paidAt > ONE_YEAR_MS) continue;
+      const d = new Date(event.paymentDate);
+      const monthKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+      byMonthMap.set(monthKey, (byMonthMap.get(monthKey) ?? 0) + event.rate * qty);
+    }
+  }
+
+  byAsset.sort((a, b) => (b.projectedAnnualIncome ?? 0) - (a.projectedAnnualIncome ?? 0));
+  const byMonth = Array.from(byMonthMap.entries())
+    .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  res.json({
+    projectedAnnualIncome: Math.round(projectedAnnualIncome * 100) / 100,
+    projectedMonthlyAverage: Math.round((projectedAnnualIncome / 12) * 100) / 100,
+    byAsset,
+    byMonth,
+  });
 });
 
 router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void> => {

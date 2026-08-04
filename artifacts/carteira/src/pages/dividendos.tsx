@@ -5,6 +5,7 @@ import {
   useDeleteTransaction,
   useGetPortfolioSummary,
   useGetPortfolioDividendsUpcoming,
+  useGetPortfolioDividendsProjection,
   getListTransactionsQueryKey,
   getGetPortfolioSummaryQueryKey
 } from "@workspace/api-client-react";
@@ -23,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
-import { Plus, Trash2, Coins, ArrowUpRight, CalendarClock } from "lucide-react";
+import { Plus, Trash2, Coins, ArrowUpRight, CalendarClock, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const TYPE_MAP: Record<string, string> = {
@@ -33,10 +34,23 @@ const TYPE_MAP: Record<string, string> = {
   amortizacao: "Amortização"
 };
 
+const CATEGORY_MAP: Record<string, string> = {
+  acoes: "Ações",
+  fiis: "FIIs",
+  etfs: "ETFs",
+  bdrs: "BDRs",
+};
+
+function formatProjectionMonth(month: string): string {
+  const [y, m] = month.split("-");
+  return `${m}/${y.slice(2)}`;
+}
+
 export default function Dividendos() {
   const { data: summary } = useGetPortfolioSummary({ query: { queryKey: getGetPortfolioSummaryQueryKey() } });
   const { data: transactions, isLoading } = useListTransactions({ query: { queryKey: getListTransactionsQueryKey() } });
   const { data: upcomingDividends, isLoading: isLoadingUpcoming } = useGetPortfolioDividendsUpcoming();
+  const { data: projection, isLoading: isLoadingProjection } = useGetPortfolioDividendsProjection();
   
   const [isOpen, setIsOpen] = useState(false);
   const [ticker, setTicker] = useState("");
@@ -161,6 +175,129 @@ export default function Dividendos() {
           </DialogContent>
         </Dialog>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+            Renda Passiva Projetada
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoadingProjection ? (
+            <p className="text-sm text-muted-foreground">Carregando...</p>
+          ) : !projection || projection.byAsset.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Adicione ativos cotados na carteira para ver a projeção de renda passiva.
+            </p>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="rounded-md border border-border/50 p-4">
+                  <div className="text-xs text-muted-foreground">Renda Anual Projetada</div>
+                  <div className="text-2xl font-bold font-mono text-primary">{formatCurrency(projection.projectedAnnualIncome)}</div>
+                </div>
+                <div className="rounded-md border border-border/50 p-4">
+                  <div className="text-xs text-muted-foreground">Média Mensal Projetada</div>
+                  <div className="text-2xl font-bold font-mono text-primary">{formatCurrency(projection.projectedMonthlyAverage)}</div>
+                </div>
+              </div>
+
+              {projection.byMonth.length > 0 && (
+                <div>
+                  <div className="text-sm font-medium mb-2">Distribuição real por mês (últimos 12 meses)</div>
+                  <div className="h-[220px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={projection.byMonth} margin={{ top: 5, right: 0, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                        <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={formatProjectionMonth} />
+                        <YAxis tick={{ fontSize: 12, fontFamily: "var(--font-mono)" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(val) => `R$${val}`} />
+                        <RechartsTooltip
+                          formatter={(value: number) => [formatCurrency(value), "Recebido"]}
+                          labelFormatter={formatProjectionMonth}
+                          contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "6px" }}
+                          cursor={{ fill: "hsl(var(--muted))" }}
+                        />
+                        <Bar dataKey="amount" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <div className="text-sm font-medium mb-2">Por ativo</div>
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Ativo</TableHead>
+                        <TableHead>Categoria</TableHead>
+                        <TableHead className="text-right">DPS 12m</TableHead>
+                        <TableHead className="text-right">DY no Preço</TableHead>
+                        <TableHead className="text-right">DY no Custo</TableHead>
+                        <TableHead className="text-right">Renda Anual</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {projection.byAsset.map((a) => (
+                        <TableRow key={a.ticker}>
+                          <TableCell className="font-bold">{a.ticker}</TableCell>
+                          <TableCell>{CATEGORY_MAP[a.category] || a.category}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {a.dps12m == null ? <span className="text-xs text-muted-foreground">Sem histórico</span> : formatCurrency(a.dps12m)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">{a.dyOnPrice == null ? "—" : formatPercent(a.dyOnPrice)}</TableCell>
+                          <TableCell className="text-right font-mono">{a.dyOnCost == null ? "—" : formatPercent(a.dyOnCost)}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {a.projectedAnnualIncome == null ? "—" : formatCurrency(a.projectedAnnualIncome)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="md:hidden space-y-3">
+                  {projection.byAsset.map((a) => (
+                    <Card key={a.ticker}>
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-bold">{a.ticker}</div>
+                            <div className="text-xs text-muted-foreground">{CATEGORY_MAP[a.category] || a.category}</div>
+                          </div>
+                          <div className="font-mono font-medium text-right">
+                            {a.projectedAnnualIncome == null ? "—" : formatCurrency(a.projectedAnnualIncome)}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-y-2 gap-x-2 text-sm">
+                          <div>
+                            <div className="text-xs text-muted-foreground">DPS 12m</div>
+                            <div className="font-mono">{a.dps12m == null ? "—" : formatCurrency(a.dps12m)}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">DY Preço</div>
+                            <div className="font-mono">{a.dyOnPrice == null ? "—" : formatPercent(a.dyOnPrice)}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">DY Custo</div>
+                            <div className="font-mono">{a.dyOnCost == null ? "—" : formatPercent(a.dyOnCost)}</div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-[10px] text-muted-foreground">
+                Projeção baseada em proventos reais pagos nos últimos 12 meses pelos ativos que você tem hoje, aplicados à quantidade atual — não é garantia de pagamento futuro. Ativos sem histórico suficiente aparecem como "Sem histórico" e não entram na soma.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -64,6 +64,29 @@ export function evalDividendYield(dy: number | null): MetricEval | null {
   return { score: 45 };
 }
 
+// Payout ratio real = DPS dos últimos 12 meses (soma real de proventos pagos, ver
+// sumLast12Months em market-data.ts — usa só a janela de 12 meses, não os 24 exigidos
+// por computeDividendTrend, pra não descartar dado real disponível quando o provider
+// não cobre os 12 meses anteriores) dividido pelo EPS (price/priceEarnings — não há
+// campo de EPS direto no plano atual, mas dá pra derivar do P/L, que já é real). Só
+// avalia quando há prova de que o ativo de fato pagou provento no período
+// (dps12m != null) — sem isso, não dá pra saber payout nenhum, não vira 0. P/L
+// negativo com provento pago no período é o pior caso: empresa distribuindo mesmo
+// reportando prejuízo — sinal de alerta explícito, não descartado como null.
+function evalPayoutRatio(priceEarnings: number | null, price: number, dps12m: number | null): MetricEval | null {
+  if (dps12m == null || dps12m <= 0) return null;
+  if (priceEarnings == null) return null;
+  if (priceEarnings <= 0) {
+    return { score: 15, risk: "Distribuiu proventos mesmo reportando prejuízo no período — sustentabilidade do pagamento em risco" };
+  }
+  const eps = price / priceEarnings;
+  if (eps <= 0) return null;
+  const payoutRatio = dps12m / eps;
+  if (payoutRatio <= 0.6) return { score: 85, positive: "Distribuição bem coberta pelo lucro (payout ratio saudável)" };
+  if (payoutRatio <= 1.0) return { score: 55 };
+  return { score: 20, risk: "Distribuição acima do lucro do período (payout ratio acima de 100%) — sustentabilidade em risco" };
+}
+
 export function evalRevenueGrowth(growth: number | null): MetricEval | null {
   if (growth == null) return null;
   if (growth >= 0.05) return { score: 80, positive: "Crescimento de receita consistente" };
@@ -166,8 +189,13 @@ export function noFundamentalsAnalysis(): AnalysisResult {
  * Called from routes/analysis.ts via computeAnalysis(), fed by market-data.ts's
  * getFundamentals() (brapi.dev — ver o comentário lá sobre como ROE/dívida-patrimônio/
  * crescimento são calculados a partir do balanço e DRE reais, não do módulo pago).
+ *
+ * dps12m (DPS real dos últimos 12 meses, ver sumLast12Months em market-data.ts) é
+ * opcional (default null) — nem toda chamada tem o histórico de proventos já buscado;
+ * sem ele, o payout ratio simplesmente não entra na média, igual a qualquer outro
+ * fundamento indisponível, nunca vira um valor chutado.
  */
-export function analyzeFundamentals(f: Fundamentals): AnalysisResult {
+export function analyzeFundamentals(f: Fundamentals, dps12m: number | null = null): AnalysisResult {
   const fundamentalMetrics = [
     evalPE(f.priceEarnings),
     evalPriceToBook(f.priceToBook),
@@ -176,6 +204,7 @@ export function analyzeFundamentals(f: Fundamentals): AnalysisResult {
     evalMargin(f.profitMargins),
     evalDividendYield(f.dividendYield),
     evalRevenueGrowth(f.revenueGrowth),
+    evalPayoutRatio(f.priceEarnings, f.price, dps12m),
   ].filter((m): m is MetricEval => m != null);
 
   if (fundamentalMetrics.length === 0) return NO_FUNDAMENTALS_RESULT;

@@ -37,6 +37,7 @@ import type {
   MonthlyCategoryTax,
   Opportunity,
   PortfolioDistribution,
+  PortfolioDividendsProjection,
   PortfolioHealth,
   PortfolioReport,
   PortfolioSummary,
@@ -1637,6 +1638,83 @@ export function useGetPortfolioDividendsUpcoming<TData = Awaited<ReturnType<type
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPortfolioDividendsUpcomingQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPortfolioDividendsProjectionUrl = () => {
+
+
+
+
+  return `/api/portfolio/dividends/projection`
+}
+
+/**
+ * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price per asset and monthly distribution
+ */
+export const getPortfolioDividendsProjection = async ( options?: RequestInit): Promise<PortfolioDividendsProjection> => {
+
+  return customFetch<PortfolioDividendsProjection>(getGetPortfolioDividendsProjectionUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPortfolioDividendsProjectionQueryKey = () => {
+    return [
+    `/api/portfolio/dividends/projection`
+    ] as const;
+    }
+
+
+export const getGetPortfolioDividendsProjectionQueryOptions = <TData = Awaited<ReturnType<typeof getPortfolioDividendsProjection>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolioDividendsProjection>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPortfolioDividendsProjectionQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPortfolioDividendsProjection>>> = ({ signal }) => getPortfolioDividendsProjection({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPortfolioDividendsProjection>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPortfolioDividendsProjectionQueryResult = NonNullable<Awaited<ReturnType<typeof getPortfolioDividendsProjection>>>
+export type GetPortfolioDividendsProjectionQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price per asset and monthly distribution
+ */
+
+export function useGetPortfolioDividendsProjection<TData = Awaited<ReturnType<typeof getPortfolioDividendsProjection>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolioDividendsProjection>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPortfolioDividendsProjectionQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
