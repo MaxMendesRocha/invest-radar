@@ -53,6 +53,21 @@ export const AssetCategory = {
   renda_fixa: 'renda_fixa',
 } as const;
 
+/**
+ * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+ * @nullable
+ */
+export type AssetDividendFrequency = typeof AssetDividendFrequency[keyof typeof AssetDividendFrequency] | null;
+
+
+export const AssetDividendFrequency = {
+  Mensal: 'Mensal',
+  Trimestral: 'Trimestral',
+  Semestral: 'Semestral',
+  Anual: 'Anual',
+  Irregular: 'Irregular',
+} as const;
+
 export interface Asset {
   id: number;
   userId: number;
@@ -74,6 +89,11 @@ export interface Asset {
   profitLoss?: number | null;
   /** @nullable */
   profitLossPercent?: number | null;
+  /**
+     * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+     * @nullable
+     */
+  dividendFrequency?: AssetDividendFrequency;
   createdAt: string;
 }
 
@@ -486,6 +506,21 @@ export const OpportunityRiskLevel = {
   Alto: 'Alto',
 } as const;
 
+/**
+ * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+ * @nullable
+ */
+export type OpportunityDividendFrequency = typeof OpportunityDividendFrequency[keyof typeof OpportunityDividendFrequency] | null;
+
+
+export const OpportunityDividendFrequency = {
+  Mensal: 'Mensal',
+  Trimestral: 'Trimestral',
+  Semestral: 'Semestral',
+  Anual: 'Anual',
+  Irregular: 'Irregular',
+} as const;
+
 export interface Opportunity {
   id: number;
   ticker: string;
@@ -501,6 +536,11 @@ export interface Opportunity {
   horizon: string;
   /** @nullable */
   currentPrice?: number | null;
+  /**
+     * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+     * @nullable
+     */
+  dividendFrequency?: OpportunityDividendFrequency;
 }
 
 export interface OpportunitiesNextRefresh {
@@ -646,6 +686,21 @@ export type AssetAnalysisTaxEstimate = {
   exempt: boolean;
 } | null;
 
+/**
+ * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+ * @nullable
+ */
+export type AssetAnalysisDividendFrequency = typeof AssetAnalysisDividendFrequency[keyof typeof AssetAnalysisDividendFrequency] | null;
+
+
+export const AssetAnalysisDividendFrequency = {
+  Mensal: 'Mensal',
+  Trimestral: 'Trimestral',
+  Semestral: 'Semestral',
+  Anual: 'Anual',
+  Irregular: 'Irregular',
+} as const;
+
 export interface AssetAnalysis {
   ticker: string;
   /** False when a full fundamentalist analysis isn't available yet (pending a data source) — score/status are placeholders and should not be shown. */
@@ -664,6 +719,11 @@ export interface AssetAnalysis {
      */
   taxEstimate?: AssetAnalysisTaxEstimate;
   technical: TechnicalIndicators | null;
+  /**
+     * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+     * @nullable
+     */
+  dividendFrequency?: AssetAnalysisDividendFrequency;
   updatedAt: string;
 }
 
@@ -687,6 +747,21 @@ export type AssetOpinionDividendTrend = {
   prior12mTotal: number;
   growthPercent: number;
 } | null;
+
+/**
+ * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+ * @nullable
+ */
+export type AssetOpinionDividendFrequency = typeof AssetOpinionDividendFrequency[keyof typeof AssetOpinionDividendFrequency] | null;
+
+
+export const AssetOpinionDividendFrequency = {
+  Mensal: 'Mensal',
+  Trimestral: 'Trimestral',
+  Semestral: 'Semestral',
+  Anual: 'Anual',
+  Irregular: 'Irregular',
+} as const;
 
 /**
  * Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER/REAVALIAR/etc).
@@ -714,6 +789,11 @@ export interface AssetOpinion {
      */
   dividendTrend: AssetOpinionDividendTrend;
   technical: TechnicalIndicators | null;
+  /**
+     * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+     * @nullable
+     */
+  dividendFrequency?: AssetOpinionDividendFrequency;
   newsItems: string[];
   opinion: string;
   updatedAt: string;

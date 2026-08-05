@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AssetCategory } from './assetCategory';
+import type { AssetDividendFrequency } from './assetDividendFrequency';
 
 export interface Asset {
   id: number;
@@ -28,5 +29,10 @@ export interface Asset {
   profitLoss?: number | null;
   /** @nullable */
   profitLossPercent?: number | null;
+  /**
+     * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+     * @nullable
+     */
+  dividendFrequency?: AssetDividendFrequency;
   createdAt: Date;
 }

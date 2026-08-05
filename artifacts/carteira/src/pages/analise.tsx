@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity, Clock, Receipt, LineChart } from "lucide-react";
+import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity, Clock, Receipt, LineChart, CalendarClock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
 
@@ -72,6 +72,18 @@ function TechnicalBadge({ technical }: { technical: AssetAnalysis["technical"] }
       <LineChart className="w-3.5 h-3.5 shrink-0" />
       <span className="font-medium">{parts.join(" · ")}</span>
       <span className="text-[10px] opacity-70 sm:ml-auto">indicador técnico, 1 ano de candles reais</span>
+    </div>
+  );
+}
+
+function DividendFrequencyBadge({ dividendFrequency }: { dividendFrequency: AssetAnalysis["dividendFrequency"] }) {
+  if (!dividendFrequency) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs px-3 py-2 rounded-md border mb-3 bg-muted/40 border-border/50 text-muted-foreground">
+      <CalendarClock className="w-3.5 h-3.5 shrink-0" />
+      <span className="font-medium text-foreground">Paga {dividendFrequency.toLowerCase()}</span>
+      <span className="text-[10px] opacity-70 sm:ml-auto">a partir do histórico real dos últimos 12 meses</span>
     </div>
   );
 }
@@ -241,6 +253,7 @@ export default function Analise() {
                           </h4>
                           <TaxBadge tax={analysis.taxEstimate} />
                           <TechnicalBadge technical={analysis.technical} />
+                          <DividendFrequencyBadge dividendFrequency={analysis.dividendFrequency} />
                           <div className="bg-muted/50 p-4 rounded-md text-sm leading-relaxed border border-border/50">
                             {analysis.monitoringRecommendation}
                           </div>

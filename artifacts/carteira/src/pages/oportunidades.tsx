@@ -110,6 +110,9 @@ export default function Oportunidades() {
                     <Badge variant={RISK_MAP[opp.riskLevel] as any} className="h-5 px-1.5 text-[10px] uppercase">
                       {opp.riskLevel}
                     </Badge>
+                    {opp.dividendFrequency && (
+                      <span className="text-muted-foreground">· Paga {opp.dividendFrequency.toLowerCase()}</span>
+                    )}
                     <span className="text-muted-foreground ml-auto">Horizonte: {opp.horizon}</span>
                   </div>
                 </div>

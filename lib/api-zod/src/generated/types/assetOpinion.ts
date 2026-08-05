@@ -5,6 +5,7 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { AssetOpinionDividendFrequency } from './assetOpinionDividendFrequency';
 import type { AssetOpinionDividendTrend } from './assetOpinionDividendTrend';
 import type { AssetOpinionScoreClassification } from './assetOpinionScoreClassification';
 import type { TechnicalIndicators } from './technicalIndicators';
@@ -35,6 +36,11 @@ export interface AssetOpinion {
      */
   dividendTrend: AssetOpinionDividendTrend;
   technical: TechnicalIndicators | null;
+  /**
+     * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+     * @nullable
+     */
+  dividendFrequency?: AssetOpinionDividendFrequency;
   newsItems: string[];
   opinion: string;
   updatedAt: Date;

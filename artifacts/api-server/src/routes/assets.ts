@@ -3,7 +3,7 @@ import { db, assetsTable, salesTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams, SellAssetParams, SellAssetBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor } from "../lib/market-data";
+import { getPricesFor, getDividendEvents, getDividendEventsForTicker, classifyDividendFrequency, type DividendFrequency } from "../lib/market-data";
 import { estimateCapitalGainsTax } from "../lib/tax-engine";
 import { computeMonthlyTaxSummary } from "../lib/monthly-tax-engine";
 
@@ -14,7 +14,7 @@ function enrichAsset(asset: {
   averagePrice: string; purchaseDate: string | null; category: string;
   sector: string | null; notes: string | null;
   createdAt: Date; updatedAt: Date;
-}, currentPrice: number | null) {
+}, currentPrice: number | null, dividendFrequency: DividendFrequency | null) {
   const qty = parseFloat(asset.quantity);
   const avgPrice = parseFloat(asset.averagePrice);
   const totalCost = qty * avgPrice;
@@ -36,14 +36,31 @@ function enrichAsset(asset: {
     totalValue,
     profitLoss,
     profitLossPercent,
+    dividendFrequency: dividendFrequency?.label ?? null,
     createdAt: asset.createdAt.toISOString(),
   };
+}
+
+// Usado pelas rotas de mutação/leitura de um único ativo (criar/editar/buscar), onde
+// não vale a pena buscar o histórico em lote — só um ticker por vez.
+async function dividendFrequencyFor(ticker: string): Promise<DividendFrequency | null> {
+  const events = await getDividendEventsForTicker(ticker);
+  return classifyDividendFrequency(events, Date.now());
 }
 
 router.get("/assets", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
   const prices = await getPricesFor(assets);
-  res.json(assets.map((a) => enrichAsset(a, prices.get(a.ticker.toUpperCase()) ?? null)));
+  // Reaproveita o mesmo histórico real de proventos já usado em /portfolio/dividends/*
+  // (getDividendEvents, cache de 6h) — periodicidade classificada a partir da mesma
+  // fonte, sem chamada nova à API além da já feita hoje pra outras telas.
+  const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
+  const now = Date.now();
+  res.json(assets.map((a) => enrichAsset(
+    a,
+    prices.get(a.ticker.toUpperCase()) ?? null,
+    classifyDividendFrequency(dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [], now),
+  )));
 });
 
 router.post("/assets", requireAuth, async (req, res): Promise<void> => {
@@ -75,7 +92,8 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
       .where(eq(assetsTable.id, existing.id))
       .returning();
     const prices = await getPricesFor([updated]);
-    res.status(200).json(enrichAsset(updated, prices.get(updated.ticker.toUpperCase()) ?? null));
+    const dividendFrequency = await dividendFrequencyFor(updated.ticker);
+    res.status(200).json(enrichAsset(updated, prices.get(updated.ticker.toUpperCase()) ?? null, dividendFrequency));
     return;
   }
 
@@ -90,7 +108,8 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     notes: notes ?? null,
   }).returning();
   const prices = await getPricesFor([asset]);
-  res.status(201).json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null));
+  const dividendFrequency = await dividendFrequencyFor(asset.ticker);
+  res.status(201).json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null, dividendFrequency));
 });
 
 router.get("/assets/:id", requireAuth, async (req, res): Promise<void> => {
@@ -107,7 +126,8 @@ router.get("/assets/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const prices = await getPricesFor([asset]);
-  res.json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null));
+  const dividendFrequency = await dividendFrequencyFor(asset.ticker);
+  res.json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null, dividendFrequency));
 });
 
 router.patch("/assets/:id", requireAuth, async (req, res): Promise<void> => {
@@ -140,7 +160,8 @@ router.patch("/assets/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const prices = await getPricesFor([asset]);
-  res.json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null));
+  const dividendFrequency = await dividendFrequencyFor(asset.ticker);
+  res.json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null, dividendFrequency));
 });
 
 router.delete("/assets/:id", requireAuth, async (req, res): Promise<void> => {

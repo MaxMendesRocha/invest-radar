@@ -5,6 +5,7 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { AssetAnalysisDividendFrequency } from './assetAnalysisDividendFrequency';
 import type { AssetAnalysisScoreClassification } from './assetAnalysisScoreClassification';
 import type { AssetAnalysisStatus } from './assetAnalysisStatus';
 import type { AssetAnalysisTaxEstimate } from './assetAnalysisTaxEstimate';
@@ -28,5 +29,10 @@ export interface AssetAnalysis {
      */
   taxEstimate?: AssetAnalysisTaxEstimate;
   technical: TechnicalIndicators | null;
+  /**
+     * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+     * @nullable
+     */
+  dividendFrequency?: AssetAnalysisDividendFrequency;
   updatedAt: Date;
 }

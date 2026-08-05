@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, opportunitiesTable, investorProfilesTable, jobRunsTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor } from "../lib/market-data";
+import { getPricesFor, getDividendEvents, classifyDividendFrequency } from "../lib/market-data";
 import { OPPORTUNITIES_JOB } from "../lib/opportunities-engine";
 
 const router: IRouter = Router();
@@ -46,9 +46,18 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
 
   const top10 = items.slice(0, 10);
 
-  // Only fetch quotes for what's actually shown, not the full curated list.
-  const prices = await getPricesFor(top10);
-  res.json(top10.map((item) => ({ ...item, currentPrice: prices.get(item.ticker.toUpperCase()) ?? null })));
+  // Only fetch quotes/dividendos pro que é realmente mostrado (top 10), não a lista
+  // curada inteira — mesmo padrão de getPricesFor logo abaixo.
+  const [prices, dividendEventsByTicker] = await Promise.all([
+    getPricesFor(top10),
+    getDividendEvents(top10.map((item) => ({ ticker: item.ticker, category: item.category }))),
+  ]);
+  const now = Date.now();
+  res.json(top10.map((item) => ({
+    ...item,
+    currentPrice: prices.get(item.ticker.toUpperCase()) ?? null,
+    dividendFrequency: classifyDividendFrequency(dividendEventsByTicker.get(item.ticker.toUpperCase()) ?? [], now)?.label ?? null,
+  })));
 });
 
 // Quando a lista foi atualizada pela última vez e quando o scheduler (lib/scheduler.ts)
