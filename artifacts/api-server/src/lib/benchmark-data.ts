@@ -39,6 +39,27 @@ export async function getCdiMonthlyReturns(): Promise<Map<string, number>> {
   return returns;
 }
 
+/**
+ * CDI acumulado real dos últimos 12 meses em carteira (composto mês a mês, não uma
+ * média simples) — usado como taxa livre de risco em risk-metrics-engine.ts. Real
+ * pros 12 meses sempre (mesma garantia documentada em getCdiMonthlyReturns: BCB
+ * publica anos de histórico de graça) — retorna null só se a série vier vazia
+ * (BCB fora do ar), nunca uma taxa chutada.
+ */
+export async function getCdiTrailingAnnual(): Promise<number | null> {
+  const monthlyReturns = await getCdiMonthlyReturns();
+  if (monthlyReturns.size === 0) return null;
+
+  const months = Array.from(monthlyReturns.keys()).sort().slice(-12);
+  if (months.length === 0) return null;
+
+  let acc = 1;
+  for (const month of months) {
+    acc *= 1 + (monthlyReturns.get(month) ?? 0) / 100;
+  }
+  return acc - 1;
+}
+
 interface BrapiHistoricalPoint {
   date: number; // unix seconds
   close: number;

@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "./logger";
 import type { DividendTrend } from "./market-data";
 import { describeTechnicalIndicators, type TechnicalIndicators } from "./technical-engine";
+import { describeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "./risk-metrics-engine";
+import { describeDuPontBreakdown, type DuPontBreakdown } from "./analysis-engine";
 
 const OPINION_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // preço/notícias mudam ao longo do dia, mas não a ponto de justificar cache mais curto pra um parecer sob demanda
 
@@ -19,6 +21,9 @@ export interface PrePurchaseOpinionInput {
   fiveDayChangePercent: number | null;
   dividendTrend: DividendTrend | null;
   technical: TechnicalIndicators | null; // null quando não há candles suficientes (technical-engine.ts)
+  riskAdjusted: RiskAdjustedMetrics | null; // null quando não há candles suficientes (risk-metrics-engine.ts)
+  duPont: DuPontBreakdown | null; // null quando DRE/balanço estão incompletos (computeDuPontBreakdown, analysis-engine.ts)
+  sectorComparison: string; // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts)
   newsItems: string[]; // já formatadas com "[Impacto] título"
   macro: { selic: number | null; selicTrend: string | null; ipca12m: number | null };
 }
@@ -35,7 +40,7 @@ function getClient(): Anthropic | null {
 const opinionCache = new Map<string, { text: string; fetchedAt: number }>();
 
 function buildPrompt(input: PrePurchaseOpinionInput): string {
-  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, newsItems, macro } = input;
+  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, riskAdjusted, duPont, sectorComparison, newsItems, macro } = input;
 
   const fundamentalsLine = available
     ? `Score do Radar: ${score}/100 (${scoreClassification})\nPontos positivos (fundamentos reais): ${positives.join("; ") || "nenhum"}\nPontos de atenção (fundamentos reais): ${risks.join("; ") || "nenhum"}`
@@ -51,6 +56,8 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     : "Histórico de provento insuficiente pra avaliar tendência (não avalie isso, apenas não mencione).";
 
   const technicalLine = describeTechnicalIndicators(technical);
+  const riskAdjustedLine = describeRiskAdjustedMetrics(riskAdjusted);
+  const duPontLine = describeDuPontBreakdown(duPont);
 
   return (
     `Você é um analista financeiro sênior dando uma PRIMEIRA LEITURA sobre um ativo pra alguém que ` +
@@ -63,6 +70,9 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     `${rangeLine}\n` +
     `${dividendLine}\n` +
     `Indicadores técnicos (candles reais, 1 ano): ${technicalLine}\n` +
+    `Retorno ajustado ao risco (1 ano, CDI como taxa livre de risco): ${riskAdjustedLine}\n` +
+    `Decomposição DuPont do ROE: ${duPontLine}\n` +
+    `Comparação com pares do setor: ${sectorComparison}\n` +
     `Notícias recentes classificadas: ${newsItems.join(" | ") || "nenhuma"}\n` +
     `Cenário macro: Selic ${macro.selic ?? "?"}% (tendência ${macro.selicTrend ?? "?"}), IPCA 12m ${macro.ipca12m ?? "?"}%\n\n` +
     `Escreva um parecer curto (2-6 frases) cruzando TODOS os fatores acima. Pode dizer diretamente se o ` +
@@ -70,10 +80,18 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     `com os fundamentos (quando disponíveis): comprar perto da máxima de 52 semanas com fundamentos ` +
     `fracos pede mais cautela do que comprar perto da mínima com fundamentos sólidos, por exemplo. Quando ` +
     `os pontos de atenção envolverem piora de ROE, dívida subindo ou desaceleração de crescimento, pode ` +
-    `enquadrar isso como enfraquecimento da vantagem competitiva do negócio (moat). Use o indicador ` +
+    `enquadrar isso como enfraquecimento da vantagem competitiva do negócio (moat). Use a decomposição ` +
+    `DuPont pra qualificar o ROE, não só repeti-lo — um ROE alto puxado majoritariamente por alavancagem é ` +
+    `um sinal de qualidade bem diferente de um ROE alto puxado por margem operacional forte. Use a ` +
+    `comparação com o setor como contexto, nunca como sinal automático — um múltiplo mais barato que a ` +
+    `média do setor pode ser oportunidade real ou desconto justificado por fundamentos piores; interprete ` +
+    `à luz dos outros dados. Use o indicador ` +
     `técnico como contexto de TIMING de entrada, complementar aos fundamentos — nunca como fator decisório ` +
     `principal (ex.: "fundamentos bons e RSI em sobrevenda pode ser um bom ponto de entrada" ou ` +
-    `"fundamentos bons mas tecnicamente esticado — talvez valha esperar uma correção"). NÃO invente nenhum ` +
+    `"fundamentos bons mas tecnicamente esticado — talvez valha esperar uma correção"). Use o ` +
+    `Sharpe/Sortino/Treynor como contexto de qualidade do retorno passado — retorno alto com Sharpe baixo ` +
+    `indica que veio à custa de volatilidade desproporcional, não de qualidade; mencione só quando destoar ` +
+    `claramente do que os fundamentos sozinhos sugeririam. NÃO invente nenhum ` +
     `dado que não esteja listado acima. NÃO proponha um score diferente do informado quando os ` +
     `fundamentos estiverem disponíveis — a decisão de score é sempre do motor determinístico, você só ` +
     `interpreta.\n\n` +
@@ -97,7 +115,8 @@ export async function synthesizePrePurchaseOpinion(input: PrePurchaseOpinionInpu
   const technicalKeyPart = input.technical
     ? `${input.technical.crossSignal ?? "na"}:${input.technical.rsi14 != null ? Math.round(input.technical.rsi14 / 5) * 5 : "na"}`
     : "na";
-  const cacheKey = `${input.ticker}:${input.score}:${Math.round(input.price)}:${dividendKeyPart}:${technicalKeyPart}`;
+  const riskAdjustedKeyPart = input.riskAdjusted ? Math.round(input.riskAdjusted.sharpeRatio * 10) : "na";
+  const cacheKey = `${input.ticker}:${input.score}:${Math.round(input.price)}:${dividendKeyPart}:${technicalKeyPart}:${riskAdjustedKeyPart}`;
   const cached = opinionCache.get(cacheKey);
   if (cached && Date.now() - cached.fetchedAt < OPINION_CACHE_TTL_MS) return cached.text;
 

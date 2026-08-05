@@ -1,4 +1,4 @@
-import { db, opportunitiesTable, type InsertOpportunity } from "@workspace/db";
+import { db, opportunitiesTable, sectorBenchmarksTable, type InsertOpportunity, type InsertSectorBenchmark } from "@workspace/db";
 import { getFundamentals, getDividendEvents, sumLast12Months, type Fundamentals } from "./market-data";
 import { analyzeFundamentals, evalVolatility } from "./analysis-engine";
 import { fetchTickerUniverse, type UniverseEntry } from "./ticker-universe";
@@ -31,6 +31,51 @@ function computePotentialReturn(score: number, f: Fundamentals): number {
   const scoreComponent = Math.max(0, score - 50) * 0.5; // 0 a 25
   const dividendComponent = (f.dividendYield ?? 0) * 100 * 0.8; // dividend yield já é decimal
   return Math.round(Math.min(35, scoreComponent + dividendComponent) * 100) / 100;
+}
+
+// Abaixo disso, "média do setor" seria estatisticamente pouco confiável (2 empresas
+// não representam um setor) — o setor inteiro fica de fora da tabela nesse caso,
+// nunca publica uma média de amostra pequena demais.
+const MIN_SECTOR_SAMPLE = 3;
+
+function average(values: (number | null)[]): number | null {
+  const real = values.filter((v): v is number => v != null);
+  if (real.length === 0) return null;
+  return real.reduce((sum, v) => sum + v, 0) / real.length;
+}
+
+// Médias setoriais reais a partir de TODO o universo com fundamentos disponíveis
+// (não só os candidatos que passaram no score mínimo) — usar só os "aprovados" pra
+// calcular a média enviesaria pra cima, fazendo qualquer ativo parecer caro por
+// comparação. Setor vem de Fundamentals.sector (summaryProfile real da brapi.dev),
+// mesma fonte já usada em sectorFor().
+function computeSectorBenchmarks(fundamentalsByTicker: Map<string, Fundamentals>): InsertSectorBenchmark[] {
+  const bySector = new Map<string, Fundamentals[]>();
+  for (const f of fundamentalsByTicker.values()) {
+    if (!f.sector) continue;
+    if (!bySector.has(f.sector)) bySector.set(f.sector, []);
+    bySector.get(f.sector)!.push(f);
+  }
+
+  const rows: InsertSectorBenchmark[] = [];
+  for (const [sector, list] of bySector) {
+    if (list.length < MIN_SECTOR_SAMPLE) continue;
+    const avgPriceEarnings = average(list.map((f) => f.priceEarnings));
+    const avgPriceToBook = average(list.map((f) => f.priceToBook));
+    const avgReturnOnEquity = average(list.map((f) => f.returnOnEquity));
+    const avgDividendYield = average(list.map((f) => f.dividendYield));
+    const avgProfitMargins = average(list.map((f) => f.profitMargins));
+    rows.push({
+      sector,
+      avgPriceEarnings: avgPriceEarnings != null ? String(avgPriceEarnings) : null,
+      avgPriceToBook: avgPriceToBook != null ? String(avgPriceToBook) : null,
+      avgReturnOnEquity: avgReturnOnEquity != null ? String(avgReturnOnEquity) : null,
+      avgDividendYield: avgDividendYield != null ? String(avgDividendYield) : null,
+      avgProfitMargins: avgProfitMargins != null ? String(avgProfitMargins) : null,
+      sampleSize: list.length,
+    });
+  }
+  return rows;
 }
 
 /**
@@ -93,16 +138,27 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
     })
   );
 
+  // Subproduto do mesmo scan — médias setoriais reais a partir do universo inteiro
+  // (fundamentalsByTicker), não só dos candidatos aprovados. Usado por
+  // analysis-ai.ts/opinion-ai.ts pra comparação com pares (routes/analysis.ts busca
+  // via getSectorBenchmark, leitura barata, sem refazer o scan a cada Parecer de Ativo).
+  const sectorBenchmarkRows = computeSectorBenchmarks(fundamentalsByTicker);
+
   // Transação — diferente do delete+insert simples de scripts/src/seed-opportunities.ts,
   // que roda manual e offline. Este job roda em produção com usuários lendo
   // /opportunities ao mesmo tempo; sem transação haveria uma janela real com a
-  // tabela vazia entre o delete e o insert.
+  // tabela vazia entre o delete e o insert. sector_benchmarks entra na mesma transação
+  // por conveniência (mesmo job, mesmo scan), não por precisar de atomicidade com
+  // opportunities especificamente.
   await db.transaction(async (tx) => {
     await tx.delete(opportunitiesTable);
     if (rows.length > 0) await tx.insert(opportunitiesTable).values(rows);
+
+    await tx.delete(sectorBenchmarksTable);
+    if (sectorBenchmarkRows.length > 0) await tx.insert(sectorBenchmarksTable).values(sectorBenchmarkRows);
   });
 
-  const summary = `${rows.length} oportunidades geradas de ${universe.length} tickers varridos`;
+  const summary = `${rows.length} oportunidades geradas de ${universe.length} tickers varridos, ${sectorBenchmarkRows.length} setores com amostra suficiente pra média`;
   logger.info({ generated: rows.length, universeSize: universe.length }, "regenerateOpportunities concluído");
   return { summary };
 }

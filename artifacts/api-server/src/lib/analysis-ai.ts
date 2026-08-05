@@ -3,6 +3,8 @@ import { logger } from "./logger";
 import type { TaxEstimate } from "./tax-engine";
 import type { DividendTrend } from "./market-data";
 import { describeTechnicalIndicators, type TechnicalIndicators } from "./technical-engine";
+import { describeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "./risk-metrics-engine";
+import { describeDuPontBreakdown, type DuPontBreakdown } from "./analysis-engine";
 
 const RECOMMENDATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // score/status não mudam mais de uma vez por dia
 
@@ -19,6 +21,9 @@ export interface AssetRecommendationInput {
   positionPercent: number; // % do patrimônio total da carteira que esse ativo representa
   dividendTrend: DividendTrend | null; // null quando não há histórico real dos dois períodos (ver computeDividendTrend em market-data.ts) — nunca estimado
   technical: TechnicalIndicators | null; // null quando não há candles suficientes (technical-engine.ts)
+  riskAdjusted: RiskAdjustedMetrics | null; // null quando não há candles suficientes (risk-metrics-engine.ts)
+  duPont: DuPontBreakdown | null; // null quando DRE/balanço estão incompletos (computeDuPontBreakdown, analysis-engine.ts)
+  sectorComparison: string; // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts) — precisa do Fundamentals bruto, que esse módulo não importa só por isso
 }
 
 let anthropicClient: Anthropic | null | undefined;
@@ -39,7 +44,7 @@ const CONCENTRATION_HIGH = 25;
 const CONCENTRATION_CRITICAL = 40;
 
 function buildPrompt(input: AssetRecommendationInput): string {
-  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, dividendTrend, technical } = input;
+  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, dividendTrend, technical, riskAdjusted, duPont, sectorComparison } = input;
 
   const taxLine = tax
     ? tax.exempt
@@ -59,6 +64,8 @@ function buildPrompt(input: AssetRecommendationInput): string {
     : "Histórico de provento nos últimos 24 meses insuficiente para avaliar tendência de crescimento (não avalie isso, apenas não mencione).";
 
   const technicalLine = describeTechnicalIndicators(technical);
+  const riskAdjustedLine = describeRiskAdjustedMetrics(riskAdjusted);
+  const duPontLine = describeDuPontBreakdown(duPont);
 
   return (
     `Você é um analista financeiro sênior atuando como consultor pessoal do dono desta carteira — ` +
@@ -74,13 +81,22 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `${taxLine}\n` +
     `${concentrationLine}\n` +
     `${dividendTrendLine}\n` +
-    `Indicadores técnicos (candles reais, 1 ano): ${technicalLine}\n\n` +
+    `Indicadores técnicos (candles reais, 1 ano): ${technicalLine}\n` +
+    `Retorno ajustado ao risco (1 ano, CDI como taxa livre de risco): ${riskAdjustedLine}\n` +
+    `Decomposição DuPont do ROE: ${duPontLine}\n` +
+    `Comparação com pares do setor: ${sectorComparison}\n\n` +
     `Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos ` +
     `justificarem (status REAVALIAR ou POSSIVEL_SAIDA, ou risco relevante nos pontos de atenção), pode ` +
     `dizer explicitamente que faz sentido considerar reduzir ou encerrar a posição — não fique só em ` +
     `"observe" quando o caso pedir mais que isso. Quando os pontos de atenção envolverem piora de ROE, ` +
     `dívida subindo ou desaceleração de crescimento, pode enquadrar isso como enfraquecimento da vantagem ` +
-    `competitiva do negócio (moat) quando fizer sentido, e não só citar os números soltos. Mas pese o ` +
+    `competitiva do negócio (moat) quando fizer sentido, e não só citar os números soltos. Use a ` +
+    `decomposição DuPont pra qualificar o ROE, não só repeti-lo — um ROE alto puxado majoritariamente por ` +
+    `alavancagem é um sinal de qualidade bem diferente de um ROE alto puxado por margem operacional forte, ` +
+    `mesmo com o mesmo número final. Use a comparação com o setor como contexto, nunca como sinal ` +
+    `automático — um múltiplo mais barato que a média do setor pode ser uma oportunidade real ou um ` +
+    `desconto justificado por fundamentos piores; interprete à luz dos outros dados, não trate ` +
+    `"mais barato que o setor" como sinônimo de "melhor". Mas pese o ` +
     `custo de IR: se o imposto estimado comer boa parte do ganho (ou a posição estiver isenta e for ` +
     `barato sair), diga isso explicitamente como parte do raciocínio — às vezes o correto é "os ` +
     `fundamentos pioraram, mas o IR torna a saída agora pouco vantajosa, vale reavaliar perto de ` +
@@ -90,7 +106,10 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `fundamentos sempre vêm primeiro; mencione o técnico só quando ele reforçar ou contradizer de forma ` +
     `relevante a leitura fundamentalista (ex.: "fundamentos deterioraram e o RSI já mostra sobrevenda, ` +
     `pouco espaço pra piorar mais no curto prazo" ou "fundamentos sólidos, mas tecnicamente esticado pelo ` +
-    `RSI, talvez valha esperar uma correção pra reforçar"). NÃO invente nenhum dado que não esteja listado acima. NÃO proponha um score ou status diferente do ` +
+    `RSI, talvez valha esperar uma correção pra reforçar"). Use o Sharpe/Sortino/Treynor como contexto de ` +
+    `qualidade do retorno passado (retorno alto com Sharpe baixo indica que o retorno veio à custa de ` +
+    `volatilidade desproporcional, não de qualidade) — mencione só quando destoar claramente do que os ` +
+    `fundamentos sozinhos sugeririam. NÃO invente nenhum dado que não esteja listado acima. NÃO proponha um score ou status diferente do ` +
     `informado — a decisão de score é sempre do motor determinístico, você só interpreta. NÃO trate o ` +
     `valor de IR como exato — é uma estimativa isolada, deixe isso implícito no texto sem precisar repetir ` +
     `a ressalva inteira. Evite muletas vagas como "observe", "acompanhe" ou "fique atento" — só recorra a ` +
@@ -123,7 +142,8 @@ export async function synthesizeAssetRecommendation(input: AssetRecommendationIn
   const technicalKeyPart = input.technical
     ? `${input.technical.crossSignal ?? "na"}:${input.technical.rsi14 != null ? Math.round(input.technical.rsi14 / 5) * 5 : "na"}`
     : "na";
-  const cacheKey = `${input.ticker}:${input.score}:${input.status}:${taxKeyPart}:${positionKeyPart}:${dividendKeyPart}:${technicalKeyPart}`;
+  const riskAdjustedKeyPart = input.riskAdjusted ? Math.round(input.riskAdjusted.sharpeRatio * 10) : "na";
+  const cacheKey = `${input.ticker}:${input.score}:${input.status}:${taxKeyPart}:${positionKeyPart}:${dividendKeyPart}:${technicalKeyPart}:${riskAdjustedKeyPart}`;
   const cached = recommendationCache.get(cacheKey);
   if (cached && Date.now() - cached.fetchedAt < RECOMMENDATION_CACHE_TTL_MS) return cached.text;
 
