@@ -820,6 +820,20 @@ export interface MacroSnapshot {
   ipca12m: number | null;
   /** @nullable */
   usdBrl: number | null;
+  /**
+     * IGP-M acumulado 12 meses (%), composto a partir da série mensal do BCB
+     * @nullable
+     */
+  igpm12m?: number | null;
+  /**
+     * Juro real ex-post pela fórmula de Fisher, (1+Selic)/(1+IPCA)-1, em %
+     * @nullable
+     */
+  realInterestRate?: number | null;
+  /** @nullable */
+  ibovespa?: number | null;
+  /** @nullable */
+  ibovespaChangePercent?: number | null;
   updatedAt: string;
 }
 

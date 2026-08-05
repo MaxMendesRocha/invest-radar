@@ -670,7 +670,7 @@ paths:
     get:
       operationId: getMacroSnapshot
       tags: [macro]
-      summary: Real macroeconomic indicators (Selic, IPCA, câmbio) from the Banco Central
+      summary: Official indicators — Selic, IPCA, IGP-M, juro real and câmbio from the Banco Central, plus the Ibovespa
       responses:
         "200":
           description: Macro snapshot
@@ -1438,6 +1438,16 @@ components:
         ipca12m:
           type: ["number", "null"]
         usdBrl:
+          type: ["number", "null"]
+        igpm12m:
+          type: ["number", "null"]
+          description: IGP-M acumulado 12 meses (%), composto a partir da série mensal do BCB
+        realInterestRate:
+          type: ["number", "null"]
+          description: Juro real ex-post pela fórmula de Fisher, (1+Selic)/(1+IPCA)-1, em %
+        ibovespa:
+          type: ["number", "null"]
+        ibovespaChangePercent:
           type: ["number", "null"]
         updatedAt:
           type: string

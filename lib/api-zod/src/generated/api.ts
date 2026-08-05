@@ -783,13 +783,17 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
 
 
 /**
- * @summary Real macroeconomic indicators (Selic, IPCA, câmbio) from the Banco Central
+ * @summary Official indicators — Selic, IPCA, IGP-M, juro real and câmbio from the Banco Central, plus the Ibovespa
  */
 export const GetMacroSnapshotResponse = zod.object({
   "selic": zod.number().nullable(),
   "selicTrend": zod.union([zod.literal('alta'),zod.literal('queda'),zod.literal('estavel'),zod.literal(null)]).nullable(),
   "ipca12m": zod.number().nullable(),
   "usdBrl": zod.number().nullable(),
+  "igpm12m": zod.number().nullish().describe('IGP-M acumulado 12 meses (%), composto a partir da série mensal do BCB'),
+  "realInterestRate": zod.number().nullish().describe('Juro real ex-post pela fórmula de Fisher, (1+Selic)\/(1+IPCA)-1, em %'),
+  "ibovespa": zod.number().nullish(),
+  "ibovespaChangePercent": zod.number().nullish(),
   "updatedAt": zod.coerce.date()
 })
 

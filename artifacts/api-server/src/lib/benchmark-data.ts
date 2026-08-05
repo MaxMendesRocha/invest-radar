@@ -89,6 +89,55 @@ async function fetchIndexHistory(ticker: string): Promise<{ current: number | nu
   };
 }
 
+export interface IndexQuote {
+  price: number | null;
+  changePercent: number | null;
+}
+
+// Bem mais curto que as 6h do resto do arquivo: os outros indicadores aqui são
+// séries do BCB que mudam uma vez por dia, enquanto o Ibovespa se move durante o
+// pregão. 15min mantém o card útil sem transformar cada acesso em uma chamada.
+const INDEX_QUOTE_TTL_MS = 15 * 60 * 1000;
+
+let ibovCache: { quote: IndexQuote; fetchedAt: number } | null = null;
+
+/**
+ * Cotação corrente do Ibovespa. Separada de fetchIndexHistory porque aqui só
+ * interessam o ponto de agora e a variação do dia — não o histórico usado nas
+ * comparações de performance.
+ *
+ * Falha de rede devolve os dois campos nulos, nunca um valor de outra origem:
+ * o card mostra "-" e fica evidente que o dado não veio.
+ */
+export async function getIbovespaQuote(): Promise<IndexQuote> {
+  const now = Date.now();
+  if (ibovCache && now - ibovCache.fetchedAt < INDEX_QUOTE_TTL_MS) return ibovCache.quote;
+
+  let quote: IndexQuote = { price: null, changePercent: null };
+  try {
+    const token = process.env.BRAPI_TOKEN;
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const response = await fetch(`${BRAPI_BASE_URL}/%5EBVSP`, { headers });
+    if (response.ok) {
+      const body = (await response.json()) as {
+        results?: { regularMarketPrice?: number; regularMarketChangePercent?: number }[];
+      };
+      const item = body.results?.[0];
+      quote = {
+        price: item?.regularMarketPrice ?? null,
+        changePercent: item?.regularMarketChangePercent ?? null,
+      };
+    } else {
+      logger.warn({ status: response.status }, "brapi.dev Ibovespa quote request failed");
+    }
+  } catch (err) {
+    logger.warn({ err }, "brapi.dev Ibovespa quote errored");
+  }
+
+  ibovCache = { quote, fetchedAt: now };
+  return quote;
+}
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }

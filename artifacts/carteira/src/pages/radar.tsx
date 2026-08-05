@@ -25,8 +25,44 @@ import {
   PieChart,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { formatPercent } from "@/lib/utils";
 
 const SELIC_TREND_ICON: Record<string, any> = { alta: TrendingUp, queda: TrendingDown, estavel: Minus };
+
+/**
+ * Um indicador do card. `hint` explica em uma linha por que o número importa para
+ * a carteira — sem isso, IGP-M e juro real viram números soltos para quem não
+ * acompanha macro de perto.
+ */
+function Indicator({
+  label,
+  value,
+  hint,
+  children,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="text-xs uppercase text-muted-foreground tracking-wider mb-1">{label}</p>
+      <div className="flex items-baseline gap-2">
+        <span className="text-xl font-bold font-mono">{value}</span>
+        {children}
+      </div>
+      <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{hint}</p>
+    </div>
+  );
+}
+
+// Delegam pro formatador pt-BR de lib/utils: o card mistura percentuais com o
+// Ibovespa na casa dos milhares, e com o formato en-US o mesmo ponto viraria
+// decimal em "14.25%" e milhar em "177.726" lado a lado.
+const percentOrDash = (v: number | null | undefined) => (v != null ? formatPercent(v) : "-");
+
+const PTAX_FORMAT = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 
 const SEVERITY_CONFIG = {
   Critico: { color: "text-destructive border-destructive/20 bg-destructive/5", icon: AlertTriangle, badge: "destructive" },
@@ -85,39 +121,53 @@ export default function Radar() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <Landmark className="w-4 h-4" /> Cenário Macroeconômico
+            <Landmark className="w-4 h-4" /> Indicadores Oficiais
           </CardTitle>
-          <CardDescription>Indicadores oficiais do Banco Central (SGS), atualizados periodicamente.</CardDescription>
+          <CardDescription>Banco Central (SGS) e B3, atualizados periodicamente.</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingMacro ? (
             <div className="h-12 bg-muted/20 animate-pulse rounded" />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <p className="text-xs uppercase text-muted-foreground tracking-wider mb-1">Selic</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-xl font-bold font-mono">
-                    {macro?.selic != null ? `${macro.selic.toFixed(2)}%` : "-"}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-5">
+              <Indicator label="Selic" value={percentOrDash(macro?.selic)} hint="Taxa básica de juros">
+                {macro?.selicTrend && (() => {
+                  const TrendIcon = SELIC_TREND_ICON[macro.selicTrend] ?? Minus;
+                  return <TrendIcon className="w-4 h-4 text-muted-foreground self-center" />;
+                })()}
+              </Indicator>
+              <Indicator label="IPCA (12 meses)" value={percentOrDash(macro?.ipca12m)} hint="Inflação oficial" />
+              <Indicator
+                label="Juro real"
+                value={percentOrDash(macro?.realInterestRate)}
+                hint="Quanto a renda fixa rende acima da inflação"
+              />
+              <Indicator
+                label="IGP-M (12 meses)"
+                value={percentOrDash(macro?.igpm12m)}
+                hint="Reajusta os aluguéis dos FIIs de tijolo"
+              />
+              <Indicator
+                label="Dólar (PTAX)"
+                value={macro?.usdBrl != null ? `R$ ${PTAX_FORMAT.format(macro.usdBrl)}` : "-"}
+                hint="Câmbio de referência do BC"
+              />
+              <Indicator
+                label="Ibovespa"
+                value={macro?.ibovespa != null ? macro.ibovespa.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "-"}
+                hint="Principal índice da bolsa"
+              >
+                {macro?.ibovespaChangePercent != null && (
+                  <span
+                    className={`text-xs font-medium ${
+                      macro.ibovespaChangePercent >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"
+                    }`}
+                  >
+                    {macro.ibovespaChangePercent >= 0 ? "+" : ""}
+                    {formatPercent(macro.ibovespaChangePercent)}
                   </span>
-                  {macro?.selicTrend && (() => {
-                    const TrendIcon = SELIC_TREND_ICON[macro.selicTrend] ?? Minus;
-                    return <TrendIcon className="w-4 h-4 text-muted-foreground" />;
-                  })()}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs uppercase text-muted-foreground tracking-wider mb-1">IPCA (12 meses)</p>
-                <span className="text-xl font-bold font-mono">
-                  {macro?.ipca12m != null ? `${macro.ipca12m.toFixed(2)}%` : "-"}
-                </span>
-              </div>
-              <div>
-                <p className="text-xs uppercase text-muted-foreground tracking-wider mb-1">Dólar (PTAX)</p>
-                <span className="text-xl font-bold font-mono">
-                  {macro?.usdBrl != null ? `R$ ${macro.usdBrl.toFixed(4)}` : "-"}
-                </span>
-              </div>
+                )}
+              </Indicator>
             </div>
           )}
         </CardContent>
