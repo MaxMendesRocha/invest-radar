@@ -118,6 +118,12 @@ export interface Fundamentals {
   revenueGrowth: number | null; // decimal — receita do ano mais recente vs ano anterior
   fiftyTwoWeekChange: number | null; // decimal
   beta: number | null;
+  totalAssets: number | null; // ativo total (balanço), usado na decomposição DuPont do ROE
+  ebit: number | null; // lucro antes de juros e impostos (DRE), idem
+  incomeBeforeTax: number | null; // lucro antes de impostos (DRE), idem
+  netIncome: number | null; // lucro líquido (DRE), idem — já usado internamente pro ROE, agora exposto pra decomposição
+  shareholdersEquity: number | null; // patrimônio líquido (balanço), idem — já usado internamente pro ROE/dívida-patrimônio
+  totalRevenue: number | null; // receita total (DRE), idem — já usado internamente pro crescimento de receita
   updatedAt: string;
 }
 
@@ -199,6 +205,9 @@ interface BrapiV2Period {
   longTermLoansAndFinancing?: number | null;
   totalRevenue?: number | null;
   netIncome?: number | null;
+  totalAssets?: number | null; // só vem no payload de balance-sheet
+  ebit?: number | null; // só vem no payload de income-statement
+  incomeBeforeTax?: number | null; // idem
 }
 
 interface BrapiV2Result {
@@ -328,6 +337,12 @@ export async function getFundamentals(tickers: string[]): Promise<Map<string, Fu
             latestIncome?.totalRevenue != null && previousIncome?.totalRevenue
               ? (latestIncome.totalRevenue - previousIncome.totalRevenue) / previousIncome.totalRevenue
               : null,
+          totalAssets: balanceSheet?.totalAssets ?? null,
+          ebit: latestIncome?.ebit ?? null,
+          incomeBeforeTax: latestIncome?.incomeBeforeTax ?? null,
+          netIncome: latestIncome?.netIncome ?? null,
+          shareholdersEquity: equity,
+          totalRevenue: latestIncome?.totalRevenue ?? null,
           updatedAt: keyStats.updatedAt,
         };
       }

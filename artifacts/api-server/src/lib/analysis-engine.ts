@@ -42,6 +42,81 @@ function evalROE(roe: number | null): MetricEval | null {
   return { score: 45 };
 }
 
+export interface DuPontBreakdown {
+  taxBurden: number; // netIncome / incomeBeforeTax — quanto do lucro antes de impostos sobra depois deles
+  interestBurden: number; // incomeBeforeTax / ebit — quanto do EBIT sobra depois das despesas financeiras
+  ebitMargin: number; // ebit / totalRevenue
+  assetTurnover: number; // totalRevenue / totalAssets — eficiência de uso dos ativos
+  leverage: number; // totalAssets / shareholdersEquity — multiplicador de alavancagem
+}
+
+// Precisa vir de fora — analysis-engine.ts não importa nada de market-data.ts além
+// de Fundamentals, e revenueGrowth já é derivado ali a partir de totalRevenue (que
+// não é exposto cru). Aqui recebemos totalRevenue explicitamente porque a
+// decomposição DuPont precisa dele — os outros 5 insumos já estão em Fundamentals.
+interface DuPontInput {
+  totalRevenue: number | null;
+  netIncome: number | null;
+  incomeBeforeTax: number | null;
+  ebit: number | null;
+  totalAssets: number | null;
+  shareholdersEquity: number | null;
+}
+
+// Decomposição de 5 fatores do ROE (padrão CFA/DuPont estendido) — interpretativa,
+// não entra na pontuação (o ROE bruto já é avaliado por evalROE acima; decompor de
+// novo aqui contaria o mesmo fundamento duas vezes no score). Só calcula quando os 6
+// insumos reais estão disponíveis — nunca uma decomposição parcial ou estimada.
+export function computeDuPontBreakdown(input: DuPontInput): DuPontBreakdown | null {
+  const { totalRevenue, netIncome, incomeBeforeTax, ebit, totalAssets, shareholdersEquity } = input;
+  if (
+    totalRevenue == null || totalRevenue === 0 ||
+    netIncome == null ||
+    incomeBeforeTax == null || incomeBeforeTax === 0 ||
+    ebit == null || ebit === 0 ||
+    totalAssets == null || totalAssets === 0 ||
+    shareholdersEquity == null || shareholdersEquity === 0
+  ) {
+    return null;
+  }
+
+  return {
+    taxBurden: netIncome / incomeBeforeTax,
+    interestBurden: incomeBeforeTax / ebit,
+    ebitMargin: ebit / totalRevenue,
+    assetTurnover: totalRevenue / totalAssets,
+    leverage: totalAssets / shareholdersEquity,
+  };
+}
+
+// Identifica o fator que mais se distancia de um "neutro" de referência (giro de
+// ativos ~1x é o único que não tem teto natural — os outros 4 têm faixa 0-1 ou perto
+// disso) e usa isso pra apontar qual alavanca domina o ROE, em vez de só listar os 5
+// números — é a leitura que a decomposição DuPont existe pra habilitar.
+export function describeDuPontBreakdown(d: DuPontBreakdown | null): string {
+  if (!d) return "Decomposição de ROE não disponível (DRE/balanço incompletos para este ativo).";
+
+  const roeCheck = d.taxBurden * d.interestBurden * d.ebitMargin * d.assetTurnover * d.leverage;
+  const parts = [
+    `carga tributária ${(d.taxBurden * 100).toFixed(0)}%`,
+    `carga de juros ${(d.interestBurden * 100).toFixed(0)}%`,
+    `margem EBIT ${(d.ebitMargin * 100).toFixed(1)}%`,
+    `giro de ativos ${d.assetTurnover.toFixed(2)}x`,
+    `alavancagem ${d.leverage.toFixed(2)}x`,
+  ];
+
+  const driver =
+    d.leverage >= 2.5
+      ? " — alavancagem elevada é o fator que mais se destaca nesse ROE, não a operação em si"
+      : d.ebitMargin >= 0.25
+        ? " — margem operacional forte é o fator que mais se destaca nesse ROE"
+        : d.assetTurnover >= 1.5
+          ? " — giro de ativos elevado (eficiência operacional) é o fator que mais se destaca nesse ROE"
+          : "";
+
+  return `ROE de ${(roeCheck * 100).toFixed(1)}% decomposto em: ${parts.join(", ")}${driver}.`;
+}
+
 function evalDebtToEquity(de: number | null): MetricEval | null {
   if (de == null) return null;
   if (de <= 0.5) return { score: 90, positive: "Baixo endividamento em relação ao patrimônio" };

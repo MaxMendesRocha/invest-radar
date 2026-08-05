@@ -17,13 +17,16 @@ import {
   type PriceHistory,
   type Fundamentals,
 } from "../lib/market-data";
-import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, type AnalysisResult } from "../lib/analysis-engine";
+import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, computeDuPontBreakdown, type AnalysisResult } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
+import { getCdiTrailingAnnual } from "../lib/benchmark-data";
 import { synthesizeAssetRecommendation } from "../lib/analysis-ai";
 import { synthesizePrePurchaseOpinion } from "../lib/opinion-ai";
 import { estimateCapitalGainsTax, type TaxEstimate } from "../lib/tax-engine";
 import { computeTechnicalIndicators, type TechnicalIndicators } from "../lib/technical-engine";
+import { computeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "../lib/risk-metrics-engine";
+import { getSectorBenchmark, describeSectorComparison } from "../lib/sector-benchmarks";
 
 const router: IRouter = Router();
 
@@ -330,13 +333,14 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     return;
   }
 
-  const [fundamentalsByTicker, priceHistories, dividendEvents, technicalSeries, newsHeadlines, macro] = await Promise.all([
+  const [fundamentalsByTicker, priceHistories, dividendEvents, technicalSeries, newsHeadlines, macro, cdiAnnual] = await Promise.all([
     getFundamentals([ticker]),
     getPriceHistories([ticker]),
     getDividendEventsForTicker(ticker),
     getTechnicalSeries([ticker]),
     getNewsFor(resolveSearchTerm(ticker), 3),
     getMacroSnapshot(),
+    getCdiTrailingAnnual(),
   ]);
 
   const fundamentals = fundamentalsByTicker.get(ticker);
@@ -356,6 +360,12 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
   const analysis = fundamentals ? analyzeFundamentals(fundamentals, dps12m) : noFundamentalsAnalysis();
   const technicalPoints = technicalSeries.get(ticker) ?? [];
   const technical = technicalPoints.length > 0 ? computeTechnicalIndicators(technicalPoints) : null;
+  const riskAdjusted = cdiAnnual != null ? computeRiskAdjustedMetrics(technicalPoints, fundamentals?.beta ?? null, cdiAnnual) : null;
+  const duPont = fundamentals ? computeDuPontBreakdown(fundamentals) : null;
+  const sectorBenchmark = await getSectorBenchmark(fundamentals?.sector ?? null);
+  const sectorComparison = fundamentals
+    ? describeSectorComparison(fundamentals, sectorBenchmark)
+    : "Comparação com o setor não disponível (fundamentos não encontrados para este ativo).";
   const newsItems = newsHeadlines.map(formatHeadline);
   const name = fundamentals?.name ?? null;
 
@@ -373,6 +383,9 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     fiveDayChangePercent: priceHistory?.fiveDayChangePercent ?? null,
     dividendTrend,
     technical,
+    riskAdjusted,
+    duPont,
+    sectorComparison,
     newsItems,
     macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
   });
@@ -451,6 +464,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   // Buscado aqui (não só lá embaixo pros macroAlerts) porque a síntese via IA de cada
   // ativo também usa o cenário macro como parte do contexto real que ela recebe.
   const macro = await getMacroSnapshot();
+  const cdiAnnual = await getCdiTrailingAnnual();
 
   // Movido pra antes do loop de IA (o resto do handler só precisava dele mais
   // embaixo) porque o cálculo de IR e de % de concentração precisam do preço atual
@@ -489,6 +503,13 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       const technicalPoints = technicalSeriesByTicker.get(analysis.ticker) ?? [];
       const technical = technicalPoints.length > 0 ? computeTechnicalIndicators(technicalPoints) : null;
       analysis.technical = technical;
+      const assetFundamentals = fundamentalsByTicker.get(analysis.ticker) ?? null;
+      const riskAdjusted = cdiAnnual != null ? computeRiskAdjustedMetrics(technicalPoints, assetFundamentals?.beta ?? null, cdiAnnual) : null;
+      const duPont = assetFundamentals ? computeDuPontBreakdown(assetFundamentals) : null;
+      const sectorBenchmark = await getSectorBenchmark(assetFundamentals?.sector ?? null);
+      const sectorComparison = assetFundamentals
+        ? describeSectorComparison(assetFundamentals, sectorBenchmark)
+        : "Comparação com o setor não disponível (fundamentos não encontrados para este ativo).";
 
       const aiRecommendation = await synthesizeAssetRecommendation({
         ticker: analysis.ticker,
@@ -503,6 +524,9 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         positionPercent,
         dividendTrend,
         technical,
+        riskAdjusted,
+        duPont,
+        sectorComparison,
       });
 
       // Mutação intencional: `analysis` é a mesma referência presente em `analyses`
