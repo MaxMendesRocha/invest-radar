@@ -62,7 +62,21 @@ function Indicator({
 // decimal em "14.25%" e milhar em "177.726" lado a lado.
 const percentOrDash = (v: number | null | undefined) => (v != null ? formatPercent(v) : "-");
 
-const PTAX_FORMAT = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+const PTAX_FORMAT = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Selo de variação do dia, compartilhado pelo dólar e pelo Ibovespa. */
+function ChangeBadge({ value }: { value: number | null | undefined }) {
+  if (value == null) return null;
+  const isUp = value >= 0;
+  const Icon = isUp ? TrendingUp : TrendingDown;
+  return (
+    <span className={`flex items-center gap-0.5 text-xs font-medium ${isUp ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+      <Icon className="w-3 h-3" />
+      {isUp ? "+" : ""}
+      {formatPercent(value)}
+    </span>
+  );
+}
 
 const SEVERITY_CONFIG = {
   Critico: { color: "text-destructive border-destructive/20 bg-destructive/5", icon: AlertTriangle, badge: "destructive" },
@@ -151,22 +165,15 @@ export default function Radar() {
                 label="Dólar (PTAX)"
                 value={macro?.usdBrl != null ? `R$ ${PTAX_FORMAT.format(macro.usdBrl)}` : "-"}
                 hint="Câmbio de referência do BC"
-              />
+              >
+                <ChangeBadge value={macro?.usdBrlChangePercent} />
+              </Indicator>
               <Indicator
                 label="Ibovespa"
                 value={macro?.ibovespa != null ? macro.ibovespa.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "-"}
                 hint="Principal índice da bolsa"
               >
-                {macro?.ibovespaChangePercent != null && (
-                  <span
-                    className={`text-xs font-medium ${
-                      macro.ibovespaChangePercent >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"
-                    }`}
-                  >
-                    {macro.ibovespaChangePercent >= 0 ? "+" : ""}
-                    {formatPercent(macro.ibovespaChangePercent)}
-                  </span>
-                )}
+                <ChangeBadge value={macro?.ibovespaChangePercent} />
               </Indicator>
             </div>
           )}

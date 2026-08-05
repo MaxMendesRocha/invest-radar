@@ -1439,6 +1439,9 @@ components:
           type: ["number", "null"]
         usdBrl:
           type: ["number", "null"]
+        usdBrlChangePercent:
+          type: ["number", "null"]
+          description: Variação % do PTAX contra o fechamento anterior
         igpm12m:
           type: ["number", "null"]
           description: IGP-M acumulado 12 meses (%), composto a partir da série mensal do BCB

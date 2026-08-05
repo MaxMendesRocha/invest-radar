@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity, Clock, Receipt, LineChart, CalendarClock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { analysisStatusConfig } from "@/lib/analysis-status";
 import { formatCurrency } from "@/lib/utils";
 
 function TaxBadge({ tax }: { tax: AssetAnalysis["taxEstimate"] }) {
@@ -87,13 +88,6 @@ function DividendFrequencyBadge({ dividendFrequency }: { dividendFrequency: Asse
     </div>
   );
 }
-
-const STATUS_MAP: Record<string, { color: string, label: string }> = {
-  MANTER: { color: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20", label: "Manter" },
-  ATENCAO: { color: "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20", label: "Atenção" },
-  REAVALIAR: { color: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20", label: "Reavaliar" },
-  POSSIVEL_SAIDA: { color: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20", label: "Possível Saída" }
-};
 
 export default function Analise() {
   const { data: analyses, isLoading } = useListAssetAnalyses({ query: { queryKey: getListAssetAnalysesQueryKey() } });
@@ -178,7 +172,7 @@ export default function Analise() {
             }
 
             const isExpanded = expandedId === analysis.ticker;
-            const statusConfig = STATUS_MAP[analysis.status] || STATUS_MAP.MANTER;
+            const statusConfig = analysisStatusConfig(analysis.status);
 
             return (
               <Card 
@@ -195,7 +189,7 @@ export default function Analise() {
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="text-xl font-bold font-mono">{analysis.ticker}</h3>
-                          <Badge variant="outline" className={`border ${statusConfig.color}`}>
+                          <Badge variant="outline" className={`border ${statusConfig.className}`}>
                             {statusConfig.label}
                           </Badge>
                         </div>

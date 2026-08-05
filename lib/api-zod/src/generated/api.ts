@@ -790,6 +790,7 @@ export const GetMacroSnapshotResponse = zod.object({
   "selicTrend": zod.union([zod.literal('alta'),zod.literal('queda'),zod.literal('estavel'),zod.literal(null)]).nullable(),
   "ipca12m": zod.number().nullable(),
   "usdBrl": zod.number().nullable(),
+  "usdBrlChangePercent": zod.number().nullish().describe('Variação % do PTAX contra o fechamento anterior'),
   "igpm12m": zod.number().nullish().describe('IGP-M acumulado 12 meses (%), composto a partir da série mensal do BCB'),
   "realInterestRate": zod.number().nullish().describe('Juro real ex-post pela fórmula de Fisher, (1+Selic)\/(1+IPCA)-1, em %'),
   "ibovespa": zod.number().nullish(),

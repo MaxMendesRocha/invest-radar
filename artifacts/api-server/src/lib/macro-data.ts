@@ -27,6 +27,7 @@ export interface MacroSnapshot {
   selicTrend: "alta" | "queda" | "estavel" | null;
   ipca12m: number | null;
   usdBrl: number | null;
+  usdBrlChangePercent: number | null;
   igpm12m: number | null;
   realInterestRate: number | null;
   updatedAt: string;
@@ -99,6 +100,21 @@ export async function fetchSeriesRange(code: string, daysBack: number): Promise<
   return (await response.json()) as SgsPoint[];
 }
 
+/**
+ * Variação percentual entre os dois últimos pontos de uma série diária. Retorna
+ * null com menos de dois pontos: sem o fechamento anterior não há de onde tirar
+ * direção, e exibir "0%" sugeriria estabilidade que não foi medida.
+ *
+ * A série do PTAX vem em ordem cronológica, então o último ponto é o mais recente.
+ */
+function changePercentFrom(points: SgsPoint[]): number | null {
+  if (points.length < 2) return null;
+  const previous = parseFloat(points[points.length - 2].valor);
+  const latest = parseFloat(points[points.length - 1].valor);
+  if (Number.isNaN(previous) || Number.isNaN(latest) || previous === 0) return null;
+  return ((latest - previous) / previous) * 100;
+}
+
 function trendFrom(points: SgsPoint[]): "alta" | "queda" | "estavel" | null {
   if (points.length < 2) return null;
   const first = parseFloat(points[0].valor);
@@ -152,18 +168,20 @@ export async function getMacroSnapshot(): Promise<MacroSnapshot> {
   const [selicPoints, ipcaPoints, usdPoints, igpmPoints] = await Promise.all([
     fetchSeriesRange(SERIES.selic, 180), // ~6 months, enough to span a COPOM cycle
     fetchSeries(SERIES.ipca12m, 1),
-    fetchSeries(SERIES.usdBrl, 1),
+    fetchSeries(SERIES.usdBrl, 2),
     fetchSeries(SERIES.igpmMonthly, 12),
   ]);
 
   const selic = selicPoints.length > 0 ? parseFloat(selicPoints[selicPoints.length - 1].valor) : null;
   const ipca12m = ipcaPoints.length > 0 ? parseFloat(ipcaPoints[0].valor) : null;
+  const latestUsd = usdPoints.length > 0 ? parseFloat(usdPoints[usdPoints.length - 1].valor) : null;
 
   const snapshot: MacroSnapshot = {
     selic,
     selicTrend: trendFrom(selicPoints),
     ipca12m,
-    usdBrl: usdPoints.length > 0 ? parseFloat(usdPoints[0].valor) : null,
+    usdBrl: latestUsd,
+    usdBrlChangePercent: changePercentFrom(usdPoints),
     igpm12m: compoundLast12Months(igpmPoints),
     realInterestRate: realInterestFrom(selic, ipca12m),
     updatedAt: new Date().toISOString(),

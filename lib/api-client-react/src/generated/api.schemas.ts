@@ -821,6 +821,11 @@ export interface MacroSnapshot {
   /** @nullable */
   usdBrl: number | null;
   /**
+     * Variação % do PTAX contra o fechamento anterior
+     * @nullable
+     */
+  usdBrlChangePercent?: number | null;
+  /**
      * IGP-M acumulado 12 meses (%), composto a partir da série mensal do BCB
      * @nullable
      */

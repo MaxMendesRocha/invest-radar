@@ -12,6 +12,7 @@ import {
   type Asset,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { analysisStatusConfig } from "@/lib/analysis-status";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,13 +36,6 @@ const CATEGORY_MAP: Record<string, string> = {
   bdrs: "BDRs",
   fundos: "Fundos",
   renda_fixa: "Renda Fixa"
-};
-
-const STATUS_COLOR_MAP: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  MANTER: "default",
-  ATENCAO: "secondary",
-  REAVALIAR: "outline",
-  POSSIVEL_SAIDA: "destructive"
 };
 
 export default function Carteira() {
@@ -338,8 +332,8 @@ export default function Carteira() {
                         {analysis?.available === false ? (
                           <Badge variant="outline">Em breve</Badge>
                         ) : analysis?.status ? (
-                          <Badge variant={STATUS_COLOR_MAP[analysis.status] || "default"}>
-                            {analysis.status}
+                          <Badge variant="outline" className={analysisStatusConfig(analysis.status).className}>
+                            {analysisStatusConfig(analysis.status).label}
                           </Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">-</span>
@@ -393,7 +387,7 @@ export default function Carteira() {
                       {analysis?.available === false ? (
                         <Badge variant="outline">Em breve</Badge>
                       ) : analysis?.status ? (
-                        <Badge variant={STATUS_COLOR_MAP[analysis.status] || "default"}>{analysis.status}</Badge>
+                        <Badge variant="outline" className={analysisStatusConfig(analysis.status).className}>{analysisStatusConfig(analysis.status).label}</Badge>
                       ) : null}
                       <Button variant="ghost" size="icon" onClick={() => handleSellOpen(asset)} title="Vender" className="text-muted-foreground hover:text-foreground">
                         <Banknote className="w-4 h-4" />
