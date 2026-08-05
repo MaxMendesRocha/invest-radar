@@ -12,7 +12,8 @@ import {
   Stethoscope,
   Settings as SettingsIcon,
   LogOut,
-  Menu
+  Menu,
+  MoreHorizontal
 } from "lucide-react";
 import { useGetMe, useLogout, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -31,17 +32,22 @@ const NAV_ITEMS = [
   { href: "/saude", label: "Saúde do Portfólio", icon: Stethoscope },
 ];
 
-// Most-used sections get one-thumb access on mobile; the rest stay in the drawer.
+// Most-used sections get one-thumb access on mobile; the rest ficam no drawer,
+// alcançável pelo botão "Mais" da própria barra inferior (ver MobileBottomNav) —
+// sem depender do hambúrguer do topo, que rola pra fora da tela junto com a página.
 const MOBILE_TAB_ITEMS = [
   { href: "/", label: "Início", icon: LayoutDashboard },
   { href: "/carteira", label: "Carteira", icon: Wallet },
   { href: "/radar", label: "Radar", icon: Radar },
   { href: "/analise", label: "Análise", icon: Activity },
-  { href: "/oportunidades", label: "Oport.", icon: Lightbulb },
 ];
 
-function MobileBottomNav() {
+function MobileBottomNav({ onOpenMenu }: { onOpenMenu: () => void }) {
   const [location] = useLocation();
+  // Numa seção sem aba própria (Oportunidades, Parecer, Dividendos, Operações
+  // Encerradas, Saúde, Configurações) nenhum dos 4 links acenderia e o usuário
+  // ficaria sem referência de onde está — nesse caso "Mais" fica destacado.
+  const isOnDrawerSection = !MOBILE_TAB_ITEMS.some((item) => item.href === location);
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-sidebar text-sidebar-foreground border-t border-sidebar-border pb-[env(safe-area-inset-bottom)]">
@@ -63,6 +69,19 @@ function MobileBottomNav() {
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={onOpenMenu}
+          aria-label="Abrir menu"
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+            isOnDrawerSection
+              ? "text-sidebar-accent-foreground"
+              : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
+          }`}
+        >
+          <MoreHorizontal className="w-5 h-5" />
+          <span className="text-[10px] leading-none">Mais</span>
+        </button>
       </div>
     </nav>
   );
@@ -146,7 +165,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col md:flex-row">
+    // h-screen só a partir de md: no desktop o container precisa de altura fechada pra
+    // que a rolagem aconteça DENTRO do conteúdo (overflow-y-auto abaixo) e a sidebar
+    // fique parada — com min-h-screen o container crescia com o conteúdo, a rolagem
+    // interna nunca era acionada e a sidebar rolava junto, saindo da tela. No mobile
+    // mantém min-h-screen de propósito: o header do topo rola junto (padrão de app
+    // mobile), já que a navegação principal fica na barra inferior fixa.
+    <div className="min-h-screen md:h-screen bg-background flex flex-col md:flex-row">
       {/* Mobile top bar */}
       <header className="md:hidden flex items-center gap-3 px-4 h-14 border-b border-sidebar-border bg-sidebar text-sidebar-foreground flex-shrink-0">
         <Button variant="ghost" size="icon" onClick={() => setMobileNavOpen(true)} aria-label="Abrir menu">
@@ -182,7 +207,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </main>
 
-      <MobileBottomNav />
+      <MobileBottomNav onOpenMenu={() => setMobileNavOpen(true)} />
     </div>
   );
 }
