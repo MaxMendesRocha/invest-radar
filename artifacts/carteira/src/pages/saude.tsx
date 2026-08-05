@@ -75,7 +75,7 @@ export default function Saude() {
                 <div className="text-center md:text-left space-y-4 max-w-md">
                   <div>
                     <h2 className="text-3xl font-bold tracking-tight mb-2">Classificação: {health.classification}</h2>
-                    <p className="text-muted-foreground leading-relaxed">
+                    <p className="text-muted-foreground leading-relaxed text-pretty">
                       {health.aiDiagnosis ??
                         "Sua carteira apresenta um perfil estrutural condizente com a classificação obtida. " +
                         "A pontuação geral pondera fatores de risco, diversificação qualitativa e consistência de fluxo de caixa."}
