@@ -94,6 +94,7 @@ export const ListAssetsResponseItem = zod.object({
   "totalValue": zod.number().nullish(),
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "createdAt": zod.coerce.date()
 })
 export const ListAssetsResponse = zod.array(ListAssetsResponseItem)
@@ -129,6 +130,7 @@ export const CreateAssetResponse = zod.object({
   "totalValue": zod.number().nullish(),
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -154,6 +156,7 @@ export const GetAssetResponse = zod.object({
   "totalValue": zod.number().nullish(),
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -189,6 +192,7 @@ export const UpdateAssetResponse = zod.object({
   "totalValue": zod.number().nullish(),
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -490,7 +494,8 @@ export const ListOpportunitiesResponseItem = zod.object({
   "positives": zod.array(zod.string()),
   "risks": zod.array(zod.string()),
   "horizon": zod.string(),
-  "currentPrice": zod.number().nullish()
+  "currentPrice": zod.number().nullish(),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.')
 })
 export const ListOpportunitiesResponse = zod.array(ListOpportunitiesResponseItem)
 
@@ -592,6 +597,7 @@ export const ListAssetAnalysesResponseItem = zod.object({
 }).nullable(),
   "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
 }).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "updatedAt": zod.coerce.date()
 })
 export const ListAssetAnalysesResponse = zod.array(ListAssetAnalysesResponseItem)
@@ -640,6 +646,7 @@ export const GetAssetAnalysisResponse = zod.object({
 }).nullable(),
   "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
 }).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "updatedAt": zod.coerce.date()
 })
 
@@ -686,6 +693,7 @@ export const GetAssetOpinionResponse = zod.object({
 }).nullable(),
   "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
 }).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "newsItems": zod.array(zod.string()),
   "opinion": zod.string(),
   "updatedAt": zod.coerce.date()
@@ -741,6 +749,7 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
 }).nullable(),
   "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
 }).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "updatedAt": zod.coerce.date()
 })),
   "topAlerts": zod.array(zod.object({
@@ -767,7 +776,8 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "positives": zod.array(zod.string()),
   "risks": zod.array(zod.string()),
   "horizon": zod.string(),
-  "currentPrice": zod.number().nullish()
+  "currentPrice": zod.number().nullish(),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.')
 }))
 })
 

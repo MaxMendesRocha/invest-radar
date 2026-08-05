@@ -316,7 +316,12 @@ export default function Carteira() {
                   return (
                     <TableRow key={asset.id}>
                       <TableCell className="font-bold">{asset.ticker}</TableCell>
-                      <TableCell>{CATEGORY_MAP[asset.category] || asset.category}</TableCell>
+                      <TableCell>
+                        <div>{CATEGORY_MAP[asset.category] || asset.category}</div>
+                        {asset.dividendFrequency && (
+                          <div className="text-xs text-muted-foreground">{asset.dividendFrequency}</div>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right font-mono">{asset.quantity}</TableCell>
                       <TableCell className="text-right font-mono">{formatCurrency(asset.averagePrice)}</TableCell>
                       <TableCell className="text-right font-mono">{asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}</TableCell>
@@ -379,7 +384,10 @@ export default function Carteira() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="font-bold text-lg">{asset.ticker}</div>
-                      <div className="text-xs text-muted-foreground">{CATEGORY_MAP[asset.category] || asset.category}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {CATEGORY_MAP[asset.category] || asset.category}
+                        {asset.dividendFrequency && ` · ${asset.dividendFrequency}`}
+                      </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {analysis?.available === false ? (

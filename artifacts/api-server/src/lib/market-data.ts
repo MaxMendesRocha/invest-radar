@@ -545,6 +545,55 @@ export function sumLast12Months(events: DividendEvent[], now: number): number | 
   return hasAny ? total : null;
 }
 
+export type DividendFrequencyLabel = "Mensal" | "Trimestral" | "Semestral" | "Anual" | "Irregular";
+
+export interface DividendFrequency {
+  label: DividendFrequencyLabel;
+  paymentsLast12m: number;
+}
+
+// Periodicidade real de pagamento, a partir do espaçamento entre DATAS distintas de
+// pagamento nos últimos 12 meses — nunca declarada como "Mensal"/"Trimestral"/etc.
+// quando os pagamentos não forem regulares o suficiente (desvio de até 50% do
+// intervalo médio); nesse caso vira "Irregular" em vez de uma rotulagem falsamente
+// precisa. Comum em ações que intercalam dividendo + JCP sem calendário fixo —
+// diferente da maioria dos FIIs, que pagam todo mês. null quando não há nenhum
+// pagamento real no período (não paga, ou histórico insuficiente).
+export function classifyDividendFrequency(events: DividendEvent[], now: number): DividendFrequency | null {
+  // Agrupa por DATA (não por evento) — é comum um ativo pagar dividendo + JCP na
+  // mesma data em linhas separadas do provider; contar cada linha como um pagamento
+  // distinto criaria gaps de 0 dias artificiais e classificaria como "Irregular" um
+  // ativo que na prática paga num calendário perfeitamente regular (ex. TAEE11,
+  // trimestral de verdade, mas com 2-3 linhas na mesma data a cada trimestre).
+  const distinctDates = new Set(
+    events
+      .map((e) => new Date(e.paymentDate).getTime())
+      .filter((t) => t <= now && now - t <= ONE_YEAR_MS)
+      .map((t) => new Date(t).toISOString().slice(0, 10))
+  );
+  const paymentTimes = Array.from(distinctDates)
+    .map((d) => new Date(d).getTime())
+    .sort((a, b) => a - b);
+
+  if (paymentTimes.length === 0) return null;
+  if (paymentTimes.length === 1) return { label: "Anual", paymentsLast12m: 1 };
+
+  const gapsDays: number[] = [];
+  for (let i = 1; i < paymentTimes.length; i++) {
+    gapsDays.push((paymentTimes[i] - paymentTimes[i - 1]) / (24 * 60 * 60 * 1000));
+  }
+  const avgGap = gapsDays.reduce((sum, g) => sum + g, 0) / gapsDays.length;
+  const maxDeviation = Math.max(...gapsDays.map((g) => Math.abs(g - avgGap)));
+  const isRegular = maxDeviation <= avgGap * 0.5;
+
+  const paymentsLast12m = paymentTimes.length;
+  if (!isRegular) return { label: "Irregular", paymentsLast12m };
+  if (avgGap <= 40) return { label: "Mensal", paymentsLast12m };
+  if (avgGap <= 100) return { label: "Trimestral", paymentsLast12m };
+  if (avgGap <= 200) return { label: "Semestral", paymentsLast12m };
+  return { label: "Anual", paymentsLast12m };
+}
+
 export interface DividendTrend {
   last12mTotal: number; // R$ por unidade, soma dos proventos pagos nos últimos 12 meses
   prior12mTotal: number; // R$ por unidade, soma dos 12 meses anteriores a esses

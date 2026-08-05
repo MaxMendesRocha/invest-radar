@@ -5,6 +5,7 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { OpportunityDividendFrequency } from './opportunityDividendFrequency';
 import type { OpportunityRiskLevel } from './opportunityRiskLevel';
 
 export interface Opportunity {
@@ -22,4 +23,9 @@ export interface Opportunity {
   horizon: string;
   /** @nullable */
   currentPrice?: number | null;
+  /**
+     * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+     * @nullable
+     */
+  dividendFrequency?: OpportunityDividendFrequency;
 }

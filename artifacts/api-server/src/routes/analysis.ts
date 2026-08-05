@@ -12,10 +12,12 @@ import {
   getTechnicalSeries,
   computeDividendTrend,
   sumLast12Months,
+  classifyDividendFrequency,
   sectorFor,
   QUOTED_CATEGORIES,
   type PriceHistory,
   type Fundamentals,
+  type DividendFrequencyLabel,
 } from "../lib/market-data";
 import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, computeDuPontBreakdown, type AnalysisResult } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
@@ -182,20 +184,28 @@ function computeAnalysis(
   return fundamentals ? analyzeFundamentals(fundamentals, dps12mByTicker.get(upper) ?? null) : pendingAnalysis();
 }
 
+interface DividendDerivedMaps {
+  dps12mByTicker: Map<string, number | null>;
+  dividendFrequencyByTicker: Map<string, DividendFrequencyLabel | null>;
+}
+
 // Reaproveitado pelos 3 pontos que chamam computeAnalysis — busca o histórico real de
-// proventos e já devolve o Map de DPS 12m pronto pra passar direto (payout ratio),
-// em vez de cada call site recalcular na mão. sumLast12Months, não computeDividendTrend
-// — payout ratio só precisa do total de 12 meses, não da comparação com o ano anterior.
-async function buildDps12mMap(
+// proventos UMA vez e já devolve os dois Maps derivados dele prontos pra passar
+// direto (payout ratio e periodicidade de pagamento), em vez de cada call site
+// recalcular ou refazer a busca na mão. sumLast12Months, não computeDividendTrend —
+// payout ratio só precisa do total de 12 meses, não da comparação com o ano anterior.
+async function buildDividendDerivedMaps(
   items: { ticker: string; category: string }[],
-): Promise<Map<string, number | null>> {
+): Promise<DividendDerivedMaps> {
   const eventsByTicker = await getDividendEvents(items);
   const now = Date.now();
   const dps12mByTicker = new Map<string, number | null>();
+  const dividendFrequencyByTicker = new Map<string, DividendFrequencyLabel | null>();
   for (const [ticker, events] of eventsByTicker) {
     dps12mByTicker.set(ticker, sumLast12Months(events, now));
+    dividendFrequencyByTicker.set(ticker, classifyDividendFrequency(events, now)?.label ?? null);
   }
-  return dps12mByTicker;
+  return { dps12mByTicker, dividendFrequencyByTicker };
 }
 
 function formatHeadline(item: NewsHeadline): string {
@@ -211,7 +221,7 @@ async function getNewsItemsFor(ticker: string, category: string): Promise<string
   return headlines.map(formatHeadline);
 }
 
-function serializePersisted(row: typeof analysesTable.$inferSelect) {
+function serializePersisted(row: typeof analysesTable.$inferSelect, dividendFrequency: DividendFrequencyLabel | null) {
   return {
     ticker: row.ticker,
     available: true,
@@ -228,11 +238,15 @@ function serializePersisted(row: typeof analysesTable.$inferSelect) {
     // positivos, riscos). Não recalculado a cada leitura.
     taxEstimate: row.taxEstimate ? (JSON.parse(row.taxEstimate) as TaxEstimate) : null,
     technical: row.technical ? (JSON.parse(row.technical) as TechnicalIndicators) : null,
+    // Diferente de taxEstimate/technical, sempre recalculado ao vivo (não persistido)
+    // — é barato (mesmo histórico de dividendos já cacheado por 6h) e não faz
+    // sentido ficar parado até a próxima geração manual.
+    dividendFrequency,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-function toApiShape(ticker: string, result: AnalysisResult, newsItems: string[]) {
+function toApiShape(ticker: string, result: AnalysisResult, newsItems: string[], dividendFrequency: DividendFrequencyLabel | null) {
   return {
     ticker: ticker.toUpperCase(),
     available: result.available,
@@ -249,6 +263,7 @@ function toApiShape(ticker: string, result: AnalysisResult, newsItems: string[])
     // que null, pra quem consome a API não precisar tratar campo ausente.
     taxEstimate: null as TaxEstimate | null,
     technical: null as TechnicalIndicators | null,
+    dividendFrequency,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -260,17 +275,21 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
   const analysisMap = new Map(existingAnalyses.map((a) => [a.ticker, a]));
 
   const pendingAssets = assets.filter((a) => !analysisMap.has(a.ticker) && QUOTED_CATEGORIES.has(a.category));
-  const [fundamentalsByTicker, dps12mByTicker] = await Promise.all([
+  // dividendFrequency não é persistido (sempre recalculado ao vivo, ver serializePersisted),
+  // então busca pra TODOS os ativos (não só os pendentes) — o dps12mByTicker resultante
+  // cobre os pendentes de qualquer forma, então não precisa de uma segunda busca.
+  const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker }] = await Promise.all([
     getFundamentals(pendingAssets.map((a) => a.ticker)),
-    buildDps12mMap(pendingAssets.map((a) => ({ ticker: a.ticker, category: a.category }))),
+    buildDividendDerivedMaps(assets.map((a) => ({ ticker: a.ticker, category: a.category }))),
   ]);
 
   const result = await Promise.all(
     assets.map(async (asset) => {
+      const dividendFrequency = dividendFrequencyByTicker.get(asset.ticker.toUpperCase()) ?? null;
       const existing = analysisMap.get(asset.ticker);
-      if (existing) return serializePersisted(existing);
+      if (existing) return serializePersisted(existing, dividendFrequency);
       const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-      return toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker), newsItems);
+      return toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker), newsItems, dividendFrequency);
     })
   );
 
@@ -289,7 +308,12 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
   );
 
   if (existing) {
-    res.json(serializePersisted(existing));
+    // analysesTable não guarda category — getDividendEventsForTicker não precisa dela
+    // (tenta o endpoint de ações/ETFs/BDRs, cai pro de FII se vier vazio), então serve
+    // bem aqui sem precisar buscar o asset só por causa disso.
+    const events = await getDividendEventsForTicker(existing.ticker);
+    const dividendFrequency = classifyDividendFrequency(events, Date.now())?.label ?? null;
+    res.json(serializePersisted(existing, dividendFrequency));
     return;
   }
 
@@ -303,13 +327,14 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
   }
 
   const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-  const [fundamentalsByTicker, dps12mByTicker] = QUOTED_CATEGORIES.has(asset.category)
+  const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker }] = QUOTED_CATEGORIES.has(asset.category)
     ? await Promise.all([
         getFundamentals([asset.ticker]),
-        buildDps12mMap([{ ticker: asset.ticker, category: asset.category }]),
+        buildDividendDerivedMaps([{ ticker: asset.ticker, category: asset.category }]),
       ])
-    : [new Map<string, Fundamentals>(), new Map<string, number | null>()];
-  res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker), newsItems));
+    : [new Map<string, Fundamentals>(), { dps12mByTicker: new Map<string, number | null>(), dividendFrequencyByTicker: new Map<string, DividendFrequencyLabel | null>() }];
+  const dividendFrequency = dividendFrequencyByTicker.get(asset.ticker.toUpperCase()) ?? null;
+  res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker), newsItems, dividendFrequency));
 });
 
 // Cacheado por ticker (não por usuário nem por carteira) — o parecer não depende de
@@ -357,6 +382,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
   const opinionNow = Date.now();
   const dividendTrend = computeDividendTrend(dividendEvents, opinionNow);
   const dps12m = sumLast12Months(dividendEvents, opinionNow);
+  const dividendFrequency = classifyDividendFrequency(dividendEvents, opinionNow)?.label ?? null;
   const analysis = fundamentals ? analyzeFundamentals(fundamentals, dps12m) : noFundamentalsAnalysis();
   const technicalPoints = technicalSeries.get(ticker) ?? [];
   const technical = technicalPoints.length > 0 ? computeTechnicalIndicators(technicalPoints) : null;
@@ -404,6 +430,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     fiveDayChangePercent: priceHistory?.fiveDayChangePercent ?? null,
     dividendTrend,
     technical,
+    dividendFrequency,
     newsItems,
     opinion: aiOpinion ?? analysis.monitoringRecommendation,
     updatedAt: new Date().toISOString(),
@@ -449,12 +476,16 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   const dividendTrendByTicker = new Map(
     Array.from(dividendEventsByTicker.entries()).map(([ticker, events]) => [ticker, computeDividendTrend(events, dividendTrendNow)])
   );
+  const dividendFrequencyByTicker = new Map(
+    Array.from(dividendEventsByTicker.entries()).map(([ticker, events]) => [ticker, classifyDividendFrequency(events, dividendTrendNow)?.label ?? null])
+  );
 
   const analyses = assets.map((a) => ({
     ticker: a.ticker.toUpperCase(),
     ...computeAnalysis(a.ticker, a.category, fundamentalsByTicker, dps12mByTicker),
     taxEstimate: null as TaxEstimate | null,
     technical: null as TechnicalIndicators | null,
+    dividendFrequency: dividendFrequencyByTicker.get(a.ticker.toUpperCase()) ?? null,
   }));
 
   // Only persist (and alert on) results that are actually available — pending
