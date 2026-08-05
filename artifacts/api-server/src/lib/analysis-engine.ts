@@ -1,6 +1,6 @@
 import type { Fundamentals } from "./market-data";
 
-export type AnalysisStatus = "MANTER" | "ATENCAO" | "REAVALIAR" | "POSSIVEL_SAIDA";
+export type AnalysisStatus = "COMPRAR" | "MANTER" | "VENDER";
 export type ScoreClassification = "Excelente" | "Forte" | "Estavel" | "Atencao" | "Critico";
 
 export interface AnalysisResult {
@@ -192,11 +192,30 @@ function scoreClassification(score: number): ScoreClassification {
   return "Critico";
 }
 
-function statusFromScore(score: number): AnalysisStatus {
-  if (score >= 75) return "MANTER";
-  if (score >= 60) return "ATENCAO";
-  if (score >= 40) return "REAVALIAR";
-  return "POSSIVEL_SAIDA";
+/**
+ * Limiares de concentração de posição. Antes viviam duplicados em analysis-ai.ts;
+ * ficam aqui porque agora o status determinístico depende deles, e o prompt da IA
+ * precisa falar da mesma régua que o badge exibe.
+ */
+export const CONCENTRATION_HIGH = 25;
+export const CONCENTRATION_CRITICAL = 40;
+
+/**
+ * Status de posição, determinístico. Cruza qualidade fundamentalista (score) com
+ * quanto do patrimônio já está nesse ativo.
+ *
+ * A concentração entra porque score alto não é sinal de compra: um ativo ótimo que
+ * já representa metade da carteira não deve receber "Comprar" — reforçá-lo aumenta
+ * o risco em vez de reduzir. Sem esse cruzamento o badge contradiria o texto da
+ * própria IA, que nesses casos recomenda reduzir.
+ *
+ * `positionPercent` é 0 para quem ainda não tem o ativo (parecer pré-compra), o que
+ * deixa a decisão por conta do score — que é o correto nesse contexto.
+ */
+export function resolveAnalysisStatus(score: number, positionPercent: number): AnalysisStatus {
+  if (score < 40 || positionPercent > CONCENTRATION_CRITICAL) return "VENDER";
+  if (score >= 75 && positionPercent < CONCENTRATION_HIGH) return "COMPRAR";
+  return "MANTER";
 }
 
 function buildRecommendation(risks: string[]): string {
@@ -270,7 +289,7 @@ export function noFundamentalsAnalysis(): AnalysisResult {
  * sem ele, o payout ratio simplesmente não entra na média, igual a qualquer outro
  * fundamento indisponível, nunca vira um valor chutado.
  */
-export function analyzeFundamentals(f: Fundamentals, dps12m: number | null = null): AnalysisResult {
+export function analyzeFundamentals(f: Fundamentals, dps12m: number | null = null, positionPercent = 0): AnalysisResult {
   const fundamentalMetrics = [
     evalPE(f.priceEarnings),
     evalPriceToBook(f.priceToBook),
@@ -311,7 +330,7 @@ export function analyzeFundamentals(f: Fundamentals, dps12m: number | null = nul
     available: true,
     score,
     scoreClassification: scoreClassification(score),
-    status: statusFromScore(score),
+    status: resolveAnalysisStatus(score, positionPercent),
     positives,
     risks,
     monitoringRecommendation: buildRecommendation(risks),

@@ -5,7 +5,7 @@ import type { TaxEstimate } from "./tax-engine";
 import type { DividendTrend } from "./market-data";
 import { describeTechnicalIndicators, type TechnicalIndicators } from "./technical-engine";
 import { describeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "./risk-metrics-engine";
-import { describeDuPontBreakdown, type DuPontBreakdown } from "./analysis-engine";
+import { describeDuPontBreakdown, CONCENTRATION_HIGH, CONCENTRATION_CRITICAL, type DuPontBreakdown } from "./analysis-engine";
 import { describeFinancialHealth, type FinancialHealth } from "./financial-health-engine";
 import { describeFiiProfile } from "./fii-engine";
 import type { FiiProfile } from "./market-data";
@@ -44,11 +44,7 @@ function getClient(): Anthropic | null {
 
 const recommendationCache = new Map<string, { text: string; fetchedAt: number }>();
 
-// Mesmos limiares de computeConcentrationAlerts (routes/analysis.ts) — mantém a
-// leitura qualitativa da IA alinhada com o alerta determinístico que a carteira já
-// dispara, em vez de inventar um segundo critério de concentração.
-const CONCENTRATION_HIGH = 25;
-const CONCENTRATION_CRITICAL = 40;
+
 
 function buildPrompt(input: AssetRecommendationInput): string {
   const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, sectorComparison } = input;
@@ -97,7 +93,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     (fiiProfileLine ? `Perfil do FII: ${fiiProfileLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n\n` +
     `Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos ` +
-    `justificarem (status REAVALIAR ou POSSIVEL_SAIDA, ou risco relevante nos pontos de atenção), pode ` +
+    `justificarem (status VENDER, ou risco relevante nos pontos de atenção), pode ` +
     `dizer explicitamente que faz sentido considerar reduzir ou encerrar a posição — não fique só em ` +
     `"observe" quando o caso pedir mais que isso. Quando os pontos de atenção envolverem piora de ROE, ` +
     `dívida subindo ou desaceleração de crescimento, pode enquadrar isso como enfraquecimento da vantagem ` +

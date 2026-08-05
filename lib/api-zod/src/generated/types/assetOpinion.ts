@@ -11,7 +11,7 @@ import type { AssetOpinionScoreClassification } from './assetOpinionScoreClassif
 import type { TechnicalIndicators } from './technicalIndicators';
 
 /**
- * Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER/REAVALIAR/etc).
+ * Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (COMPRAR/MANTER/VENDER).
  */
 export interface AssetOpinion {
   ticker: string;

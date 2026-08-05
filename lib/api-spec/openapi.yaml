@@ -1312,7 +1312,7 @@ components:
           description: False when a full fundamentalist analysis isn't available yet (pending a data source) — score/status are placeholders and should not be shown.
         status:
           type: string
-          enum: [MANTER, ATENCAO, REAVALIAR, POSSIVEL_SAIDA]
+          enum: [COMPRAR, MANTER, VENDER]
         score:
           type: number
         scoreClassification:
@@ -1366,7 +1366,7 @@ components:
     AssetOpinion:
       type: object
       required: [ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, newsItems, opinion, updatedAt]
-      description: Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER/REAVALIAR/etc).
+      description: Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (COMPRAR/MANTER/VENDER).
       properties:
         ticker:
           type: string

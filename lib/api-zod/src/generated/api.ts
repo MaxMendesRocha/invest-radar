@@ -564,7 +564,7 @@ export const DeleteTransactionResponse = zod.void()
 export const ListAssetAnalysesResponseItem = zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
-  "status": zod.enum(['MANTER', 'ATENCAO', 'REAVALIAR', 'POSSIVEL_SAIDA']),
+  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
@@ -613,7 +613,7 @@ export const GetAssetAnalysisParams = zod.object({
 export const GetAssetAnalysisResponse = zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
-  "status": zod.enum(['MANTER', 'ATENCAO', 'REAVALIAR', 'POSSIVEL_SAIDA']),
+  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
@@ -697,7 +697,7 @@ export const GetAssetOpinionResponse = zod.object({
   "newsItems": zod.array(zod.string()),
   "opinion": zod.string(),
   "updatedAt": zod.coerce.date()
-}).describe('Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER\/REAVALIAR\/etc).')
+}).describe('Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (COMPRAR\/MANTER\/VENDER).')
 
 
 /**
@@ -716,7 +716,7 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "analyses": zod.array(zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
-  "status": zod.enum(['MANTER', 'ATENCAO', 'REAVALIAR', 'POSSIVEL_SAIDA']),
+  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),

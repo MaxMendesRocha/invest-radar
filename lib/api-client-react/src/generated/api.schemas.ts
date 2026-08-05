@@ -657,10 +657,9 @@ export type AssetAnalysisStatus = typeof AssetAnalysisStatus[keyof typeof AssetA
 
 
 export const AssetAnalysisStatus = {
+  COMPRAR: 'COMPRAR',
   MANTER: 'MANTER',
-  ATENCAO: 'ATENCAO',
-  REAVALIAR: 'REAVALIAR',
-  POSSIVEL_SAIDA: 'POSSIVEL_SAIDA',
+  VENDER: 'VENDER',
 } as const;
 
 export type AssetAnalysisScoreClassification = typeof AssetAnalysisScoreClassification[keyof typeof AssetAnalysisScoreClassification];
@@ -764,7 +763,7 @@ export const AssetOpinionDividendFrequency = {
 } as const;
 
 /**
- * Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER/REAVALIAR/etc).
+ * Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (COMPRAR/MANTER/VENDER).
  */
 export interface AssetOpinion {
   ticker: string;

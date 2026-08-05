@@ -180,11 +180,38 @@ function computeAnalysis(
   category: string,
   fundamentalsByTicker: Map<string, Fundamentals>,
   dps12mByTicker: Map<string, number | null>,
+  positionPercentByTicker: Map<string, number>,
 ): AnalysisResult {
   if (!QUOTED_CATEGORIES.has(category)) return analysisForUnquotedAsset();
   const upper = ticker.toUpperCase();
   const fundamentals = fundamentalsByTicker.get(upper);
-  return fundamentals ? analyzeFundamentals(fundamentals, dps12mByTicker.get(upper) ?? null) : pendingAnalysis();
+  return fundamentals
+    ? analyzeFundamentals(fundamentals, dps12mByTicker.get(upper) ?? null, positionPercentByTicker.get(upper) ?? 0)
+    : pendingAnalysis();
+}
+
+/**
+ * % do patrimônio em cada ativo. Calculado nos três handlers que chamam
+ * computeAnalysis (não só no generate) porque o status agora depende da
+ * concentração — sem isso o mesmo ativo mostraria status diferente antes e depois
+ * de gerar a análise.
+ */
+async function buildPositionPercents(
+  assets: { ticker: string; category: string; quantity: string; averagePrice: string }[],
+): Promise<Map<string, number>> {
+  const prices = await getPricesFor(assets);
+  const values = new Map<string, number>();
+  let total = 0;
+  for (const asset of assets) {
+    // Renda fixa não tem cotação: cai no preço médio, que é o valor da posição.
+    const price = prices.get(asset.ticker.toUpperCase()) ?? parseFloat(asset.averagePrice);
+    const value = parseFloat(asset.quantity) * price;
+    values.set(asset.ticker.toUpperCase(), value);
+    total += value;
+  }
+  const percents = new Map<string, number>();
+  for (const [ticker, value] of values) percents.set(ticker, total > 0 ? (value / total) * 100 : 0);
+  return percents;
 }
 
 interface DividendDerivedMaps {
@@ -281,9 +308,10 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
   // dividendFrequency não é persistido (sempre recalculado ao vivo, ver serializePersisted),
   // então busca pra TODOS os ativos (não só os pendentes) — o dps12mByTicker resultante
   // cobre os pendentes de qualquer forma, então não precisa de uma segunda busca.
-  const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker }] = await Promise.all([
+  const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker }, positionPercentByTicker] = await Promise.all([
     getFundamentals(pendingAssets.map((a) => a.ticker)),
     buildDividendDerivedMaps(assets.map((a) => ({ ticker: a.ticker, category: a.category }))),
+    buildPositionPercents(assets),
   ]);
 
   const result = await Promise.all(
@@ -292,7 +320,7 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
       const existing = analysisMap.get(asset.ticker);
       if (existing) return serializePersisted(existing, dividendFrequency);
       const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-      return toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker), newsItems, dividendFrequency);
+      return toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker), newsItems, dividendFrequency);
     })
   );
 
@@ -330,6 +358,10 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
   }
 
   const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
+  // A carteira inteira, não só este ativo: a concentração que decide o status é a
+  // fração do patrimônio total, então o denominador exige todas as posições.
+  const allAssets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
+  const positionPercentByTicker = await buildPositionPercents(allAssets);
   const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker }] = QUOTED_CATEGORIES.has(asset.category)
     ? await Promise.all([
         getFundamentals([asset.ticker]),
@@ -337,7 +369,7 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
       ])
     : [new Map<string, Fundamentals>(), { dps12mByTicker: new Map<string, number | null>(), dividendFrequencyByTicker: new Map<string, DividendFrequencyLabel | null>() }];
   const dividendFrequency = dividendFrequencyByTicker.get(asset.ticker.toUpperCase()) ?? null;
-  res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker), newsItems, dividendFrequency));
+  res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker), newsItems, dividendFrequency));
 });
 
 // Cacheado por ticker (não por usuário nem por carteira) — o parecer não depende de
@@ -488,9 +520,14 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     Array.from(dividendEventsByTicker.entries()).map(([ticker, events]) => [ticker, classifyDividendFrequency(events, dividendTrendNow)?.label ?? null])
   );
 
+  // Antes do map porque o status de cada ativo depende da concentração. O
+  // getPricesFor daqui a pouco reaproveita o cache por ticker de getQuotes, então
+  // isso não custa uma segunda ida à rede.
+  const positionPercentByTicker = await buildPositionPercents(assets);
+
   const analyses = assets.map((a) => ({
     ticker: a.ticker.toUpperCase(),
-    ...computeAnalysis(a.ticker, a.category, fundamentalsByTicker, dps12mByTicker),
+    ...computeAnalysis(a.ticker, a.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker),
     taxEstimate: null as TaxEstimate | null,
     technical: null as TechnicalIndicators | null,
     dividendFrequency: dividendFrequencyByTicker.get(a.ticker.toUpperCase()) ?? null,

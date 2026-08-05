@@ -10,8 +10,7 @@ export type AssetAnalysisStatus = typeof AssetAnalysisStatus[keyof typeof AssetA
 
 
 export const AssetAnalysisStatus = {
+  COMPRAR: 'COMPRAR',
   MANTER: 'MANTER',
-  ATENCAO: 'ATENCAO',
-  REAVALIAR: 'REAVALIAR',
-  POSSIVEL_SAIDA: 'POSSIVEL_SAIDA',
+  VENDER: 'VENDER',
 } as const;
