@@ -32,12 +32,12 @@ Modelo usado em todos os pontos: `claude-haiku-4-5-20251001`.
 - Score do Radar, classificação e status (`MANTER` / `ATENCAO` / `REAVALIAR` / `POSSIVEL_SAIDA`)
 - Pontos positivos e de atenção (fundamentos reais)
 - Notícias recentes já classificadas por impacto
-- Cenário macro (Selic, tendência, IPCA 12m)
+- Cenário macro (Selic, tendência, IPCA 12m, juro real, IGP-M 12m)
 - Estimativa de IR se vender agora (`tax-engine.ts`)
 - % que o ativo representa do patrimônio total (concentração)
 - Tendência de dividendo (últimos 12 meses vs. 12 meses anteriores)
 - Indicadores técnicos (SMA20/50/200, RSI14, MACD, Bandas de Bollinger, cruzamento de médias)
-- Retorno ajustado ao risco: Sharpe, Sortino e Treynor, com CDI real como taxa livre de risco (`risk-metrics-engine.ts`)
+- Retorno ajustado ao risco: Sharpe, Sortino e Treynor, com CDI acumulado (nominal) como taxa livre de risco (`risk-metrics-engine.ts`)
 - Decomposição DuPont do ROE em 5 fatores (`analysis-engine.ts`)
 - Saúde financeira: cobertura do dividendo por fluxo de caixa livre, conversão de lucro em caixa, dívida líquida/EBITDA, liquidez corrente, margem EBITDA (`financial-health-engine.ts`)
 - Perfil do FII — segmento papel/tijolo/híbrido/FoF, segmento de atuação, gestão, P/VP, DY 12m (`fii-engine.ts`). Linha ausente do prompt quando o ativo não é FII
@@ -56,7 +56,10 @@ Score do Radar: {score}/100 ({classificação}), status: {status}
 Pontos positivos (fundamentos reais): {positivos}
 Pontos de atenção (fundamentos reais): {riscos}
 Notícias recentes classificadas: {notícias}
-Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%
+Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%, juro real {juroReal}% (Selic JÁ descontada a inflação — é o piso sem risco que o ativo precisa
+superar; ao confrontar com dividend yield ou retorno nominal, desconte o IPCA desses antes, sob
+pena de comparar grandezas diferentes), IGP-M 12m {igpm}% (índice que reajusta contratos de
+aluguel — teto aproximado do repasse de receita dos FIIs de tijolo no próximo ciclo)
 {linha de custo de IR estimado — isento, ou valor + alíquota + ressalva de que é estimativa isolada}
 {linha de concentração — crítica ≥40%, alta ≥25%, ou razoável}
 {linha de tendência de dividendo — crescimento/queda %, ou "histórico insuficiente, não mencione"}
@@ -128,7 +131,7 @@ Texto determinístico genérico citando o primeiro risco calculado (`buildRecomm
 - Perfil do FII, quando aplicável
 - Comparação com pares do setor
 - Notícias recentes classificadas
-- Cenário macro
+- Cenário macro (Selic, tendência, IPCA 12m, juro real, IGP-M 12m)
 
 ### Prompt
 
@@ -150,7 +153,10 @@ Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FC
 {Perfil do FII: segmento e implicação de risco — ausente quando não é FII}
 Comparação com pares do setor: {múltiplos vs. média do setor}
 Notícias recentes classificadas: {notícias}
-Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%
+Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%, juro real {juroReal}% (Selic JÁ descontada a inflação — é o piso sem risco que o ativo precisa
+superar; ao confrontar com dividend yield ou retorno nominal, desconte o IPCA desses antes, sob
+pena de comparar grandezas diferentes), IGP-M 12m {igpm}% (índice que reajusta contratos de
+aluguel — teto aproximado do repasse de receita dos FIIs de tijolo no próximo ciclo)
 
 Escreva um parecer curto (2-6 frases) cruzando TODOS os fatores acima. Pode dizer diretamente se o
 momento parece bom pra entrada ou se vale esperar — cruze a posição do preço no range de 52 semanas
@@ -183,7 +189,7 @@ Mesmo texto determinístico do item 1 (`monitoringRecommendation` do motor de an
 ### Dados de entrada
 - Score geral e as 5 dimensões (diversificação, concentração, risco, dividendos, crescimento) já calculadas
 - Composição da carteira (ticker/categoria/% do total)
-- Cenário macro
+- Cenário macro (Selic, tendência, IPCA 12m, juro real, IGP-M 12m)
 - Perfil de investidor do usuário (Conservador/Moderado/Arrojado), se preenchido
 - Nota de concentração (maior posição vs. faixa de 3-5% de gestores profissionais)
 - Nota de diversificação (nº de ativos vs. faixa de 10-20 da literatura de Markowitz)
@@ -203,7 +209,10 @@ Risco: {risco}/100
 Dividendos: {dividendos}/100
 Crescimento: {crescimento}/100
 Composição: {ticker (categoria): %, ...}
-Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%
+Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%, juro real {juroReal}% (Selic JÁ descontada a inflação — é o piso sem risco que o ativo precisa
+superar; ao confrontar com dividend yield ou retorno nominal, desconte o IPCA desses antes, sob
+pena de comparar grandezas diferentes), IGP-M 12m {igpm}% (índice que reajusta contratos de
+aluguel — teto aproximado do repasse de receita dos FIIs de tijolo no próximo ciclo)
 {nota de concentração — maior posição vs. faixa de 3-5%}
 {nota de diversificação — nº de ativos vs. faixa de 10-20}
 {nota de alocação por perfil, ou "perfil não preenchido, não compare"}
@@ -319,7 +328,7 @@ insumo, nunca um valor estimado.
 |---|---|
 | `analysis-engine.ts` | Score, positivos/riscos, payout ratio e decomposição DuPont do ROE |
 | `technical-engine.ts` | SMA20/50/200, RSI14, MACD, Bollinger, cruzamento de médias |
-| `risk-metrics-engine.ts` | Sharpe, Sortino e Treynor, com CDI real como taxa livre de risco |
+| `risk-metrics-engine.ts` | Sharpe, Sortino e Treynor, com CDI acumulado (nominal) como taxa livre de risco |
 | `financial-health-engine.ts` | Cobertura do dividendo por fluxo de caixa livre, conversão de lucro em caixa, dívida líquida/EBITDA, liquidez corrente, margem EBITDA |
 | `fii-engine.ts` | Perfil do FII: segmento (papel/tijolo/híbrido/FoF) e o risco que cada um implica |
 | `sector-benchmarks.ts` | Médias reais do setor (P/L, P/VP, ROE, DY, margem), calculadas no job semanal de Oportunidades |

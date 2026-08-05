@@ -32,6 +32,41 @@ export interface MacroSnapshot {
   updatedAt: string;
 }
 
+/**
+ * Subconjunto do snapshot que vai para os prompts de IA. Deixa de fora usdBrl e
+ * updatedAt: câmbio não entra na leitura de ativo de renda variável brasileira
+ * sem uma tese cambial explícita, e a data do fetch não é informação de análise.
+ */
+export type MacroContext = Pick<MacroSnapshot, "selic" | "selicTrend" | "ipca12m" | "igpm12m" | "realInterestRate">;
+
+const PT_BR_2 = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const pct = (v: number | null): string => (v != null ? `${PT_BR_2.format(v)}%` : "?");
+
+/**
+ * Linha de cenário macro dos prompts. Centralizada aqui porque analysis-ai,
+ * portfolio-ai e opinion-ai montavam a mesma string em triplicata.
+ *
+ * Juro real e IGP-M vêm com uma glosa curta do que significam: sozinhos são dois
+ * números que o modelo tenderia a repetir sem usar. A glosa descreve o papel do
+ * indicador, não conclusão sobre o ativo — a leitura continua sendo da IA.
+ */
+export function describeMacroContext(macro: MacroContext): string {
+  const parts = [
+    `Selic ${pct(macro.selic)} (tendência ${macro.selicTrend ?? "?"})`,
+    `IPCA 12m ${pct(macro.ipca12m)}`,
+  ];
+  if (macro.realInterestRate != null) {
+    // O aviso sobre a base de comparação não é decorativo: sem ele o modelo
+    // confrontou um dividend yield nominal de 6% com o juro real de 9,18% e
+    // chamou o primeiro de atrativo, comparando grandezas diferentes.
+    parts.push(`juro real ${pct(macro.realInterestRate)} (Selic JÁ descontada a inflação — é o piso sem risco que o ativo precisa superar; ao confrontar com dividend yield ou retorno nominal, desconte o IPCA desses antes, sob pena de comparar grandezas diferentes)`);
+  }
+  if (macro.igpm12m != null) {
+    parts.push(`IGP-M 12m ${pct(macro.igpm12m)} (índice que reajusta contratos de aluguel — teto aproximado do repasse de receita dos FIIs de tijolo no próximo ciclo)`);
+  }
+  return `Cenário macro: ${parts.join(", ")}`;
+}
+
 async function fetchSeries(code: string, count: number): Promise<SgsPoint[]> {
   // /dados/ultimos/N caps N at 20 — fine for a single latest reading, but not
   // enough history for a trend. Use a date range instead when more is needed.

@@ -84,7 +84,11 @@ export function describeRiskAdjustedMetrics(m: RiskAdjustedMetrics | null): stri
   if (!m) return "Métricas de retorno ajustado ao risco não disponíveis (histórico de preço insuficiente).";
 
   const parts = [
-    `retorno anualizado de ${(m.annualizedReturn * 100).toFixed(1)}% vs. CDI real de ${(m.riskFreeRate * 100).toFixed(1)}% no mesmo período`,
+    // "CDI nominal", não "CDI real": o prompt agora também carrega o juro real da
+    // macro, e ali "real" quer dizer descontado da inflação. No código "real"
+    // sempre significou "dado genuíno, não simulado" — dois sentidos lado a lado
+    // no mesmo texto era convite pro modelo tratar este CDI como já deflacionado.
+    `retorno anualizado de ${(m.annualizedReturn * 100).toFixed(1)}% vs. CDI nominal de ${(m.riskFreeRate * 100).toFixed(1)}% no mesmo período`,
     `volatilidade anualizada de ${(m.annualizedVolatility * 100).toFixed(1)}%`,
     `Sharpe de ${m.sharpeRatio.toFixed(2)}`,
   ];

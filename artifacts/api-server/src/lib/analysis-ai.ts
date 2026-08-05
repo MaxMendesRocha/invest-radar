@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "./logger";
+import { describeMacroContext, type MacroContext } from "./macro-data";
 import type { TaxEstimate } from "./tax-engine";
 import type { DividendTrend } from "./market-data";
 import { describeTechnicalIndicators, type TechnicalIndicators } from "./technical-engine";
@@ -19,7 +20,7 @@ export interface AssetRecommendationInput {
   positives: string[];
   risks: string[];
   newsItems: string[]; // já formatadas com "[Impacto] título" (formatHeadline)
-  macro: { selic: number | null; selicTrend: string | null; ipca12m: number | null };
+  macro: MacroContext;
   tax: TaxEstimate | null; // null pra renda_fixa/fundos (regras de IR diferentes, fora do escopo daqui)
   positionPercent: number; // % do patrimônio total da carteira que esse ativo representa
   dividendTrend: DividendTrend | null; // null quando não há histórico real dos dois períodos (ver computeDividendTrend em market-data.ts) — nunca estimado
@@ -85,7 +86,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `Pontos positivos (fundamentos reais): ${positives.join("; ") || "nenhum"}\n` +
     `Pontos de atenção (fundamentos reais): ${risks.join("; ") || "nenhum"}\n` +
     `Notícias recentes classificadas: ${newsItems.join(" | ") || "nenhuma"}\n` +
-    `Cenário macro: Selic ${macro.selic ?? "?"}% (tendência ${macro.selicTrend ?? "?"}), IPCA 12m ${macro.ipca12m ?? "?"}%\n` +
+    `${describeMacroContext(macro)}\n` +
     `${taxLine}\n` +
     `${concentrationLine}\n` +
     `${dividendTrendLine}\n` +

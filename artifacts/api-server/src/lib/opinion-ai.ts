@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "./logger";
+import { describeMacroContext, type MacroContext } from "./macro-data";
 import type { DividendTrend } from "./market-data";
 import { describeTechnicalIndicators, type TechnicalIndicators } from "./technical-engine";
 import { describeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "./risk-metrics-engine";
@@ -31,7 +32,7 @@ export interface PrePurchaseOpinionInput {
   fiiProfile: FiiProfile | null; // só pra FIIs — null pra qualquer outra categoria (ver getFiiProfiles)
   sectorComparison: string; // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts)
   newsItems: string[]; // já formatadas com "[Impacto] título"
-  macro: { selic: number | null; selicTrend: string | null; ipca12m: number | null };
+  macro: MacroContext;
 }
 
 let anthropicClient: Anthropic | null | undefined;
@@ -84,7 +85,7 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     (fiiProfileLine ? `Perfil do FII: ${fiiProfileLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n` +
     `Notícias recentes classificadas: ${newsItems.join(" | ") || "nenhuma"}\n` +
-    `Cenário macro: Selic ${macro.selic ?? "?"}% (tendência ${macro.selicTrend ?? "?"}), IPCA 12m ${macro.ipca12m ?? "?"}%\n\n` +
+    `${describeMacroContext(macro)}\n\n` +
     `Escreva um parecer curto (2-6 frases) cruzando TODOS os fatores acima. Pode dizer diretamente se o ` +
     `momento parece bom pra entrada ou se vale esperar — cruze a posição do preço no range de 52 semanas ` +
     `com os fundamentos (quando disponíveis): comprar perto da máxima de 52 semanas com fundamentos ` +
