@@ -29,6 +29,7 @@ import { estimateCapitalGainsTax, type TaxEstimate } from "../lib/tax-engine";
 import { computeTechnicalIndicators, type TechnicalIndicators } from "../lib/technical-engine";
 import { computeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "../lib/risk-metrics-engine";
 import { getSectorBenchmark, describeSectorComparison } from "../lib/sector-benchmarks";
+import { computeFinancialHealth } from "../lib/financial-health-engine";
 
 const router: IRouter = Router();
 
@@ -388,6 +389,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
   const technical = technicalPoints.length > 0 ? computeTechnicalIndicators(technicalPoints) : null;
   const riskAdjusted = cdiAnnual != null ? computeRiskAdjustedMetrics(technicalPoints, fundamentals?.beta ?? null, cdiAnnual) : null;
   const duPont = fundamentals ? computeDuPontBreakdown(fundamentals) : null;
+  const financialHealth = fundamentals ? computeFinancialHealth(fundamentals, dps12m) : null;
   const sectorBenchmark = await getSectorBenchmark(fundamentals?.sector ?? null);
   const sectorComparison = fundamentals
     ? describeSectorComparison(fundamentals, sectorBenchmark)
@@ -411,6 +413,8 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     technical,
     riskAdjusted,
     duPont,
+    financialHealth,
+    sector: fundamentals?.sector ?? null,
     sectorComparison,
     newsItems,
     macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
@@ -537,6 +541,9 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       const assetFundamentals = fundamentalsByTicker.get(analysis.ticker) ?? null;
       const riskAdjusted = cdiAnnual != null ? computeRiskAdjustedMetrics(technicalPoints, assetFundamentals?.beta ?? null, cdiAnnual) : null;
       const duPont = assetFundamentals ? computeDuPontBreakdown(assetFundamentals) : null;
+      const financialHealth = assetFundamentals
+        ? computeFinancialHealth(assetFundamentals, dps12mByTicker.get(analysis.ticker) ?? null)
+        : null;
       const sectorBenchmark = await getSectorBenchmark(assetFundamentals?.sector ?? null);
       const sectorComparison = assetFundamentals
         ? describeSectorComparison(assetFundamentals, sectorBenchmark)
@@ -557,6 +564,8 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         technical,
         riskAdjusted,
         duPont,
+        financialHealth,
+        sector: assetFundamentals?.sector ?? null,
         sectorComparison,
       });
 

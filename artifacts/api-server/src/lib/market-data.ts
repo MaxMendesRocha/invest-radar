@@ -124,6 +124,17 @@ export interface Fundamentals {
   netIncome: number | null; // lucro líquido (DRE), idem — já usado internamente pro ROE, agora exposto pra decomposição
   shareholdersEquity: number | null; // patrimônio líquido (balanço), idem — já usado internamente pro ROE/dívida-patrimônio
   totalRevenue: number | null; // receita total (DRE), idem — já usado internamente pro crescimento de receita
+  sharesOutstanding: number | null; // nº de cotas/ações em circulação (defaultKeyStatistics) — usado pra converter DPS por ação em dividendos totais pagos
+  // Campos do módulo financialData — liberados só a partir do plano Pro da brapi.dev
+  // (antes retornavam 403 MODULES_NOT_AVAILABLE). Todos null quando o plano não cobre
+  // ou o provider não tem o dado pro ticker, nunca estimados.
+  freeCashflow: number | null; // fluxo de caixa livre
+  operatingCashflow: number | null; // fluxo de caixa operacional
+  currentRatio: number | null; // liquidez corrente
+  ebitda: number | null; // null pra bancos — não reportam EBITDA de forma significativa
+  returnOnAssets: number | null; // ROA
+  totalDebt: number | null; // dívida bruta total
+  totalCash: number | null; // caixa e equivalentes
   updatedAt: string;
 }
 
@@ -139,6 +150,7 @@ interface BrapiKeyStatsResult extends BrapiResult {
     "52WeekChange"?: number | null;
     beta?: number | null;
     profitMargins?: number | null;
+    sharesOutstanding?: number | null;
   };
   summaryProfile?: {
     sector?: string | null;
@@ -155,6 +167,7 @@ interface KeyStats {
   profitMargins: number | null;
   fiftyTwoWeekChange: number | null;
   beta: number | null;
+  sharesOutstanding: number | null;
   updatedAt: string;
 }
 
@@ -192,8 +205,73 @@ async function fetchKeyStatistics(ticker: string): Promise<KeyStats | null> {
     profitMargins: stats.profitMargins ?? null,
     fiftyTwoWeekChange: stats["52WeekChange"] ?? null,
     beta: stats.beta ?? null,
+    sharesOutstanding: stats.sharesOutstanding ?? null,
     updatedAt: item.regularMarketTime ?? new Date().toISOString(),
   };
+}
+
+interface BrapiFinancialData {
+  freeCashflow?: number | null;
+  operatingCashflow?: number | null;
+  currentRatio?: number | null;
+  ebitda?: number | null;
+  returnOnAssets?: number | null;
+  totalDebt?: number | null;
+  totalCash?: number | null;
+}
+
+interface BrapiFinancialDataResult {
+  symbol: string;
+  data?: BrapiFinancialData | null;
+}
+
+// Módulo financialData via o endpoint v2 dedicado (aceita vários símbolos por chamada,
+// diferente do v1 `?modules=financialData`, que segue derrubando a requisição inteira
+// quando combinado com outros módulos). Exige plano Pro — sem ele responde 403
+// MODULES_NOT_AVAILABLE e todos os campos ficam null, sem quebrar o resto da análise.
+// Traz EBITDA, fluxo de caixa livre/operacional, liquidez corrente e ROA reais.
+// `targetMeanPrice` existe no payload mas vem null mesmo no Pro (confirmado em toda a
+// amostra testada) — por isso computePotentialReturn segue na heurística documentada.
+async function fetchFinancialDataBatch(tickers: string[]): Promise<Map<string, BrapiFinancialData>> {
+  const result = new Map<string, BrapiFinancialData>();
+  if (tickers.length === 0) return result;
+
+  const token = process.env.BRAPI_TOKEN;
+  const url = `${BRAPI_V2_BASE_URL}/financial-data?symbols=${tickers.map(encodeURIComponent).join(",")}`;
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    logger.warn({ status: response.status, tickers }, "brapi.dev financial-data request failed");
+    return result;
+  }
+
+  const body = (await response.json()) as { results?: BrapiFinancialDataResult[] };
+  for (const item of body.results ?? []) {
+    if (item.data) result.set(item.symbol.toUpperCase(), item.data);
+  }
+  return result;
+}
+
+// Mesmo chunking de fetchV2Statements — o endpoint aceitou 12 símbolos numa chamada no
+// teste, mas mantemos o lote de V2_BATCH_SIZE por consistência com os outros endpoints
+// v2 e pra não depender de um limite não documentado.
+async function fetchFinancialData(tickers: string[]): Promise<Map<string, BrapiFinancialData>> {
+  const result = new Map<string, BrapiFinancialData>();
+  const batches: string[][] = [];
+  for (let i = 0; i < tickers.length; i += V2_BATCH_SIZE) {
+    batches.push(tickers.slice(i, i + V2_BATCH_SIZE));
+  }
+
+  const outcomes = await Promise.allSettled(batches.map((batch) => fetchFinancialDataBatch(batch)));
+  for (const outcome of outcomes) {
+    if (outcome.status === "rejected") {
+      logger.warn({ err: outcome.reason }, "brapi.dev financial-data batch errored");
+      continue;
+    }
+    for (const [ticker, data] of outcome.value) result.set(ticker, data);
+  }
+  return result;
 }
 
 const BRAPI_V2_BASE_URL = "https://brapi.dev/api/v2/stocks";
@@ -297,10 +375,11 @@ export async function getFundamentals(tickers: string[]): Promise<Map<string, Fu
   }
 
   if (stale.length > 0) {
-    const [keyStatsSettled, balanceSheets, incomeStatements] = await Promise.all([
+    const [keyStatsSettled, balanceSheets, incomeStatements, financialData] = await Promise.all([
       Promise.allSettled(stale.map((ticker) => fetchKeyStatistics(ticker))),
       fetchV2Statements(stale, "balance-sheet"),
       fetchV2Statements(stale, "income-statement"),
+      fetchFinancialData(stale),
     ]);
 
     stale.forEach((ticker, i) => {
@@ -314,6 +393,7 @@ export async function getFundamentals(tickers: string[]): Promise<Map<string, Fu
       if (keyStats) {
         const balanceSheet = balanceSheets.get(ticker)?.[0]; // mais recente primeiro
         const [latestIncome, previousIncome] = incomeStatements.get(ticker) ?? [];
+        const finData = financialData.get(ticker);
 
         const equity = balanceSheet?.shareholdersEquity ?? null;
         const debt =
@@ -343,6 +423,14 @@ export async function getFundamentals(tickers: string[]): Promise<Map<string, Fu
           netIncome: latestIncome?.netIncome ?? null,
           shareholdersEquity: equity,
           totalRevenue: latestIncome?.totalRevenue ?? null,
+          sharesOutstanding: keyStats.sharesOutstanding,
+          freeCashflow: finData?.freeCashflow ?? null,
+          operatingCashflow: finData?.operatingCashflow ?? null,
+          currentRatio: finData?.currentRatio ?? null,
+          ebitda: finData?.ebitda ?? null,
+          returnOnAssets: finData?.returnOnAssets ?? null,
+          totalDebt: finData?.totalDebt ?? null,
+          totalCash: finData?.totalCash ?? null,
           updatedAt: keyStats.updatedAt,
         };
       }
