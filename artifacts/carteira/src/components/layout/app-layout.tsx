@@ -146,7 +146,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col md:flex-row">
+    // h-screen só a partir de md: no desktop o container precisa de altura fechada pra
+    // que a rolagem aconteça DENTRO do conteúdo (overflow-y-auto abaixo) e a sidebar
+    // fique parada — com min-h-screen o container crescia com o conteúdo, a rolagem
+    // interna nunca era acionada e a sidebar rolava junto, saindo da tela. No mobile
+    // mantém min-h-screen de propósito: o header do topo rola junto (padrão de app
+    // mobile), já que a navegação principal fica na barra inferior fixa.
+    <div className="min-h-screen md:h-screen bg-background flex flex-col md:flex-row">
       {/* Mobile top bar */}
       <header className="md:hidden flex items-center gap-3 px-4 h-14 border-b border-sidebar-border bg-sidebar text-sidebar-foreground flex-shrink-0">
         <Button variant="ghost" size="icon" onClick={() => setMobileNavOpen(true)} aria-label="Abrir menu">
