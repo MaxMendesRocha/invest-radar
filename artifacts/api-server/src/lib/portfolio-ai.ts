@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "./logger";
+import { describeMacroContext, type MacroContext } from "./macro-data";
 
 const DIAGNOSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -12,7 +13,7 @@ export interface PortfolioDiagnosisInput {
   dividends: number;
   growth: number;
   composition: { ticker: string; category: string; percent: number }[];
-  macro: { selic: number | null; selicTrend: string | null; ipca12m: number | null };
+  macro: MacroContext;
   investorProfile: string | null; // "Conservador" | "Moderado" | "Arrojado" — null se o usuário nunca preencheu o questionário
 }
 
@@ -62,7 +63,7 @@ function buildPrompt(input: PortfolioDiagnosisInput): string {
     `Dividendos: ${dividends}/100\n` +
     `Crescimento: ${growth}/100\n` +
     `Composição: ${compositionText || "carteira vazia"}\n` +
-    `Cenário macro: Selic ${macro.selic ?? "?"}% (tendência ${macro.selicTrend ?? "?"}), IPCA 12m ${macro.ipca12m ?? "?"}%\n` +
+    `${describeMacroContext(macro)}\n` +
     `${concentrationNote}\n` +
     `${diversificationNote}\n` +
     `${allocationNote}\n\n` +

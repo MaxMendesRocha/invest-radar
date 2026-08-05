@@ -209,7 +209,7 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
           dividends,
           growth,
           composition,
-          macro: await getMacroSnapshot().then((m) => ({ selic: m.selic, selicTrend: m.selicTrend, ipca12m: m.ipca12m })),
+          macro: await getMacroSnapshot(),
           investorProfile: await db.select().from(investorProfilesTable).where(eq(investorProfilesTable.userId, req.session.userId!))
             .then(([p]) => p?.classification ?? null),
         })

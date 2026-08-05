@@ -2631,7 +2631,7 @@ export const getGetMacroSnapshotUrl = () => {
 }
 
 /**
- * @summary Real macroeconomic indicators (Selic, IPCA, câmbio) from the Banco Central
+ * @summary Official indicators — Selic, IPCA, IGP-M, juro real and câmbio from the Banco Central, plus the Ibovespa
  */
 export const getMacroSnapshot = async ( options?: RequestInit): Promise<MacroSnapshot> => {
 
@@ -2678,7 +2678,7 @@ export type GetMacroSnapshotQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Real macroeconomic indicators (Selic, IPCA, câmbio) from the Banco Central
+ * @summary Official indicators — Selic, IPCA, IGP-M, juro real and câmbio from the Banco Central, plus the Ibovespa
  */
 
 export function useGetMacroSnapshot<TData = Awaited<ReturnType<typeof getMacroSnapshot>>, TError = ErrorType<unknown>>(

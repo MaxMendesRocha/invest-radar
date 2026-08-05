@@ -421,7 +421,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     fiiProfile,
     sectorComparison,
     newsItems,
-    macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
+    macro,
   });
 
   const response = {
@@ -565,7 +565,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         positives: analysis.positives,
         risks: analysis.risks,
         newsItems,
-        macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
+        macro,
         tax,
         positionPercent,
         dividendTrend,
