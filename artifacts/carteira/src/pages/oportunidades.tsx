@@ -104,7 +104,7 @@ export default function Oportunidades() {
                 </div>
 
                 <div>
-                  <p className="text-sm font-medium mb-1 leading-relaxed text-pretty">{opp.reason}</p>
+                  <p className="text-sm font-medium mb-1 leading-relaxed text-pretty text-justify hyphens-auto">{opp.reason}</p>
                   <div className="flex items-center gap-2 text-xs mt-2">
                     <span className="text-muted-foreground">Risco:</span>
                     <Badge variant={RISK_MAP[opp.riskLevel] as any} className="h-5 px-1.5 text-[10px] uppercase">
