@@ -6,6 +6,8 @@ import { describeTechnicalIndicators, type TechnicalIndicators } from "./technic
 import { describeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "./risk-metrics-engine";
 import { describeDuPontBreakdown, type DuPontBreakdown } from "./analysis-engine";
 import { describeFinancialHealth, type FinancialHealth } from "./financial-health-engine";
+import { describeFiiProfile } from "./fii-engine";
+import type { FiiProfile } from "./market-data";
 
 const RECOMMENDATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // score/status não mudam mais de uma vez por dia
 
@@ -26,6 +28,7 @@ export interface AssetRecommendationInput {
   duPont: DuPontBreakdown | null; // null quando DRE/balanço estão incompletos (computeDuPontBreakdown, analysis-engine.ts)
   financialHealth: FinancialHealth | null; // métricas de caixa/liquidez (financial-health-engine.ts) — null se o provider não trouxer nada
   sector: string | null; // usado só pra ressalva de comparabilidade em setor financeiro (ver describeFinancialHealth)
+  fiiProfile: FiiProfile | null; // só pra FIIs — null pra qualquer outra categoria (ver getFiiProfiles)
   sectorComparison: string; // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts) — precisa do Fundamentals bruto, que esse módulo não importa só por isso
 }
 
@@ -47,7 +50,7 @@ const CONCENTRATION_HIGH = 25;
 const CONCENTRATION_CRITICAL = 40;
 
 function buildPrompt(input: AssetRecommendationInput): string {
-  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, sectorComparison } = input;
+  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, sectorComparison } = input;
 
   const taxLine = tax
     ? tax.exempt
@@ -70,6 +73,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
   const riskAdjustedLine = describeRiskAdjustedMetrics(riskAdjusted);
   const duPontLine = describeDuPontBreakdown(duPont);
   const financialHealthLine = financialHealth ? describeFinancialHealth(financialHealth, sector) : "Métricas de caixa e liquidez não disponíveis para este ativo.";
+  const fiiProfileLine = describeFiiProfile(fiiProfile);
 
   return (
     `Você é um analista financeiro sênior atuando como consultor pessoal do dono desta carteira — ` +
@@ -89,6 +93,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `Retorno ajustado ao risco (1 ano, CDI como taxa livre de risco): ${riskAdjustedLine}\n` +
     `Decomposição DuPont do ROE: ${duPontLine}\n` +
     `Saúde financeira (caixa, liquidez, alavancagem): ${financialHealthLine}\n` +
+    (fiiProfileLine ? `Perfil do FII: ${fiiProfileLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n\n` +
     `Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos ` +
     `justificarem (status REAVALIAR ou POSSIVEL_SAIDA, ou risco relevante nos pontos de atenção), pode ` +
@@ -98,7 +103,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `competitiva do negócio (moat) quando fizer sentido, e não só citar os números soltos. Use a ` +
     `decomposição DuPont pra qualificar o ROE, não só repeti-lo — um ROE alto puxado majoritariamente por ` +
     `alavancagem é um sinal de qualidade bem diferente de um ROE alto puxado por margem operacional forte, ` +
-    `mesmo com o mesmo número final. Use a saúde financeira como o teste mais duro de sustentabilidade de dividendo: cobertura por fluxo de caixa livre abaixo de 1x significa que a empresa distribuiu mais caixa do que gerou no período — isso pesa MAIS que um payout ratio contábil confortável, porque payout usa lucro e lucro não paga dividendo, caixa paga. Dívida líquida alta sobre EBITDA agrava esse quadro (empresa alavancada corta dividendo antes de deixar de pagar credor). Respeite a ressalva de comparabilidade quando ela aparecer. Use a comparação com o setor como contexto, nunca como sinal ` +
+    `mesmo com o mesmo número final. Use a saúde financeira como o teste mais duro de sustentabilidade de dividendo: cobertura por fluxo de caixa livre abaixo de 1x significa que a empresa distribuiu mais caixa do que gerou no período — isso pesa MAIS que um payout ratio contábil confortável, porque payout usa lucro e lucro não paga dividendo, caixa paga. Dívida líquida alta sobre EBITDA agrava esse quadro (empresa alavancada corta dividendo antes de deixar de pagar credor). Respeite a ressalva de comparabilidade quando ela aparecer. Se houver linha de perfil de FII, use o segmento pra qualificar o yield em vez de tratá-lo como número solto: yield alto em fundo de papel costuma refletir juro alto e encolhe no ciclo de queda, enquanto em fundo de tijolo reflete aluguel contratado; FoF carrega taxa em duas camadas. Use a comparação com o setor como contexto, nunca como sinal ` +
     `automático — um múltiplo mais barato que a média do setor pode ser uma oportunidade real ou um ` +
     `desconto justificado por fundamentos piores; interprete à luz dos outros dados, não trate ` +
     `"mais barato que o setor" como sinônimo de "melhor". Mas pese o ` +

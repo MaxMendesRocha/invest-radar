@@ -473,6 +473,104 @@ export interface DividendEvent {
 }
 
 const DIVIDEND_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // anúncio de provento não muda de hora em hora
+
+export type FiiSegment = "tijolo" | "papel" | "hibrido" | "fof";
+
+export interface FiiProfile {
+  segmentType: FiiSegment | null; // classificação patrimonial — o campo que mais muda a leitura de risco de um FII
+  segmentoAtuacao: string | null; // setor imobiliário (Logística, Shoppings, Lajes Corporativas...)
+  tipoGestao: string | null; // "Ativa" | "Definida" (passiva)
+  priceToNav: number | null; // P/VP do endpoint dedicado
+  dividendYield12m: number | null; // decimal
+}
+
+interface BrapiFiiIndicator {
+  symbol: string;
+  segmentType?: string | null;
+  segmentoAtuacao?: string | null;
+  tipoGestao?: string | null;
+  priceToNav?: number | null;
+  dividendYield12m?: number | null;
+}
+
+const FII_SEGMENTS = new Set<FiiSegment>(["tijolo", "papel", "hibrido", "fof"]);
+const FII_PROFILE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // indicadores de FII são atualizados 1x/dia após o fechamento (doc da brapi)
+const fiiProfileCache = new Map<string, { profile: FiiProfile | null; fetchedAt: number }>();
+
+/**
+ * Perfil de FII via o endpoint dedicado /api/v2/fii/indicators (exige plano Pro —
+ * sem ele responde FEATURE_NOT_AVAILABLE e todo mundo fica null, sem quebrar nada).
+ *
+ * O campo que realmente importa aqui é `segmentType`: FII de papel (CRI/LCI) e de
+ * tijolo (imóvel físico) têm riscos estruturalmente diferentes — papel carrega risco
+ * de crédito e costuma acompanhar CDI/IPCA, tijolo carrega risco de vacância mas tem
+ * aluguel indexado à inflação. Ler o mesmo dividend yield sem saber qual dos dois é
+ * leva a conclusão errada.
+ *
+ * Ticker que não é FII devolve NOT_FOUND (testado) — tratado como perfil ausente, não
+ * como erro. Lote misto com ações não contamina a resposta (também testado): o
+ * provider simplesmente ignora quem não é FII, diferente do endpoint de dividendos.
+ * `mandate` existe no payload mas vem null em toda a amostra testada, então não é
+ * capturado. Vacância (endpoint /properties) ficou de fora de propósito: a qualidade
+ * do dado é inconsistente — há fundos em que todos os imóveis vêm com vacância 100%
+ * (ex. XPML11), o que tornaria a informação enganosa sem um filtro de sanidade.
+ */
+export async function getFiiProfiles(tickers: string[]): Promise<Map<string, FiiProfile>> {
+  const unique = Array.from(new Set(tickers.map((t) => t.toUpperCase())));
+  if (unique.length === 0) return new Map();
+
+  const now = Date.now();
+  const fresh = new Map<string, FiiProfile>();
+  const stale: string[] = [];
+
+  for (const ticker of unique) {
+    const cached = fiiProfileCache.get(ticker);
+    if (cached && now - cached.fetchedAt < FII_PROFILE_CACHE_TTL_MS) {
+      if (cached.profile) fresh.set(ticker, cached.profile);
+    } else {
+      stale.push(ticker);
+    }
+  }
+
+  if (stale.length === 0) return fresh;
+
+  const token = process.env.BRAPI_TOKEN;
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const url = `https://brapi.dev/api/v2/fii/indicators?symbols=${stale.map(encodeURIComponent).join(",")}`;
+
+  try {
+    const response = await fetch(url, { headers });
+    // NOT_FOUND é o caso normal de "não é FII", não uma falha — por isso não logamos
+    // warning aqui, ao contrário dos outros fetchers.
+    const body = (await response.json()) as { fiis?: BrapiFiiIndicator[]; error?: boolean };
+    const found = new Set<string>();
+
+    for (const item of body.fiis ?? []) {
+      const ticker = item.symbol.toUpperCase();
+      const segment = item.segmentType?.toLowerCase();
+      const profile: FiiProfile = {
+        segmentType: segment && FII_SEGMENTS.has(segment as FiiSegment) ? (segment as FiiSegment) : null,
+        segmentoAtuacao: item.segmentoAtuacao ?? null,
+        tipoGestao: item.tipoGestao ?? null,
+        priceToNav: item.priceToNav ?? null,
+        dividendYield12m: item.dividendYield12m ?? null,
+      };
+      fiiProfileCache.set(ticker, { profile, fetchedAt: now });
+      fresh.set(ticker, profile);
+      found.add(ticker);
+    }
+
+    // Quem foi pedido e não voltou (não é FII, ou o plano não cobre) entra no cache
+    // como ausente pra não repetir a chamada a cada request.
+    for (const ticker of stale) {
+      if (!found.has(ticker)) fiiProfileCache.set(ticker, { profile: null, fetchedAt: now });
+    }
+  } catch (err) {
+    logger.warn({ err, tickers: stale }, "brapi.dev FII indicators request errored");
+  }
+
+  return fresh;
+}
 const dividendCache = new Map<string, { events: DividendEvent[]; fetchedAt: number }>();
 
 interface BrapiStockDividendsResult {

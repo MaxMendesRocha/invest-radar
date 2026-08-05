@@ -13,11 +13,13 @@ import {
   computeDividendTrend,
   sumLast12Months,
   classifyDividendFrequency,
+  getFiiProfiles,
   sectorFor,
   QUOTED_CATEGORIES,
   type PriceHistory,
   type Fundamentals,
   type DividendFrequencyLabel,
+  type FiiProfile,
 } from "../lib/market-data";
 import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, computeDuPontBreakdown, type AnalysisResult } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
@@ -390,6 +392,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
   const riskAdjusted = cdiAnnual != null ? computeRiskAdjustedMetrics(technicalPoints, fundamentals?.beta ?? null, cdiAnnual) : null;
   const duPont = fundamentals ? computeDuPontBreakdown(fundamentals) : null;
   const financialHealth = fundamentals ? computeFinancialHealth(fundamentals, dps12m) : null;
+  const fiiProfile = (await getFiiProfiles([ticker])).get(ticker) ?? null;
   const sectorBenchmark = await getSectorBenchmark(fundamentals?.sector ?? null);
   const sectorComparison = fundamentals
     ? describeSectorComparison(fundamentals, sectorBenchmark)
@@ -415,6 +418,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     duPont,
     financialHealth,
     sector: fundamentals?.sector ?? null,
+    fiiProfile,
     sectorComparison,
     newsItems,
     macro: { selic: macro.selic, selicTrend: macro.selicTrend, ipca12m: macro.ipca12m },
@@ -516,6 +520,10 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     totalPatrimony += parseFloat(a.quantity) * price;
   }
   const technicalSeriesByTicker = await getTechnicalSeries(available.map((a) => a.ticker));
+  // Só os FIIs da carteira — perfil (papel/tijolo/FoF) não existe pras outras categorias.
+  const fiiProfileByTicker = await getFiiProfiles(
+    assets.filter((a) => a.category === "fiis").map((a) => a.ticker)
+  );
 
   // Em paralelo — sequencial levava ~4s por ativo (chamada real à Anthropic), o que
   // deixava uma carteira de 5 ativos demorando ~20s pra gerar.
@@ -566,6 +574,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         duPont,
         financialHealth,
         sector: assetFundamentals?.sector ?? null,
+        fiiProfile: fiiProfileByTicker.get(analysis.ticker) ?? null,
         sectorComparison,
       });
 
