@@ -156,7 +156,7 @@ export default function Analise() {
                       </div>
                       <div>
                         <h3 className="text-xl font-bold font-mono">{analysis.ticker}</h3>
-                        <p className="text-sm text-muted-foreground mt-1 max-w-md">{analysis.monitoringRecommendation}</p>
+                        <p className="text-sm text-muted-foreground mt-1 max-w-md text-pretty text-justify hyphens-auto">{analysis.monitoringRecommendation}</p>
                       </div>
                     </div>
                     <Badge variant="outline">Em breve</Badge>
@@ -247,14 +247,14 @@ export default function Analise() {
                       </div>
 
                       <div className="space-y-6">
-                        <div>
+                        <div className="max-w-prose text-sm">
                           <h4 className="flex items-center gap-2 font-semibold mb-3 text-sm uppercase tracking-wider text-muted-foreground">
                             <Activity className="w-4 h-4" /> Recomendação Tática
                           </h4>
                           <TaxBadge tax={analysis.taxEstimate} />
                           <TechnicalBadge technical={analysis.technical} />
                           <DividendFrequencyBadge dividendFrequency={analysis.dividendFrequency} />
-                          <div className="bg-muted/50 p-4 rounded-md text-sm leading-relaxed border border-border/50">
+                          <div className="bg-muted/50 p-4 rounded-md text-sm leading-relaxed text-pretty text-justify hyphens-auto border border-border/50">
                             {analysis.monitoringRecommendation}
                           </div>
                         </div>

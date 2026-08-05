@@ -30,11 +30,14 @@ function buildPrompt(entry: UniverseEntry, name: string, f: Fundamentals, analys
     `os fornecidos abaixo.\n\n` +
     `Ticker: ${entry.ticker} — ${name} (${entry.category})\n` +
     `Score do Radar: ${analysis.score}/100 (${analysis.scoreClassification})\n` +
-    `Fundamentos: P/L ${f.priceEarnings ?? "?"}, P/VP ${f.priceToBook ?? "?"}, ROE ${f.returnOnEquity != null ? (f.returnOnEquity * 100).toFixed(1) : "?"}%, ` +
-    `Dívida/Patrimônio ${f.debtToEquity ?? "?"}, Margem líquida ${f.profitMargins != null ? (f.profitMargins * 100).toFixed(1) : "?"}%, ` +
+    // Múltiplos arredondados ANTES de entrar no prompt: sem isso o modelo copia o
+    // número cru na resposta e o card exibe coisas como "P/L 7.8125 e P/VP 0.8572569".
+    // Os percentuais já vinham com toFixed; P/L, P/VP, dívida/patrimônio e beta não.
+    `Fundamentos: P/L ${f.priceEarnings?.toFixed(2) ?? "?"}, P/VP ${f.priceToBook?.toFixed(2) ?? "?"}, ROE ${f.returnOnEquity != null ? (f.returnOnEquity * 100).toFixed(1) : "?"}%, ` +
+    `Dívida/Patrimônio ${f.debtToEquity?.toFixed(2) ?? "?"}, Margem líquida ${f.profitMargins != null ? (f.profitMargins * 100).toFixed(1) : "?"}%, ` +
     `Dividend Yield ${f.dividendYield != null ? (f.dividendYield * 100).toFixed(1) : "?"}%, ` +
     `Crescimento de receita ${f.revenueGrowth != null ? (f.revenueGrowth * 100).toFixed(1) : "?"}%, ` +
-    `Variação 12m ${f.fiftyTwoWeekChange != null ? (f.fiftyTwoWeekChange * 100).toFixed(1) : "?"}%, Beta ${f.beta ?? "?"}\n` +
+    `Variação 12m ${f.fiftyTwoWeekChange != null ? (f.fiftyTwoWeekChange * 100).toFixed(1) : "?"}%, Beta ${f.beta?.toFixed(2) ?? "?"}\n` +
     `Pontos positivos calculados: ${analysis.positives.join("; ") || "nenhum"}\n` +
     `Pontos de atenção calculados: ${analysis.risks.join("; ") || "nenhum"}\n\n` +
     `Retorne SOMENTE um JSON válido, sem texto fora dele, no formato:\n` +

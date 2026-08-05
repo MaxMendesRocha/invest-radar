@@ -5,7 +5,16 @@ gerar texto qualitativo, com o prompt interno exato de cada um. Em todos os caso
 **nunca decide números** (score, status, risco, categoria) — esses são sempre calculados
 por um motor de regras determinísticas (`analysis-engine.ts`) a partir de dados reais de
 mercado (brapi.dev, Banco Central). A IA só interpreta e escreve o texto por cima do que
-já foi calculado. Se `ANTHROPIC_API_KEY` não estiver configurada, ou a chamada falhar, cada
+já foi calculado.
+
+Vale notar quais insumos entram **na pontuação** e quais entram **só como contexto** para a
+IA. Pontuam: P/L, P/VP, ROE, dívida/patrimônio, margem líquida, dividend yield, crescimento
+de receita, payout ratio, variação 12m e beta. Não pontuam (só contextualizam o texto):
+retorno ajustado ao risco, decomposição DuPont, saúde financeira, perfil de FII e comparação
+setorial. A separação é deliberada — DuPont decompõe um ROE que já pontuou (contaria duas
+vezes), e as métricas de caixa/liquidez não são comparáveis entre setores (o fluxo de caixa
+livre reportado de um banco chega a superar o lucro em várias vezes), o que distorceria a
+pontuação de ativos financeiros. Se `ANTHROPIC_API_KEY` não estiver configurada, ou a chamada falhar, cada
 ponto cai num texto determinístico de fallback — nunca quebra a funcionalidade.
 
 Modelo usado em todos os pontos: `claude-haiku-4-5-20251001`.
@@ -17,7 +26,7 @@ Modelo usado em todos os pontos: `claude-haiku-4-5-20251001`.
 **Arquivo:** `artifacts/api-server/src/lib/analysis-ai.ts` — `synthesizeAssetRecommendation`
 **Onde aparece:** Radar Inteligente e Análise de Ativos, para cada ativo já na carteira
 **Disparado por:** `POST /analysis/generate`
-**Cache:** 24h, por ticker + score + status + IR + % de concentração + tendência de dividendo + sinal técnico (todos arredondados/bucketizados)
+**Cache:** 24h, por ticker + score + status + IR + % de concentração + tendência de dividendo + sinal técnico + Sharpe (todos arredondados/bucketizados)
 
 ### Dados de entrada
 - Score do Radar, classificação e status (`MANTER` / `ATENCAO` / `REAVALIAR` / `POSSIVEL_SAIDA`)
@@ -28,6 +37,11 @@ Modelo usado em todos os pontos: `claude-haiku-4-5-20251001`.
 - % que o ativo representa do patrimônio total (concentração)
 - Tendência de dividendo (últimos 12 meses vs. 12 meses anteriores)
 - Indicadores técnicos (SMA20/50/200, RSI14, MACD, Bandas de Bollinger, cruzamento de médias)
+- Retorno ajustado ao risco: Sharpe, Sortino e Treynor, com CDI real como taxa livre de risco (`risk-metrics-engine.ts`)
+- Decomposição DuPont do ROE em 5 fatores (`analysis-engine.ts`)
+- Saúde financeira: cobertura do dividendo por fluxo de caixa livre, conversão de lucro em caixa, dívida líquida/EBITDA, liquidez corrente, margem EBITDA (`financial-health-engine.ts`)
+- Perfil do FII — segmento papel/tijolo/híbrido/FoF, segmento de atuação, gestão, P/VP, DY 12m (`fii-engine.ts`). Linha ausente do prompt quando o ativo não é FII
+- Comparação com pares do setor: P/L, ROE e DY contra a média real do setor (`sector-benchmarks.ts`)
 
 ### Prompt (montado dinamicamente — texto-base abaixo, com as linhas de IR/concentração/dividendo/técnico substituídas pelos dados reais de cada ativo)
 
@@ -47,6 +61,11 @@ Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%
 {linha de concentração — crítica ≥40%, alta ≥25%, ou razoável}
 {linha de tendência de dividendo — crescimento/queda %, ou "histórico insuficiente, não mencione"}
 Indicadores técnicos (candles reais, 1 ano): {resumo técnico}
+Retorno ajustado ao risco (1 ano, CDI como taxa livre de risco): {Sharpe/Sortino/Treynor, retorno e volatilidade anualizados}
+Decomposição DuPont do ROE: {carga tributária x carga de juros x margem EBIT x giro de ativos x alavancagem, com o fator dominante identificado}
+Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FCL, conversão de lucro em caixa, liquidez corrente, margem EBITDA, dívida líquida/EBITDA — com ressalva de não-comparabilidade em setor financeiro}
+{Perfil do FII: segmento e o que ele implica de risco — linha ausente quando não é FII}
+Comparação com pares do setor: {P/L, ROE e DY vs. média real do setor, com tamanho da amostra}
 
 Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos
 justificarem (status REAVALIAR ou POSSIVEL_SAIDA, ou risco relevante nos pontos de atenção), pode
@@ -63,7 +82,19 @@ Use o indicador técnico como contexto de TIMING, nunca como fator decisório pr
 fundamentos sempre vêm primeiro; mencione o técnico só quando ele reforçar ou contradizer de forma
 relevante a leitura fundamentalista (ex.: "fundamentos deterioraram e o RSI já mostra sobrevenda,
 pouco espaço pra piorar mais no curto prazo" ou "fundamentos sólidos, mas tecnicamente esticado pelo
-RSI, talvez valha esperar uma correção pra reforçar"). NÃO invente nenhum dado que não esteja listado acima. NÃO proponha um score ou status diferente do
+RSI, talvez valha esperar uma correção pra reforçar"). Use o Sharpe/Sortino/Treynor como contexto de
+qualidade do retorno passado (retorno alto com Sharpe baixo indica que o retorno veio à custa de
+volatilidade desproporcional, não de qualidade). Use a decomposição DuPont pra qualificar o ROE, não
+só repeti-lo — um ROE alto puxado por alavancagem é sinal de qualidade bem diferente de um puxado por
+margem operacional forte. Use a saúde financeira como o teste mais duro de sustentabilidade de
+dividendo: cobertura por fluxo de caixa livre abaixo de 1x significa que a empresa distribuiu mais
+caixa do que gerou — isso pesa MAIS que um payout ratio contábil confortável, porque payout usa lucro
+e lucro não paga dividendo, caixa paga. Respeite a ressalva de comparabilidade quando ela aparecer.
+Se houver linha de perfil de FII, use o segmento pra qualificar o yield: yield alto em fundo de papel
+reflete juro alto e encolhe no ciclo de queda, em fundo de tijolo reflete aluguel contratado, e FoF
+carrega taxa em duas camadas. Use a comparação com o setor como contexto, nunca como sinal
+automático — mais barato que o setor pode ser desconto justificado, não vantagem.
+NÃO invente nenhum dado que não esteja listado acima. NÃO proponha um score ou status diferente do
 informado — a decisão de score é sempre do motor determinístico, você só interpreta. NÃO trate o
 valor de IR como exato — é uma estimativa isolada, deixe isso implícito no texto sem precisar repetir
 a ressalva inteira. Evite muletas vagas como "observe", "acompanhe" ou "fique atento" — só recorra a
@@ -84,13 +115,18 @@ Texto determinístico genérico citando o primeiro risco calculado (`buildRecomm
 **Arquivo:** `artifacts/api-server/src/lib/opinion-ai.ts` — `synthesizePrePurchaseOpinion`
 **Onde aparece:** busca de um ticker que o usuário ainda não possui, avaliando se vale começar/reforçar uma posição
 **Disparado por:** `GET /analysis/opinion/:ticker`
-**Cache:** 12h, por ticker + score + preço + tendência de dividendo + sinal técnico
+**Cache:** 12h, por ticker + score + preço + tendência de dividendo + sinal técnico + Sharpe
 
 ### Dados de entrada
 - Fundamentos (score, positivos, riscos) — ou aviso explícito de indisponibilidade
 - Preço atual e posição no range de 52 semanas, variação nos últimos 5 pregões
 - Tendência de dividendo (12 meses vs. 12 meses anteriores)
 - Indicadores técnicos (mesmos da recomendação de carteira)
+- Retorno ajustado ao risco (Sharpe/Sortino/Treynor, CDI como taxa livre de risco)
+- Decomposição DuPont do ROE
+- Saúde financeira (caixa, liquidez, alavancagem)
+- Perfil do FII, quando aplicável
+- Comparação com pares do setor
 - Notícias recentes classificadas
 - Cenário macro
 
@@ -108,6 +144,11 @@ Ativo: {ticker} ({nome, se disponível})
 {preço atual + range de 52 semanas + variação 5 pregões}
 {tendência de dividendo, ou "histórico insuficiente, não mencione"}
 Indicadores técnicos (candles reais, 1 ano): {resumo técnico}
+Retorno ajustado ao risco (1 ano, CDI como taxa livre de risco): {Sharpe/Sortino/Treynor}
+Decomposição DuPont do ROE: {5 fatores, com o dominante identificado}
+Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FCL, conversão de caixa, liquidez, alavancagem}
+{Perfil do FII: segmento e implicação de risco — ausente quando não é FII}
+Comparação com pares do setor: {múltiplos vs. média do setor}
 Notícias recentes classificadas: {notícias}
 Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%
 
@@ -217,6 +258,11 @@ Retorne SOMENTE um JSON válido, sem texto fora dele, no formato:
 "horizon": "Curto prazo" | "Médio prazo" | "Longo prazo"}
 ```
 
+### Formatação dos números
+Todos os múltiplos entram no prompt já arredondados (`toFixed(2)` para P/L, P/VP,
+dívida/patrimônio e beta; `toFixed(1)` para os percentuais). Sem isso o modelo copia o valor
+cru na resposta e o card acaba exibindo coisas como "P/L 7.8125 e P/VP 0.8572569".
+
 ### Validação da resposta
 `reason` precisa ser string não-vazia; `positives`/`risks` precisam ser arrays de string; `horizon`
 precisa ser um dos 3 valores aceitos (senão vira "Médio prazo"). Qualquer falha de parsing/validação
@@ -263,3 +309,18 @@ Manchete: "{título da manchete}"
 | Diagnóstico da carteira | 1x por carteira, ao abrir Saúde do Portfólio (se score/composição mudou) | 24h |
 | Descrição de oportunidades | 1x por ativo qualificado, só no job semanal (~170 tickers varridos, só os com score ≥ 60 chamam IA) | sem cache (persiste até a próxima regeneração) |
 | Classificação de notícia | 1x por manchete nova | 24h |
+
+## Motores determinísticos que alimentam os prompts
+
+Nenhum deles usa IA — são cálculo puro sobre dado real, e cada um devolve `null` quando falta
+insumo, nunca um valor estimado.
+
+| Motor | O que calcula |
+|---|---|
+| `analysis-engine.ts` | Score, positivos/riscos, payout ratio e decomposição DuPont do ROE |
+| `technical-engine.ts` | SMA20/50/200, RSI14, MACD, Bollinger, cruzamento de médias |
+| `risk-metrics-engine.ts` | Sharpe, Sortino e Treynor, com CDI real como taxa livre de risco |
+| `financial-health-engine.ts` | Cobertura do dividendo por fluxo de caixa livre, conversão de lucro em caixa, dívida líquida/EBITDA, liquidez corrente, margem EBITDA |
+| `fii-engine.ts` | Perfil do FII: segmento (papel/tijolo/híbrido/FoF) e o risco que cada um implica |
+| `sector-benchmarks.ts` | Médias reais do setor (P/L, P/VP, ROE, DY, margem), calculadas no job semanal de Oportunidades |
+| `tax-engine.ts` / `monthly-tax-engine.ts` | IR estimado por venda e consolidação mensal por categoria |

@@ -200,11 +200,11 @@ export default function Parecer() {
                 )}
               </div>
 
-              <div>
+              <div className="max-w-prose text-sm">
                 <h4 className="flex items-center gap-2 font-semibold mb-3 text-sm uppercase tracking-wider text-muted-foreground">
                   <Sparkles className="w-4 h-4" /> Parecer
                 </h4>
-                <div className="bg-muted/50 p-4 rounded-md text-sm leading-relaxed border border-border/50">
+                <div className="bg-muted/50 p-4 rounded-md text-sm leading-relaxed text-pretty text-justify hyphens-auto border border-border/50">
                   {opinion.opinion}
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-1">
