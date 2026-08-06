@@ -30,7 +30,8 @@ export interface PrePurchaseOpinionInput {
   financialHealth: FinancialHealth | null; // métricas de caixa/liquidez (financial-health-engine.ts) — null se o provider não trouxer nada
   sector: string | null; // usado só pra ressalva de comparabilidade em setor financeiro (ver describeFinancialHealth)
   fiiProfile: FiiProfile | null; // só pra FIIs — null pra qualquer outra categoria (ver getFiiProfiles)
-  sectorComparison: string; // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts)
+  sectorComparison: string;
+  dividendValue: string; // já formatado pelo chamador via describeDividendValue (dividend-value-engine.ts) // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts)
   newsItems: string[]; // já formatadas com "[Impacto] título"
   macro: MacroContext;
 }
@@ -47,7 +48,7 @@ function getClient(): Anthropic | null {
 const opinionCache = new Map<string, { text: string; fetchedAt: number }>();
 
 function buildPrompt(input: PrePurchaseOpinionInput): string {
-  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, sectorComparison, newsItems, macro } = input;
+  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, sectorComparison, dividendValue, newsItems, macro } = input;
 
   const fundamentalsLine = available
     ? `Score do Radar: ${score}/100 (${scoreClassification})\nPontos positivos (fundamentos reais): ${positives.join("; ") || "nenhum"}\nPontos de atenção (fundamentos reais): ${risks.join("; ") || "nenhum"}`
@@ -84,6 +85,7 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     `Saúde financeira (caixa, liquidez, alavancagem): ${financialHealthLine}\n` +
     (fiiProfileLine ? `Perfil do FII: ${fiiProfileLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n` +
+    `${dividendValue}\n` +
     `Notícias recentes classificadas: ${newsItems.join(" | ") || "nenhuma"}\n` +
     `${describeMacroContext(macro)}\n\n` +
     `Escreva um parecer curto (2-6 frases) cruzando TODOS os fatores acima. Pode dizer diretamente se o ` +

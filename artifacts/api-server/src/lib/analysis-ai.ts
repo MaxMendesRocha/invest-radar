@@ -31,7 +31,8 @@ export interface AssetRecommendationInput {
   financialHealth: FinancialHealth | null; // métricas de caixa/liquidez (financial-health-engine.ts) — null se o provider não trouxer nada
   sector: string | null; // usado só pra ressalva de comparabilidade em setor financeiro (ver describeFinancialHealth)
   fiiProfile: FiiProfile | null; // só pra FIIs — null pra qualquer outra categoria (ver getFiiProfiles)
-  sectorComparison: string; // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts) — precisa do Fundamentals bruto, que esse módulo não importa só por isso
+  sectorComparison: string;
+  dividendValue: string; // já formatado pelo chamador via describeDividendValue (dividend-value-engine.ts) // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts) — precisa do Fundamentals bruto, que esse módulo não importa só por isso
 }
 
 let anthropicClient: Anthropic | null | undefined;
@@ -48,7 +49,7 @@ const recommendationCache = new Map<string, { text: string; fetchedAt: number }>
 
 
 function buildPrompt(input: AssetRecommendationInput): string {
-  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, sectorComparison } = input;
+  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, sectorComparison, dividendValue } = input;
 
   const taxLine = tax
     ? tax.exempt
@@ -93,7 +94,8 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `Decomposição DuPont do ROE: ${duPontLine}\n` +
     `Saúde financeira (caixa, liquidez, alavancagem): ${financialHealthLine}\n` +
     (fiiProfileLine ? `Perfil do FII: ${fiiProfileLine}\n` : "") +
-    `Comparação com pares do setor: ${sectorComparison}\n\n` +
+    `Comparação com pares do setor: ${sectorComparison}\n` +
+    `${dividendValue}\n\n` +
     `Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos ` +
     `justificarem (status VENDER, ou risco relevante nos pontos de atenção), pode ` +
     `dizer explicitamente que faz sentido considerar reduzir ou encerrar a posição — não fique só em ` +
