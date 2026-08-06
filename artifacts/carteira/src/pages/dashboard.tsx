@@ -115,7 +115,8 @@ export default function Dashboard() {
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              Sobre o capital investido
+              Proventos de 12 meses sobre o valor atual
+              {summary?.yieldOnCost != null && ` · ${formatPercent(summary.yieldOnCost)} sobre o custo`}
             </p>
           </CardContent>
         </Card>

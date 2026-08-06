@@ -510,9 +510,8 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
 router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
 
-  await db.delete(analysesTable).where(eq(analysesTable.userId, req.session.userId!));
-  await db.delete(alertsTable).where(eq(alertsTable.userId, req.session.userId!));
-
+  // Nada é apagado aqui. A troca do conteúdo antigo pelo novo acontece numa única
+  // transação no fim do handler — ver "SUBSTITUIÇÃO ATÔMICA" mais abaixo.
   // Real news per ticker, fetched once and reused for both the analysis payload
   // and the "noticias" alerts below.
   const newsByTicker = new Map<string, NewsHeadline[]>();
@@ -567,6 +566,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
 
   // Buscado aqui (não só lá embaixo pros macroAlerts) porque a síntese via IA de cada
   // ativo também usa o cenário macro como parte do contexto real que ela recebe.
+  const analysisRowsToInsert: (typeof analysesTable.$inferInsert)[] = [];
   const macro = await getMacroSnapshot();
   const cdiAnnual = await getCdiTrailingAnnual();
 
@@ -665,7 +665,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       // que vai na resposta HTTP construída a partir de `analyses` lá embaixo.
       analysis.monitoringRecommendation = aiRecommendation ?? analysis.monitoringRecommendation;
 
-      await db.insert(analysesTable).values({
+      analysisRowsToInsert.push({
         userId: req.session.userId!,
         ticker: analysis.ticker,
         status: analysis.status,
@@ -738,11 +738,44 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   const priceAlerts = computePriceAlerts(assets, priceHistories, req.session.userId!);
 
   const alertsToInsert = [...fundamentalAlerts, ...newsAlerts, ...macroAlerts, ...concentrationAlerts, ...priceAlerts];
-  if (alertsToInsert.length > 0) {
-    await db.insert(alertsTable).values(alertsToInsert);
-  }
 
-  const alertRows = await db.select().from(alertsTable).where(eq(alertsTable.userId, req.session.userId!));
+  // ─── SUBSTITUIÇÃO ATÔMICA ───────────────────────────────────────────────────
+  //
+  // Antes, os DELETE aconteciam no começo do handler e os INSERT ficavam espalhados
+  // pelo resto dele — as análises eram gravadas uma a uma dentro do loop de IA.
+  // Medido antes da correção, com uma carteira de apenas 2 ativos: `analyses` e
+  // `alerts` ficaram ZERADOS por 9 segundos, e a janela cresce com o tamanho da
+  // carteira. Uma falha nesse intervalo deixava o usuário permanentemente sem
+  // análise e sem alerta até regenerar na mão.
+  //
+  // Mesmo padrão que regenerateOpportunities (opportunities-engine.ts) já usava pelo
+  // mesmo motivo. Aqui vale ainda mais: lá é uma lista pública, aqui é o conteúdo da
+  // carteira de um usuário específico.
+  const alertRows = await db.transaction(async (tx) => {
+    // Quais alertas o usuário já tinha lido, pela identidade natural do alerta —
+    // o id é serial e não sobrevive à troca. Sem isso, cada geração ressuscitava
+    // como não-lido tudo que já havia sido lido, e o contador do Radar reaparecia
+    // cheio (reproduzido: 1 alerta marcado como lido voltou com 0 lidos).
+    const previous = await tx.select().from(alertsTable).where(eq(alertsTable.userId, req.session.userId!));
+    const readSignatures = new Set(
+      previous.filter((a) => a.isRead).map((a) => `${a.type}|${a.ticker ?? ""}|${a.title}`),
+    );
+
+    await tx.delete(analysesTable).where(eq(analysesTable.userId, req.session.userId!));
+    await tx.delete(alertsTable).where(eq(alertsTable.userId, req.session.userId!));
+
+    if (analysisRowsToInsert.length > 0) await tx.insert(analysesTable).values(analysisRowsToInsert);
+    if (alertsToInsert.length > 0) {
+      await tx.insert(alertsTable).values(
+        alertsToInsert.map((a) => ({
+          ...a,
+          isRead: readSignatures.has(`${a.type}|${a.ticker ?? ""}|${a.title}`),
+        })),
+      );
+    }
+
+    return tx.select().from(alertsTable).where(eq(alertsTable.userId, req.session.userId!));
+  });
 
   let totalCost = 0;
   for (const a of assets) {

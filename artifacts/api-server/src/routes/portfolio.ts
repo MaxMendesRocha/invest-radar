@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable } from "@workspace/db";
-import { eq, sum } from "drizzle-orm";
+import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months } from "../lib/market-data";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
@@ -16,6 +16,16 @@ const router: IRouter = Router();
 router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
   const txRows = await db.select({ total: sum(transactionsTable.amount) }).from(transactionsTable).where(eq(transactionsTable.userId, req.session.userId!));
+  // Janela de 12 meses para o YIELD. O total acima é o acumulado de sempre — número
+  // legítimo como "quanto já recebi", mas dividi-lo pelo custo produzia um yield que
+  // crescia indefinidamente com o tempo de carteira: com três anos de proventos o
+  // card exibia o acumulado dos três anos rotulado como yield.
+  const twelveMonthsAgo = new Date();
+  twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1);
+  const [tx12mRow] = await db
+    .select({ total: sum(transactionsTable.amount) })
+    .from(transactionsTable)
+    .where(and(eq(transactionsTable.userId, req.session.userId!), gte(transactionsTable.date, twelveMonthsAgo.toISOString().slice(0, 10))));
   const prices = await getPricesFor(assets);
 
   let totalPatrimony = 0;
@@ -32,7 +42,15 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
   const totalProfitLoss = totalPatrimony - totalCost;
   const totalProfitLossPercent = totalCost > 0 ? (totalProfitLoss / totalCost) * 100 : 0;
   const totalDividends = parseFloat(String(txRows[0]?.total ?? "0")) || 0;
-  const portfolioYield = totalCost > 0 ? (totalDividends / totalCost) * 100 : 0;
+  const dividendsLast12m = parseFloat(String(tx12mRow?.total ?? "0")) || 0;
+  // Sobre o VALOR DE MERCADO, não sobre o custo — é a definição usual de dividend
+  // yield, e é a mesma base usada para dimensionar a meta de renda passiva
+  // (income-goal-engine.ts). Antes eram duas definições diferentes convivendo.
+  const portfolioYield = totalPatrimony > 0 ? (dividendsLast12m / totalPatrimony) * 100 : 0;
+  // Yield on cost: quanto a carteira rende sobre o que foi efetivamente pago por ela.
+  // Métrica distinta e útil para quem investe em dividendos — sobe conforme o preço
+  // médio fica para trás — mas não substitui a de cima.
+  const yieldOnCost = totalCost > 0 ? (dividendsLast12m / totalCost) * 100 : 0;
 
   // Upserts today's row in portfolio_snapshots — this is the only place real history
   // gets recorded, from ordinary use of the app, no scheduled job involved.
@@ -43,7 +61,9 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
     totalProfitLoss,
     totalProfitLossPercent,
     totalDividends,
+    dividendsLast12m,
     portfolioYield,
+    yieldOnCost,
     assetCount: assets.length,
   });
 });
@@ -125,6 +145,28 @@ router.get("/portfolio/evolution", requireAuth, async (req, res): Promise<void> 
   res.json(points);
 });
 
+/**
+ * Dispersão real de um conjunto de valores, 0-100. 100 = perfeitamente distribuído,
+ * 0 = tudo em um só.
+ *
+ * Usa o índice de Herfindahl-Hirschman (soma dos quadrados das participações), que é
+ * a medida padrão de concentração e leva em conta a distribuição inteira, não só a
+ * maior posição. O score é (1 - HHI) × 100.
+ *
+ * Substitui `100 - (100/nº de ativos) × 2`, que dependia SÓ da contagem: com três
+ * ativos o resultado era 33 tanto para 33/33/33 quanto para 98,7/0,7/0,6 —
+ * reproduzido antes da correção. O dado de participação já existia e era usado nos
+ * alertas de concentração e no perfil revelado; só não chegava aqui.
+ *
+ * Referência de leitura: 2 posições iguais → 50; 3 iguais → 67; 10 iguais → 90.
+ */
+function spreadScore(values: number[]): number {
+  const total = values.reduce((sum, v) => sum + v, 0);
+  if (values.length === 0 || total <= 0) return 0;
+  const hhi = values.reduce((sum, v) => sum + (v / total) ** 2, 0);
+  return Math.round(Math.max(0, Math.min(100, (1 - hhi) * 100)));
+}
+
 router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
 
@@ -133,14 +175,31 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
     assets.filter((a) => QUOTED_CATEGORIES.has(a.category)).map((a) => a.ticker)
   );
 
-  const categories = new Set(assets.map(a => a.category));
-  const sectors = new Set(assets.map((a) => sectorFor(a, fundamentalsByTicker.get(a.ticker.toUpperCase())?.sector)));
+  // Valor de cada posição — a base das duas dimensões abaixo. Antes ambas contavam
+  // ITENS (nº de ativos, nº de categorias) e ignoravam completamente quanto havia em
+  // cada um: uma carteira 33/33/33 recebia exatamente a mesma nota que uma 98/1/1.
+  const valueByTicker = new Map<string, number>();
+  const valueBySector = new Map<string, number>();
+  for (const a of assets) {
+    const qty = parseFloat(a.quantity);
+    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const value = qty * price;
+    const ticker = a.ticker.toUpperCase();
+    valueByTicker.set(ticker, (valueByTicker.get(ticker) ?? 0) + value);
+    const sector = sectorFor(a, fundamentalsByTicker.get(ticker)?.sector);
+    valueBySector.set(sector, (valueBySector.get(sector) ?? 0) + value);
+  }
 
   // With no assets, every dimension is honestly 0 — the risk/dividends/growth fallbacks
   // below are heuristics for an existing portfolio's composition, not a default score
   // for having no portfolio at all (that was a bug: an empty carteira showed Score 34).
-  const diversification = assets.length > 0 ? Math.min(100, categories.size * 15 + sectors.size * 8) : 0;
-  const concentration = assets.length > 0 ? Math.round(Math.max(0, 100 - (100 / assets.length) * 2)) : 0;
+  //
+  // As duas usam o mesmo método (dispersão real do valor, via spreadScore) sobre
+  // eixos diferentes: concentração olha ativo a ativo, diversificação olha setor a
+  // setor. Assim deixam de ser duas contagens quase redundantes — juntas pesam 50%
+  // do score de saúde — e passam a responder perguntas distintas.
+  const concentration = spreadScore(Array.from(valueByTicker.values()));
+  const diversification = spreadScore(Array.from(valueBySector.values()));
 
   // Risco/dividendos/crescimento são médias ponderadas pelo valor de cada posição,
   // usando os mesmos buckets de evalVolatility/evalDividendYield/evalRevenueGrowth do
