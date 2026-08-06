@@ -1,9 +1,8 @@
 import { db, portfolioSnapshotsTable, type PortfolioSnapshot } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { todayInAppTimezone } from "./local-date";
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+
 
 /**
  * Upserts today's snapshot for the user — called from /portfolio/summary, so real
@@ -13,7 +12,7 @@ function todayIso(): string {
 export async function recordSnapshot(userId: number, totalValue: number, totalCost: number): Promise<void> {
   await db
     .insert(portfolioSnapshotsTable)
-    .values({ userId, date: todayIso(), totalValue: String(totalValue), totalCost: String(totalCost) })
+    .values({ userId, date: todayInAppTimezone(), totalValue: String(totalValue), totalCost: String(totalCost) })
     .onConflictDoUpdate({
       target: [portfolioSnapshotsTable.userId, portfolioSnapshotsTable.date],
       set: { totalValue: String(totalValue), totalCost: String(totalCost) },

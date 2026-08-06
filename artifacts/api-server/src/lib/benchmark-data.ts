@@ -2,6 +2,7 @@ import { db, indexSnapshotsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
 import { fetchSeriesRange } from "./macro-data";
+import { todayInAppTimezone } from "./local-date";
 
 const BRAPI_BASE_URL = "https://brapi.dev/api/quote";
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // same cadence as macro-data.ts
@@ -138,9 +139,7 @@ export async function getIbovespaQuote(): Promise<IndexQuote> {
   return quote;
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+
 
 function isoFromUnixSeconds(seconds: number): string {
   return new Date(seconds * 1000).toISOString().slice(0, 10);
@@ -172,7 +171,7 @@ export async function syncAndGetIndexCloses(ticker: string, indexName: string): 
       closesByDate.set(isoFromUnixSeconds(point.date), point.close);
     }
     if (closesByDate.size === 0 && current != null) {
-      closesByDate.set(todayIso(), current);
+      closesByDate.set(todayInAppTimezone(), current);
     }
     if (closesByDate.size > 0) await upsertCloses(indexName, closesByDate);
   } catch (err) {

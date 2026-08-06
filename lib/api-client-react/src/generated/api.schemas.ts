@@ -431,6 +431,8 @@ export interface PortfolioSummary {
   dividendsLast12m?: number;
   /** Proventos de 12 meses sobre o custo de aquisição */
   yieldOnCost?: number;
+  /** Tickers cotados sem cotação no momento — a posição entra no patrimônio pelo preço médio, então o lucro/prejuízo dela aparece como zero. */
+  pricesUnavailable?: string[];
   /** Proventos dos últimos 12 meses sobre o valor de mercado atual */
   portfolioYield: number;
   assetCount: number;
