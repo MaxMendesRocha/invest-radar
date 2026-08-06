@@ -56,6 +56,15 @@ export default function Oportunidades() {
             Defina seu perfil de investidor em Configurações para priorizar essa lista pelo seu apetite a risco.
           </p>
         )}
+        {opportunities?.dividendPremiumPending && (
+          <p className="text-sm text-amber-700 dark:text-amber-500 flex gap-1.5 items-start">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span className="text-pretty">
+              A comparação com o setor ainda não está disponível nesta lista — ela é calculada na varredura,
+              e a atual é anterior a esse cálculo. Até a próxima atualização a ordem segue o seu perfil de risco.
+            </span>
+          </p>
+        )}
         {nextRefresh?.nextRefreshAt && (
           <p className="text-sm text-muted-foreground flex items-center gap-1.5">
             <RefreshCw className="w-3.5 h-3.5" />

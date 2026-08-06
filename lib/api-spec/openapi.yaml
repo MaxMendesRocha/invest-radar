@@ -1264,6 +1264,12 @@ components:
       type: object
       required: [orderedBy, items]
       properties:
+        dividendPremiumPending:
+          type: boolean
+          description: >-
+            true quando o perfil pede ordenação por prêmio de dividendo mas a lista
+            ainda não tem referência setorial — acontece com linhas gravadas antes da
+            varredura que passou a persistir o setor. Some na próxima atualização.
         orderedBy:
           type: string
           enum: [premio_dividendo, perfil_de_risco, score]

@@ -66,7 +66,17 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
   // aporte pensando em fluxo, não em valorização — então a lista é ordenada pelo
   // prêmio de dividendo sobre o setor (ver dividend-value-engine.ts) em vez do
   // score geral. Para os demais objetivos a ordenação por perfil de risco continua.
-  const orderedBy = profile?.objective === "renda" ? "premio_dividendo" : profile ? "perfil_de_risco" : "score";
+  // Só declara ordenação por prêmio se houver prêmio para ordenar. Linhas gravadas
+  // por uma varredura anterior à coluna `sector` não têm referência setorial, e
+  // nesse caso TODAS as comparações caem no fallback por score — o cabeçalho
+  // afirmaria um critério que não está sendo aplicado.
+  const wantsIncomeOrdering = profile?.objective === "renda";
+  const dividendPremiumPending = wantsIncomeOrdering && valueByTicker.size === 0;
+  const orderedBy = wantsIncomeOrdering && !dividendPremiumPending
+    ? "premio_dividendo"
+    : profile
+      ? "perfil_de_risco"
+      : "score";
 
   if (orderedBy === "premio_dividendo") {
     items.sort((a, b) => {
@@ -111,7 +121,7 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
     };
   });
 
-  res.json({ orderedBy, items: items10 });
+  res.json({ orderedBy, dividendPremiumPending, items: items10 });
 });
 
 // Quando a lista foi atualizada pela última vez e quando o scheduler (lib/scheduler.ts)
