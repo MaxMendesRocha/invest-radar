@@ -30,6 +30,12 @@ export default function Vendas() {
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Operações Encerradas</h1>
         <p className="text-muted-foreground">Histórico de vendas registradas, com ganho/perda realizado e IR.</p>
+        <p className="text-xs text-muted-foreground mt-1 max-w-prose text-pretty">
+          A coluna <strong className="font-medium text-foreground">IR isolado</strong> considera cada venda sozinha.
+          O valor que a Receita cobra é o do <strong className="font-medium text-foreground">Resumo de IR Mensal</strong> abaixo,
+          que soma todas as vendas do mês — a isenção de R$ 20 mil em ações vale para o total do mês, não por operação,
+          e prejuízos anteriores abatem o ganho.
+        </p>
       </div>
 
       <Card>
@@ -161,7 +167,7 @@ export default function Vendas() {
                   <TableHead className="text-right">Preço Venda</TableHead>
                   <TableHead>Data</TableHead>
                   <TableHead className="text-right">Ganho/Perda</TableHead>
-                  <TableHead className="text-right">IR</TableHead>
+                  <TableHead className="text-right">IR isolado</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -191,7 +197,7 @@ export default function Vendas() {
                           {sale.taxOwed == null ? (
                             <span className="text-xs text-muted-foreground">N/A</span>
                           ) : sale.taxOwed === 0 ? (
-                            <Badge variant="outline" className="bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400">Isento</Badge>
+                            <Badge variant="outline" className="bg-muted/40 border-border/50 text-muted-foreground">Isento sozinha</Badge>
                           ) : (
                             <span className="font-mono text-sm">{formatCurrency(sale.taxOwed)}</span>
                           )}
