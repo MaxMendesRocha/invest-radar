@@ -269,6 +269,30 @@ export const InvestorProfileClassification = {
   Arrojado: 'Arrojado',
 } as const;
 
+export type InvestorProfileLimitedBy = typeof InvestorProfileLimitedBy[keyof typeof InvestorProfileLimitedBy];
+
+
+export const InvestorProfileLimitedBy = {
+  capacidade: 'capacidade',
+  tolerancia: 'tolerancia',
+  equilibrado: 'equilibrado',
+} as const;
+
+/**
+ * @nullable
+ */
+export type InvestorProfileRevealedClassification = typeof InvestorProfileRevealedClassification[keyof typeof InvestorProfileRevealedClassification] | null;
+
+
+export const InvestorProfileRevealedClassification = {
+  Conservador: 'Conservador',
+  Moderado: 'Moderado',
+  Arrojado: 'Arrojado',
+} as const;
+
+/**
+ * classification é a MENOR entre capacityScore e toleranceScore, com travas aplicadas (ver constraints). Os campos revealed* descrevem o risco que a carteira real assume, independentemente do que foi declarado.
+ */
 export interface InvestorProfile {
   id: number;
   userId: number;
@@ -279,16 +303,70 @@ export interface InvestorProfile {
   liquidityNeed: InvestorProfileLiquidityNeed;
   score: number;
   classification: InvestorProfileClassification;
+  /** @nullable */
+  horizonYears?: number | null;
+  /** @nullable */
+  emergencyFund?: string | null;
+  /** @nullable */
+  portfolioShare?: string | null;
+  /** @nullable */
+  incomeStability?: string | null;
+  /** @nullable */
+  capacityScore?: number | null;
+  /** @nullable */
+  toleranceScore?: number | null;
+  limitedBy?: InvestorProfileLimitedBy;
+  /** false quando o perfil foi salvo antes das perguntas de capacidade existirem */
+  capacityComplete?: boolean;
+  constraints?: string[];
+  /** @nullable */
+  revealedClassification?: InvestorProfileRevealedClassification;
+  /** @nullable */
+  revealedVariableIncomePercent?: number | null;
+  /** @nullable */
+  revealedLargestPositionPercent?: number | null;
+  /** @nullable */
+  revealedLargestPositionTicker?: string | null;
+  /** @nullable */
+  revealedWeightedBeta?: number | null;
+  /** @nullable */
+  revealedBetaCoveragePercent?: number | null;
+  /** @nullable */
+  divergenceMessage?: string | null;
   updatedAt: string;
 }
 
-export type InvestorProfileInputHorizon = typeof InvestorProfileInputHorizon[keyof typeof InvestorProfileInputHorizon];
+/**
+ * Reserva de emergência cobrindo ao menos 6 meses de despesas
+ */
+export type InvestorProfileInputEmergencyFund = typeof InvestorProfileInputEmergencyFund[keyof typeof InvestorProfileInputEmergencyFund];
 
 
-export const InvestorProfileInputHorizon = {
-  curto: 'curto',
-  medio: 'medio',
-  longo: 'longo',
+export const InvestorProfileInputEmergencyFund = {
+  sim: 'sim',
+  nao: 'nao',
+} as const;
+
+/**
+ * Fatia do patrimônio total que está nesta carteira
+ */
+export type InvestorProfileInputPortfolioShare = typeof InvestorProfileInputPortfolioShare[keyof typeof InvestorProfileInputPortfolioShare];
+
+
+export const InvestorProfileInputPortfolioShare = {
+  menos_25: 'menos_25',
+  de_25_50: 'de_25_50',
+  de_50_75: 'de_50_75',
+  mais_75: 'mais_75',
+} as const;
+
+export type InvestorProfileInputIncomeStability = typeof InvestorProfileInputIncomeStability[keyof typeof InvestorProfileInputIncomeStability];
+
+
+export const InvestorProfileInputIncomeStability = {
+  estavel: 'estavel',
+  variavel: 'variavel',
+  instavel: 'instavel',
 } as const;
 
 export type InvestorProfileInputLossTolerance = typeof InvestorProfileInputLossTolerance[keyof typeof InvestorProfileInputLossTolerance];
@@ -327,7 +405,17 @@ export const InvestorProfileInputLiquidityNeed = {
 } as const;
 
 export interface InvestorProfileInput {
-  horizon: InvestorProfileInputHorizon;
+  /**
+     * Horizonte em anos. Substitui o antigo horizon (curto/medio/longo), que passa a ser derivado deste.
+     * @minimum 0
+     * @maximum 60
+     */
+  horizonYears: number;
+  /** Reserva de emergência cobrindo ao menos 6 meses de despesas */
+  emergencyFund: InvestorProfileInputEmergencyFund;
+  /** Fatia do patrimônio total que está nesta carteira */
+  portfolioShare: InvestorProfileInputPortfolioShare;
+  incomeStability: InvestorProfileInputIncomeStability;
   lossTolerance: InvestorProfileInputLossTolerance;
   objective: InvestorProfileInputObjective;
   experience: InvestorProfileInputExperience;

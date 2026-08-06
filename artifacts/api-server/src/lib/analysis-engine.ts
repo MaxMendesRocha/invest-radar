@@ -194,11 +194,29 @@ function scoreClassification(score: number): ScoreClassification {
 
 /**
  * Limiares de concentração de posição. Antes viviam duplicados em analysis-ai.ts;
- * ficam aqui porque agora o status determinístico depende deles, e o prompt da IA
+ * ficam aqui porque o status determinístico depende deles, e o prompt da IA
  * precisa falar da mesma régua que o badge exibe.
+ *
+ * Variam por perfil: a mesma posição de 30% é excesso para quem não tem prazo nem
+ * reserva para atravessar uma queda, e escolha defensável para quem tem. Sem
+ * perfil definido usa a régua do Moderado — os valores originais.
  */
-export const CONCENTRATION_HIGH = 25;
-export const CONCENTRATION_CRITICAL = 40;
+export interface ConcentrationLimits {
+  high: number;
+  critical: number;
+}
+
+const CONCENTRATION_BY_PROFILE: Record<string, ConcentrationLimits> = {
+  Conservador: { high: 15, critical: 25 },
+  Moderado: { high: 25, critical: 40 },
+  Arrojado: { high: 30, critical: 50 },
+};
+
+export const DEFAULT_CONCENTRATION_LIMITS = CONCENTRATION_BY_PROFILE.Moderado;
+
+export function concentrationLimitsFor(profileClassification: string | null): ConcentrationLimits {
+  return CONCENTRATION_BY_PROFILE[profileClassification ?? ""] ?? DEFAULT_CONCENTRATION_LIMITS;
+}
 
 /**
  * Status de posição, determinístico. Cruza qualidade fundamentalista (score) com
@@ -212,9 +230,13 @@ export const CONCENTRATION_CRITICAL = 40;
  * `positionPercent` é 0 para quem ainda não tem o ativo (parecer pré-compra), o que
  * deixa a decisão por conta do score — que é o correto nesse contexto.
  */
-export function resolveAnalysisStatus(score: number, positionPercent: number): AnalysisStatus {
-  if (score < 40 || positionPercent > CONCENTRATION_CRITICAL) return "VENDER";
-  if (score >= 75 && positionPercent < CONCENTRATION_HIGH) return "COMPRAR";
+export function resolveAnalysisStatus(
+  score: number,
+  positionPercent: number,
+  limits: ConcentrationLimits = DEFAULT_CONCENTRATION_LIMITS,
+): AnalysisStatus {
+  if (score < 40 || positionPercent > limits.critical) return "VENDER";
+  if (score >= 75 && positionPercent < limits.high) return "COMPRAR";
   return "MANTER";
 }
 
@@ -289,7 +311,12 @@ export function noFundamentalsAnalysis(): AnalysisResult {
  * sem ele, o payout ratio simplesmente não entra na média, igual a qualquer outro
  * fundamento indisponível, nunca vira um valor chutado.
  */
-export function analyzeFundamentals(f: Fundamentals, dps12m: number | null = null, positionPercent = 0): AnalysisResult {
+export function analyzeFundamentals(
+  f: Fundamentals,
+  dps12m: number | null = null,
+  positionPercent = 0,
+  limits: ConcentrationLimits = DEFAULT_CONCENTRATION_LIMITS,
+): AnalysisResult {
   const fundamentalMetrics = [
     evalPE(f.priceEarnings),
     evalPriceToBook(f.priceToBook),
@@ -330,7 +357,7 @@ export function analyzeFundamentals(f: Fundamentals, dps12m: number | null = nul
     available: true,
     score,
     scoreClassification: scoreClassification(score),
-    status: resolveAnalysisStatus(score, positionPercent),
+    status: resolveAnalysisStatus(score, positionPercent, limits),
     positives,
     risks,
     monitoringRecommendation: buildRecommendation(risks),

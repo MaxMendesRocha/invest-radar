@@ -907,6 +907,10 @@ components:
     InvestorProfile:
       type: object
       required: [id, userId, horizon, lossTolerance, objective, experience, liquidityNeed, score, classification, updatedAt]
+      description: >-
+        classification é a MENOR entre capacityScore e toleranceScore, com travas
+        aplicadas (ver constraints). Os campos revealed* descrevem o risco que a
+        carteira real assume, independentemente do que foi declarado.
       properties:
         id:
           type: integer
@@ -932,17 +936,67 @@ components:
         classification:
           type: string
           enum: [Conservador, Moderado, Arrojado]
+        horizonYears:
+          type: ["integer", "null"]
+        emergencyFund:
+          type: ["string", "null"]
+        portfolioShare:
+          type: ["string", "null"]
+        incomeStability:
+          type: ["string", "null"]
+        capacityScore:
+          type: ["number", "null"]
+        toleranceScore:
+          type: ["number", "null"]
+        limitedBy:
+          type: string
+          enum: [capacidade, tolerancia, equilibrado]
+        capacityComplete:
+          type: boolean
+          description: false quando o perfil foi salvo antes das perguntas de capacidade existirem
+        constraints:
+          type: array
+          items:
+            type: string
+        revealedClassification:
+          type: ["string", "null"]
+          enum: [Conservador, Moderado, Arrojado, null]
+        revealedVariableIncomePercent:
+          type: ["number", "null"]
+        revealedLargestPositionPercent:
+          type: ["number", "null"]
+        revealedLargestPositionTicker:
+          type: ["string", "null"]
+        revealedWeightedBeta:
+          type: ["number", "null"]
+        revealedBetaCoveragePercent:
+          type: ["number", "null"]
+        divergenceMessage:
+          type: ["string", "null"]
         updatedAt:
           type: string
           format: date-time
 
     InvestorProfileInput:
       type: object
-      required: [horizon, lossTolerance, objective, experience, liquidityNeed]
+      required: [lossTolerance, objective, experience, liquidityNeed, horizonYears, emergencyFund, portfolioShare, incomeStability]
       properties:
-        horizon:
+        horizonYears:
+          type: integer
+          minimum: 0
+          maximum: 60
+          description: Horizonte em anos. Substitui o antigo horizon (curto/medio/longo), que passa a ser derivado deste.
+        emergencyFund:
           type: string
-          enum: [curto, medio, longo]
+          enum: [sim, nao]
+          description: Reserva de emergência cobrindo ao menos 6 meses de despesas
+        portfolioShare:
+          type: string
+          enum: [menos_25, de_25_50, de_50_75, mais_75]
+          description: Fatia do patrimônio total que está nesta carteira
+        incomeStability:
+          type: string
+          enum: [estavel, variavel, instavel]
         lossTolerance:
           type: string
           enum: [baixa, media, alta]

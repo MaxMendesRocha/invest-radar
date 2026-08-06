@@ -5,14 +5,26 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { InvestorProfileInputEmergencyFund } from './investorProfileInputEmergencyFund';
 import type { InvestorProfileInputExperience } from './investorProfileInputExperience';
-import type { InvestorProfileInputHorizon } from './investorProfileInputHorizon';
+import type { InvestorProfileInputIncomeStability } from './investorProfileInputIncomeStability';
 import type { InvestorProfileInputLiquidityNeed } from './investorProfileInputLiquidityNeed';
 import type { InvestorProfileInputLossTolerance } from './investorProfileInputLossTolerance';
 import type { InvestorProfileInputObjective } from './investorProfileInputObjective';
+import type { InvestorProfileInputPortfolioShare } from './investorProfileInputPortfolioShare';
 
 export interface InvestorProfileInput {
-  horizon: InvestorProfileInputHorizon;
+  /**
+     * Horizonte em anos. Substitui o antigo horizon (curto/medio/longo), que passa a ser derivado deste.
+     * @minimum 0
+     * @maximum 60
+     */
+  horizonYears: number;
+  /** Reserva de emergência cobrindo ao menos 6 meses de despesas */
+  emergencyFund: InvestorProfileInputEmergencyFund;
+  /** Fatia do patrimônio total que está nesta carteira */
+  portfolioShare: InvestorProfileInputPortfolioShare;
+  incomeStability: InvestorProfileInputIncomeStability;
   lossTolerance: InvestorProfileInputLossTolerance;
   objective: InvestorProfileInputObjective;
   experience: InvestorProfileInputExperience;

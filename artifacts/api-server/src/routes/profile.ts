@@ -1,40 +1,62 @@
 import { Router, type IRouter } from "express";
-import { db, investorProfilesTable, type InvestorProfile } from "@workspace/db";
+import { db, investorProfilesTable, assetsTable, type InvestorProfile } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { UpdateInvestorProfileBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
+import { assessInvestorProfile, horizonBucketFromYears, type ProfileClassification } from "../lib/investor-profile-engine";
+import { computeRevealedProfile, compareProfiles } from "../lib/revealed-profile-engine";
+import { getPricesFor, getFundamentals } from "../lib/market-data";
 
 const router: IRouter = Router();
 
-const HORIZON_POINTS: Record<string, number> = { curto: 0, medio: 10, longo: 20 };
-const LOSS_TOLERANCE_POINTS: Record<string, number> = { baixa: 0, media: 10, alta: 20 };
-const OBJECTIVE_POINTS: Record<string, number> = { preservar: 0, renda: 10, crescimento: 20 };
-const EXPERIENCE_POINTS: Record<string, number> = { iniciante: 0, intermediario: 10, avancado: 20 };
-const LIQUIDITY_NEED_POINTS: Record<string, number> = { sim: 0, nao: 20 };
+/**
+ * Monta o perfil revelado a partir das posições reais. Beta vem dos fundamentos já
+ * usados pela análise; quando o provider não traz beta para um ativo, aquela
+ * posição simplesmente não entra nesse fator (ver computeRevealedProfile).
+ */
+async function buildRevealedProfile(userId: number) {
+  const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, userId));
+  if (assets.length === 0) return null;
 
-function computeScore(input: {
-  horizon: string;
-  lossTolerance: string;
-  objective: string;
-  experience: string;
-  liquidityNeed: string;
-}): number {
-  return (
-    (HORIZON_POINTS[input.horizon] ?? 0) +
-    (LOSS_TOLERANCE_POINTS[input.lossTolerance] ?? 0) +
-    (OBJECTIVE_POINTS[input.objective] ?? 0) +
-    (EXPERIENCE_POINTS[input.experience] ?? 0) +
-    (LIQUIDITY_NEED_POINTS[input.liquidityNeed] ?? 0)
+  const [prices, fundamentals] = await Promise.all([
+    getPricesFor(assets),
+    getFundamentals(assets.map((a) => a.ticker)),
+  ]);
+
+  return computeRevealedProfile(
+    assets.map((asset) => {
+      const ticker = asset.ticker.toUpperCase();
+      const price = prices.get(ticker) ?? parseFloat(asset.averagePrice);
+      return {
+        ticker,
+        category: asset.category,
+        value: parseFloat(asset.quantity) * price,
+        beta: fundamentals.get(ticker)?.beta ?? null,
+      };
+    }),
   );
 }
 
-function classify(score: number): "Conservador" | "Moderado" | "Arrojado" {
-  if (score >= 67) return "Arrojado";
-  if (score >= 34) return "Moderado";
-  return "Conservador";
-}
+async function serialize(profile: InvestorProfile) {
+  const revealed = await buildRevealedProfile(profile.userId);
+  const divergence = revealed
+    ? compareProfiles(profile.classification as ProfileClassification, revealed)
+    : null;
 
-function serialize(profile: InvestorProfile) {
+  // Reavaliado na leitura, não lido das colunas: as travas e a explicação de qual
+  // eixo limitou o perfil dependem da lógica atual do motor, então perfis gravados
+  // por uma versão anterior ganham a leitura nova sem precisar ser reenviados.
+  const assessment = assessInvestorProfile({
+    lossTolerance: profile.lossTolerance,
+    objective: profile.objective,
+    experience: profile.experience,
+    liquidityNeed: profile.liquidityNeed,
+    horizonYears: profile.horizonYears,
+    emergencyFund: profile.emergencyFund,
+    portfolioShare: profile.portfolioShare,
+    incomeStability: profile.incomeStability,
+  });
+
   return {
     id: profile.id,
     userId: profile.userId,
@@ -43,8 +65,24 @@ function serialize(profile: InvestorProfile) {
     objective: profile.objective,
     experience: profile.experience,
     liquidityNeed: profile.liquidityNeed,
+    horizonYears: profile.horizonYears,
+    emergencyFund: profile.emergencyFund,
+    portfolioShare: profile.portfolioShare,
+    incomeStability: profile.incomeStability,
     score: parseFloat(profile.score),
+    capacityScore: assessment.capacityScore,
+    toleranceScore: assessment.toleranceScore,
     classification: profile.classification,
+    limitedBy: assessment.limitedBy,
+    capacityComplete: assessment.capacityComplete,
+    constraints: assessment.constraints,
+    revealedClassification: revealed?.classification ?? null,
+    revealedVariableIncomePercent: revealed?.variableIncomePercent ?? null,
+    revealedLargestPositionPercent: revealed?.largestPositionPercent ?? null,
+    revealedLargestPositionTicker: revealed?.largestPositionTicker ?? null,
+    revealedWeightedBeta: revealed?.weightedBeta ?? null,
+    revealedBetaCoveragePercent: revealed?.betaCoveragePercent ?? null,
+    divergenceMessage: divergence?.message ?? null,
     updatedAt: profile.updatedAt.toISOString(),
   };
 }
@@ -55,7 +93,7 @@ router.get("/profile", requireAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Perfil de investidor ainda não definido" });
     return;
   }
-  res.json(serialize(profile));
+  res.json(await serialize(profile));
 });
 
 router.put("/profile", requireAuth, async (req, res): Promise<void> => {
@@ -65,19 +103,33 @@ router.put("/profile", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const { horizon, lossTolerance, objective, experience, liquidityNeed } = parsed.data;
-  const score = computeScore({ horizon, lossTolerance, objective, experience, liquidityNeed });
-  const classification = classify(score);
-
-  const values = {
-    userId: req.session.userId!,
-    horizon,
+  const { lossTolerance, objective, experience, liquidityNeed, horizonYears, emergencyFund, portfolioShare, incomeStability } = parsed.data;
+  const assessment = assessInvestorProfile({
     lossTolerance,
     objective,
     experience,
     liquidityNeed,
-    score: String(score),
-    classification,
+    horizonYears,
+    emergencyFund,
+    portfolioShare,
+    incomeStability,
+  });
+
+  const values = {
+    userId: req.session.userId!,
+    horizon: horizonBucketFromYears(horizonYears), // derivado, mantém a coluna legada coerente
+    lossTolerance,
+    objective,
+    experience,
+    liquidityNeed,
+    horizonYears,
+    emergencyFund,
+    portfolioShare,
+    incomeStability,
+    score: String(assessment.score),
+    capacityScore: String(assessment.capacityScore),
+    toleranceScore: String(assessment.toleranceScore),
+    classification: assessment.classification,
   };
 
   const [existing] = await db.select().from(investorProfilesTable).where(eq(investorProfilesTable.userId, req.session.userId!));
@@ -86,7 +138,7 @@ router.put("/profile", requireAuth, async (req, res): Promise<void> => {
     ? await db.update(investorProfilesTable).set(values).where(eq(investorProfilesTable.userId, req.session.userId!)).returning()
     : await db.insert(investorProfilesTable).values(values).returning();
 
-  res.json(serialize(profile));
+  res.json(await serialize(profile));
 });
 
 export default router;

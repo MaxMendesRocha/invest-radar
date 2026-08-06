@@ -286,15 +286,39 @@ export const GetInvestorProfileResponse = zod.object({
   "liquidityNeed": zod.enum(['sim', 'nao']),
   "score": zod.number(),
   "classification": zod.enum(['Conservador', 'Moderado', 'Arrojado']),
+  "horizonYears": zod.number().nullish(),
+  "emergencyFund": zod.string().nullish(),
+  "portfolioShare": zod.string().nullish(),
+  "incomeStability": zod.string().nullish(),
+  "capacityScore": zod.number().nullish(),
+  "toleranceScore": zod.number().nullish(),
+  "limitedBy": zod.enum(['capacidade', 'tolerancia', 'equilibrado']).optional(),
+  "capacityComplete": zod.boolean().optional().describe('false quando o perfil foi salvo antes das perguntas de capacidade existirem'),
+  "constraints": zod.array(zod.string()).optional(),
+  "revealedClassification": zod.union([zod.literal('Conservador'),zod.literal('Moderado'),zod.literal('Arrojado'),zod.literal(null)]).nullish(),
+  "revealedVariableIncomePercent": zod.number().nullish(),
+  "revealedLargestPositionPercent": zod.number().nullish(),
+  "revealedLargestPositionTicker": zod.string().nullish(),
+  "revealedWeightedBeta": zod.number().nullish(),
+  "revealedBetaCoveragePercent": zod.number().nullish(),
+  "divergenceMessage": zod.string().nullish(),
   "updatedAt": zod.coerce.date()
-})
+}).describe('classification é a MENOR entre capacityScore e toleranceScore, com travas aplicadas (ver constraints). Os campos revealed\* descrevem o risco que a carteira real assume, independentemente do que foi declarado.')
 
 
 /**
  * @summary Create or update the current user's investor risk profile
  */
+export const updateInvestorProfileBodyHorizonYearsMin = 0;
+export const updateInvestorProfileBodyHorizonYearsMax = 60;
+
+
+
 export const UpdateInvestorProfileBody = zod.object({
-  "horizon": zod.enum(['curto', 'medio', 'longo']),
+  "horizonYears": zod.number().min(updateInvestorProfileBodyHorizonYearsMin).max(updateInvestorProfileBodyHorizonYearsMax).describe('Horizonte em anos. Substitui o antigo horizon (curto\/medio\/longo), que passa a ser derivado deste.'),
+  "emergencyFund": zod.enum(['sim', 'nao']).describe('Reserva de emergência cobrindo ao menos 6 meses de despesas'),
+  "portfolioShare": zod.enum(['menos_25', 'de_25_50', 'de_50_75', 'mais_75']).describe('Fatia do patrimônio total que está nesta carteira'),
+  "incomeStability": zod.enum(['estavel', 'variavel', 'instavel']),
   "lossTolerance": zod.enum(['baixa', 'media', 'alta']),
   "objective": zod.enum(['preservar', 'renda', 'crescimento']),
   "experience": zod.enum(['iniciante', 'intermediario', 'avancado']),
@@ -311,8 +335,24 @@ export const UpdateInvestorProfileResponse = zod.object({
   "liquidityNeed": zod.enum(['sim', 'nao']),
   "score": zod.number(),
   "classification": zod.enum(['Conservador', 'Moderado', 'Arrojado']),
+  "horizonYears": zod.number().nullish(),
+  "emergencyFund": zod.string().nullish(),
+  "portfolioShare": zod.string().nullish(),
+  "incomeStability": zod.string().nullish(),
+  "capacityScore": zod.number().nullish(),
+  "toleranceScore": zod.number().nullish(),
+  "limitedBy": zod.enum(['capacidade', 'tolerancia', 'equilibrado']).optional(),
+  "capacityComplete": zod.boolean().optional().describe('false quando o perfil foi salvo antes das perguntas de capacidade existirem'),
+  "constraints": zod.array(zod.string()).optional(),
+  "revealedClassification": zod.union([zod.literal('Conservador'),zod.literal('Moderado'),zod.literal('Arrojado'),zod.literal(null)]).nullish(),
+  "revealedVariableIncomePercent": zod.number().nullish(),
+  "revealedLargestPositionPercent": zod.number().nullish(),
+  "revealedLargestPositionTicker": zod.string().nullish(),
+  "revealedWeightedBeta": zod.number().nullish(),
+  "revealedBetaCoveragePercent": zod.number().nullish(),
+  "divergenceMessage": zod.string().nullish(),
   "updatedAt": zod.coerce.date()
-})
+}).describe('classification é a MENOR entre capacityScore e toleranceScore, com travas aplicadas (ver constraints). Os campos revealed\* descrevem o risco que a carteira real assume, independentemente do que foi declarado.')
 
 
 /**
