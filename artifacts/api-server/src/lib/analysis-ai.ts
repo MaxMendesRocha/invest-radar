@@ -5,7 +5,7 @@ import type { TaxEstimate } from "./tax-engine";
 import type { DividendTrend } from "./market-data";
 import { describeTechnicalIndicators, type TechnicalIndicators } from "./technical-engine";
 import { describeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "./risk-metrics-engine";
-import { describeDuPontBreakdown, type DuPontBreakdown } from "./analysis-engine";
+import { describeDuPontBreakdown, DEFAULT_CONCENTRATION_LIMITS, type ConcentrationLimits, type DuPontBreakdown } from "./analysis-engine";
 import { describeFinancialHealth, type FinancialHealth } from "./financial-health-engine";
 import { describeFiiProfile } from "./fii-engine";
 import type { FiiProfile } from "./market-data";
@@ -23,6 +23,7 @@ export interface AssetRecommendationInput {
   macro: MacroContext;
   tax: TaxEstimate | null; // null pra renda_fixa/fundos (regras de IR diferentes, fora do escopo daqui)
   positionPercent: number; // % do patrimônio total da carteira que esse ativo representa
+  concentrationLimits?: ConcentrationLimits; // varia por perfil de investidor; sem perfil definido usa a régua do Moderado
   dividendTrend: DividendTrend | null; // null quando não há histórico real dos dois períodos (ver computeDividendTrend em market-data.ts) — nunca estimado
   technical: TechnicalIndicators | null; // null quando não há candles suficientes (technical-engine.ts)
   riskAdjusted: RiskAdjustedMetrics | null; // null quando não há candles suficientes (risk-metrics-engine.ts)
@@ -44,14 +45,10 @@ function getClient(): Anthropic | null {
 
 const recommendationCache = new Map<string, { text: string; fetchedAt: number }>();
 
-// Mesmos limiares de computeConcentrationAlerts (routes/analysis.ts) — mantém a
-// leitura qualitativa da IA alinhada com o alerta determinístico que a carteira já
-// dispara, em vez de inventar um segundo critério de concentração.
-const CONCENTRATION_HIGH = 25;
-const CONCENTRATION_CRITICAL = 40;
+
 
 function buildPrompt(input: AssetRecommendationInput): string {
-  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, sectorComparison } = input;
+  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, sectorComparison } = input;
 
   const taxLine = tax
     ? tax.exempt
@@ -59,11 +56,12 @@ function buildPrompt(input: AssetRecommendationInput): string {
       : `Custo de IR estimado se vender agora: R$${tax.taxOwed.toFixed(2)} (alíquota ${(tax.taxRate * 100).toFixed(0)}%, sobre ganho bruto de R$${tax.grossGain.toFixed(2)}), ganho líquido depois do IR: R$${tax.netGain.toFixed(2)}. Isso é uma ESTIMATIVA ISOLADA (assume ser a única venda de renda variável do usuário no mês — não sabemos se ele já usou a faixa de isenção de ações em outra venda, nem se tem prejuízo acumulado pra compensar).`
     : "Custo de IR: não calculado para esta categoria de ativo.";
 
+  const limits = concentrationLimits ?? DEFAULT_CONCENTRATION_LIMITS;
   const concentrationLine =
-    positionPercent >= CONCENTRATION_CRITICAL
-      ? `Este ativo representa ${positionPercent.toFixed(1)}% do patrimônio total da carteira — concentração CRÍTICA (acima de ${CONCENTRATION_CRITICAL}%). Mesmo com fundamentos bons, risco de posição único desse tamanho merece menção explícita.`
-      : positionPercent >= CONCENTRATION_HIGH
-        ? `Este ativo representa ${positionPercent.toFixed(1)}% do patrimônio total da carteira — concentração ALTA (acima de ${CONCENTRATION_HIGH}%, faixa que profissionais costumam evitar fora de posições de altíssima convicção).`
+    positionPercent >= limits.critical
+      ? `Este ativo representa ${positionPercent.toFixed(1)}% do patrimônio total da carteira — concentração CRÍTICA para o perfil do investidor (acima de ${limits.critical}%). Mesmo com fundamentos bons, risco de posição único desse tamanho merece menção explícita.`
+      : positionPercent >= limits.high
+        ? `Este ativo representa ${positionPercent.toFixed(1)}% do patrimônio total da carteira — concentração ALTA para o perfil do investidor (acima de ${limits.high}%, faixa que profissionais costumam evitar fora de posições de altíssima convicção).`
         : `Este ativo representa ${positionPercent.toFixed(1)}% do patrimônio total da carteira — dentro de uma faixa de concentração razoável.`;
 
   const dividendTrendLine = dividendTrend
@@ -97,7 +95,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     (fiiProfileLine ? `Perfil do FII: ${fiiProfileLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n\n` +
     `Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos ` +
-    `justificarem (status REAVALIAR ou POSSIVEL_SAIDA, ou risco relevante nos pontos de atenção), pode ` +
+    `justificarem (status VENDER, ou risco relevante nos pontos de atenção), pode ` +
     `dizer explicitamente que faz sentido considerar reduzir ou encerrar a posição — não fique só em ` +
     `"observe" quando o caso pedir mais que isso. Quando os pontos de atenção envolverem piora de ROE, ` +
     `dívida subindo ou desaceleração de crescimento, pode enquadrar isso como enfraquecimento da vantagem ` +

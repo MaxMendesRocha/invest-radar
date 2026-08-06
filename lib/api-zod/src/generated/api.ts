@@ -286,15 +286,39 @@ export const GetInvestorProfileResponse = zod.object({
   "liquidityNeed": zod.enum(['sim', 'nao']),
   "score": zod.number(),
   "classification": zod.enum(['Conservador', 'Moderado', 'Arrojado']),
+  "horizonYears": zod.number().nullish(),
+  "emergencyFund": zod.string().nullish(),
+  "portfolioShare": zod.string().nullish(),
+  "incomeStability": zod.string().nullish(),
+  "capacityScore": zod.number().nullish(),
+  "toleranceScore": zod.number().nullish(),
+  "limitedBy": zod.enum(['capacidade', 'tolerancia', 'equilibrado']).optional(),
+  "capacityComplete": zod.boolean().optional().describe('false quando o perfil foi salvo antes das perguntas de capacidade existirem'),
+  "constraints": zod.array(zod.string()).optional(),
+  "revealedClassification": zod.union([zod.literal('Conservador'),zod.literal('Moderado'),zod.literal('Arrojado'),zod.literal(null)]).nullish(),
+  "revealedVariableIncomePercent": zod.number().nullish(),
+  "revealedLargestPositionPercent": zod.number().nullish(),
+  "revealedLargestPositionTicker": zod.string().nullish(),
+  "revealedWeightedBeta": zod.number().nullish(),
+  "revealedBetaCoveragePercent": zod.number().nullish(),
+  "divergenceMessage": zod.string().nullish(),
   "updatedAt": zod.coerce.date()
-})
+}).describe('classification é a MENOR entre capacityScore e toleranceScore, com travas aplicadas (ver constraints). Os campos revealed\* descrevem o risco que a carteira real assume, independentemente do que foi declarado.')
 
 
 /**
  * @summary Create or update the current user's investor risk profile
  */
+export const updateInvestorProfileBodyHorizonYearsMin = 0;
+export const updateInvestorProfileBodyHorizonYearsMax = 60;
+
+
+
 export const UpdateInvestorProfileBody = zod.object({
-  "horizon": zod.enum(['curto', 'medio', 'longo']),
+  "horizonYears": zod.number().min(updateInvestorProfileBodyHorizonYearsMin).max(updateInvestorProfileBodyHorizonYearsMax).describe('Horizonte em anos. Substitui o antigo horizon (curto\/medio\/longo), que passa a ser derivado deste.'),
+  "emergencyFund": zod.enum(['sim', 'nao']).describe('Reserva de emergência cobrindo ao menos 6 meses de despesas'),
+  "portfolioShare": zod.enum(['menos_25', 'de_25_50', 'de_50_75', 'mais_75']).describe('Fatia do patrimônio total que está nesta carteira'),
+  "incomeStability": zod.enum(['estavel', 'variavel', 'instavel']),
   "lossTolerance": zod.enum(['baixa', 'media', 'alta']),
   "objective": zod.enum(['preservar', 'renda', 'crescimento']),
   "experience": zod.enum(['iniciante', 'intermediario', 'avancado']),
@@ -311,8 +335,24 @@ export const UpdateInvestorProfileResponse = zod.object({
   "liquidityNeed": zod.enum(['sim', 'nao']),
   "score": zod.number(),
   "classification": zod.enum(['Conservador', 'Moderado', 'Arrojado']),
+  "horizonYears": zod.number().nullish(),
+  "emergencyFund": zod.string().nullish(),
+  "portfolioShare": zod.string().nullish(),
+  "incomeStability": zod.string().nullish(),
+  "capacityScore": zod.number().nullish(),
+  "toleranceScore": zod.number().nullish(),
+  "limitedBy": zod.enum(['capacidade', 'tolerancia', 'equilibrado']).optional(),
+  "capacityComplete": zod.boolean().optional().describe('false quando o perfil foi salvo antes das perguntas de capacidade existirem'),
+  "constraints": zod.array(zod.string()).optional(),
+  "revealedClassification": zod.union([zod.literal('Conservador'),zod.literal('Moderado'),zod.literal('Arrojado'),zod.literal(null)]).nullish(),
+  "revealedVariableIncomePercent": zod.number().nullish(),
+  "revealedLargestPositionPercent": zod.number().nullish(),
+  "revealedLargestPositionTicker": zod.string().nullish(),
+  "revealedWeightedBeta": zod.number().nullish(),
+  "revealedBetaCoveragePercent": zod.number().nullish(),
+  "divergenceMessage": zod.string().nullish(),
   "updatedAt": zod.coerce.date()
-})
+}).describe('classification é a MENOR entre capacityScore e toleranceScore, com travas aplicadas (ver constraints). Os campos revealed\* descrevem o risco que a carteira real assume, independentemente do que foi declarado.')
 
 
 /**
@@ -564,7 +604,7 @@ export const DeleteTransactionResponse = zod.void()
 export const ListAssetAnalysesResponseItem = zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
-  "status": zod.enum(['MANTER', 'ATENCAO', 'REAVALIAR', 'POSSIVEL_SAIDA']),
+  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
@@ -613,7 +653,7 @@ export const GetAssetAnalysisParams = zod.object({
 export const GetAssetAnalysisResponse = zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
-  "status": zod.enum(['MANTER', 'ATENCAO', 'REAVALIAR', 'POSSIVEL_SAIDA']),
+  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
@@ -697,7 +737,7 @@ export const GetAssetOpinionResponse = zod.object({
   "newsItems": zod.array(zod.string()),
   "opinion": zod.string(),
   "updatedAt": zod.coerce.date()
-}).describe('Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (MANTER\/REAVALIAR\/etc).')
+}).describe('Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (COMPRAR\/MANTER\/VENDER).')
 
 
 /**
@@ -716,7 +756,7 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "analyses": zod.array(zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
-  "status": zod.enum(['MANTER', 'ATENCAO', 'REAVALIAR', 'POSSIVEL_SAIDA']),
+  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
@@ -790,6 +830,7 @@ export const GetMacroSnapshotResponse = zod.object({
   "selicTrend": zod.union([zod.literal('alta'),zod.literal('queda'),zod.literal('estavel'),zod.literal(null)]).nullable(),
   "ipca12m": zod.number().nullable(),
   "usdBrl": zod.number().nullable(),
+  "usdBrlChangePercent": zod.number().nullish().describe('Variação % do PTAX contra o fechamento anterior'),
   "igpm12m": zod.number().nullish().describe('IGP-M acumulado 12 meses (%), composto a partir da série mensal do BCB'),
   "realInterestRate": zod.number().nullish().describe('Juro real ex-post pela fórmula de Fisher, (1+Selic)\/(1+IPCA)-1, em %'),
   "ibovespa": zod.number().nullish(),

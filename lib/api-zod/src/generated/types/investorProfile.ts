@@ -8,10 +8,15 @@
 import type { InvestorProfileClassification } from './investorProfileClassification';
 import type { InvestorProfileExperience } from './investorProfileExperience';
 import type { InvestorProfileHorizon } from './investorProfileHorizon';
+import type { InvestorProfileLimitedBy } from './investorProfileLimitedBy';
 import type { InvestorProfileLiquidityNeed } from './investorProfileLiquidityNeed';
 import type { InvestorProfileLossTolerance } from './investorProfileLossTolerance';
 import type { InvestorProfileObjective } from './investorProfileObjective';
+import type { InvestorProfileRevealedClassification } from './investorProfileRevealedClassification';
 
+/**
+ * classification é a MENOR entre capacityScore e toleranceScore, com travas aplicadas (ver constraints). Os campos revealed* descrevem o risco que a carteira real assume, independentemente do que foi declarado.
+ */
 export interface InvestorProfile {
   id: number;
   userId: number;
@@ -22,5 +27,35 @@ export interface InvestorProfile {
   liquidityNeed: InvestorProfileLiquidityNeed;
   score: number;
   classification: InvestorProfileClassification;
+  /** @nullable */
+  horizonYears?: number | null;
+  /** @nullable */
+  emergencyFund?: string | null;
+  /** @nullable */
+  portfolioShare?: string | null;
+  /** @nullable */
+  incomeStability?: string | null;
+  /** @nullable */
+  capacityScore?: number | null;
+  /** @nullable */
+  toleranceScore?: number | null;
+  limitedBy?: InvestorProfileLimitedBy;
+  /** false quando o perfil foi salvo antes das perguntas de capacidade existirem */
+  capacityComplete?: boolean;
+  constraints?: string[];
+  /** @nullable */
+  revealedClassification?: InvestorProfileRevealedClassification;
+  /** @nullable */
+  revealedVariableIncomePercent?: number | null;
+  /** @nullable */
+  revealedLargestPositionPercent?: number | null;
+  /** @nullable */
+  revealedLargestPositionTicker?: string | null;
+  /** @nullable */
+  revealedWeightedBeta?: number | null;
+  /** @nullable */
+  revealedBetaCoveragePercent?: number | null;
+  /** @nullable */
+  divergenceMessage?: string | null;
   updatedAt: Date;
 }

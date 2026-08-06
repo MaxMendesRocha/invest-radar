@@ -6,7 +6,7 @@ export const analysesTable = pgTable("analyses", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
   ticker: text("ticker").notNull(),
-  status: text("status").notNull(), // MANTER, ATENCAO, REAVALIAR, POSSIVEL_SAIDA
+  status: text("status").notNull(), // COMPRAR, MANTER, VENDER (ver resolveAnalysisStatus)
   score: numeric("score", { precision: 5, scale: 2 }).notNull(),
   scoreClassification: text("score_classification").notNull(),
   positives: text("positives").notNull(), // JSON array
