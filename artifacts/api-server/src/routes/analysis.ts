@@ -32,6 +32,7 @@ import { computeTechnicalIndicators, type TechnicalIndicators } from "../lib/tec
 import { computeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "../lib/risk-metrics-engine";
 import { getSectorBenchmark, describeSectorComparison } from "../lib/sector-benchmarks";
 import { computeDividendValue, describeDividendValue } from "../lib/dividend-value-engine";
+import { benchmarkGroupFor } from "../lib/fii-engine";
 import { computeFinancialHealth } from "../lib/financial-health-engine";
 
 const router: IRouter = Router();
@@ -438,7 +439,9 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
   const duPont = fundamentals ? computeDuPontBreakdown(fundamentals) : null;
   const financialHealth = fundamentals ? computeFinancialHealth(fundamentals, dps12m) : null;
   const fiiProfile = (await getFiiProfiles([ticker])).get(ticker) ?? null;
-  const sectorBenchmark = await getSectorBenchmark(fundamentals?.sector ?? null);
+  const sectorBenchmark = await getSectorBenchmark(
+    fundamentals ? benchmarkGroupFor(fundamentals, fiiProfile ?? undefined) : null,
+  );
   const sectorComparison = fundamentals
     ? describeSectorComparison(fundamentals, sectorBenchmark)
     : "Comparação com o setor não disponível (fundamentos não encontrados para este ativo).";
@@ -614,7 +617,11 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       const financialHealth = assetFundamentals
         ? computeFinancialHealth(assetFundamentals, dps12mByTicker.get(analysis.ticker) ?? null)
         : null;
-      const sectorBenchmark = await getSectorBenchmark(assetFundamentals?.sector ?? null);
+      const sectorBenchmark = await getSectorBenchmark(
+        assetFundamentals
+          ? benchmarkGroupFor(assetFundamentals, fiiProfileByTicker.get(analysis.ticker) ?? undefined)
+          : null,
+      );
       const sectorComparison = assetFundamentals
         ? describeSectorComparison(assetFundamentals, sectorBenchmark)
         : "Comparação com o setor não disponível (fundamentos não encontrados para este ativo).";
