@@ -585,6 +585,18 @@ export interface Alert {
   createdAt: string;
 }
 
+/**
+ * Critério que ordenou a lista. premio_dividendo quando o perfil declara objetivo de renda; perfil_de_risco quando há perfil com outro objetivo; score quando não há perfil definido.
+ */
+export type OpportunityListOrderedBy = typeof OpportunityListOrderedBy[keyof typeof OpportunityListOrderedBy];
+
+
+export const OpportunityListOrderedBy = {
+  premio_dividendo: 'premio_dividendo',
+  perfil_de_risco: 'perfil_de_risco',
+  score: 'score',
+} as const;
+
 export type OpportunityRiskLevel = typeof OpportunityRiskLevel[keyof typeof OpportunityRiskLevel];
 
 
@@ -621,6 +633,21 @@ export interface Opportunity {
   reason: string;
   positives: string[];
   risks: string[];
+  /** @nullable */
+  sector?: string | null;
+  /**
+     * Diferença em p.p. entre o DY do ativo e a mediana do setor
+     * @nullable
+     */
+  dividendPremiumPP?: number | null;
+  /** @nullable */
+  sectorMedianYield?: number | null;
+  /** @nullable */
+  sectorSampleSize?: number | null;
+  /** DY acima do dobro da mediana setorial — faixa que costuma indicar amortização de cota, evento não recorrente ou preço em colapso */
+  implausibleYield?: boolean;
+  /** @nullable */
+  dividendSustainability?: string | null;
   horizon: string;
   /** @nullable */
   currentPrice?: number | null;
@@ -629,6 +656,12 @@ export interface Opportunity {
      * @nullable
      */
   dividendFrequency?: OpportunityDividendFrequency;
+}
+
+export interface OpportunityList {
+  /** Critério que ordenou a lista. premio_dividendo quando o perfil declara objetivo de renda; perfil_de_risco quando há perfil com outro objetivo; score quando não há perfil definido. */
+  orderedBy: OpportunityListOrderedBy;
+  items: Opportunity[];
 }
 
 export interface OpportunitiesNextRefresh {

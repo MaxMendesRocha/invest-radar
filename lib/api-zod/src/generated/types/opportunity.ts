@@ -20,6 +20,21 @@ export interface Opportunity {
   reason: string;
   positives: string[];
   risks: string[];
+  /** @nullable */
+  sector?: string | null;
+  /**
+     * Diferença em p.p. entre o DY do ativo e a mediana do setor
+     * @nullable
+     */
+  dividendPremiumPP?: number | null;
+  /** @nullable */
+  sectorMedianYield?: number | null;
+  /** @nullable */
+  sectorSampleSize?: number | null;
+  /** DY acima do dobro da mediana setorial — faixa que costuma indicar amortização de cota, evento não recorrente ou preço em colapso */
+  implausibleYield?: boolean;
+  /** @nullable */
+  dividendSustainability?: string | null;
   horizon: string;
   /** @nullable */
   currentPrice?: number | null;

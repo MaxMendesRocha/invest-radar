@@ -61,6 +61,8 @@ export * from './monthlyCategoryTaxCategory';
 export * from './opportunitiesNextRefresh';
 export * from './opportunity';
 export * from './opportunityDividendFrequency';
+export * from './opportunityList';
+export * from './opportunityListOrderedBy';
 export * from './opportunityRiskLevel';
 export * from './portfolioDistribution';
 export * from './portfolioDividendsProjection';
