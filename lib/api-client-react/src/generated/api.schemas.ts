@@ -659,6 +659,8 @@ export interface Opportunity {
 }
 
 export interface OpportunityList {
+  /** true quando o perfil pede ordenação por prêmio de dividendo mas a lista ainda não tem referência setorial — acontece com linhas gravadas antes da varredura que passou a persistir o setor. Some na próxima atualização. */
+  dividendPremiumPending?: boolean;
   /** Critério que ordenou a lista. premio_dividendo quando o perfil declara objetivo de renda; perfil_de_risco quando há perfil com outro objetivo; score quando não há perfil definido. */
   orderedBy: OpportunityListOrderedBy;
   items: Opportunity[];
