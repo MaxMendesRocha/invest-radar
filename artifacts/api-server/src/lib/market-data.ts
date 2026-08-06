@@ -493,6 +493,9 @@ interface BrapiFiiIndicator {
   dividendYield12m?: number | null;
 }
 
+// Empírico: 45 tickers numa chamada só falha, 10 passa.
+const FII_PROFILE_BATCH_SIZE = 15;
+
 const FII_SEGMENTS = new Set<FiiSegment>(["tijolo", "papel", "hibrido", "fof"]);
 const FII_PROFILE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // indicadores de FII são atualizados 1x/dia após o fechamento (doc da brapi)
 const fiiProfileCache = new Map<string, { profile: FiiProfile | null; fetchedAt: number }>();
@@ -536,37 +539,48 @@ export async function getFiiProfiles(tickers: string[]): Promise<Map<string, Fii
 
   const token = process.env.BRAPI_TOKEN;
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-  const url = `https://brapi.dev/api/v2/fii/indicators?symbols=${stale.map(encodeURIComponent).join(",")}`;
 
-  try {
-    const response = await fetch(url, { headers });
-    // NOT_FOUND é o caso normal de "não é FII", não uma falha — por isso não logamos
-    // warning aqui, ao contrário dos outros fetchers.
-    const body = (await response.json()) as { fiis?: BrapiFiiIndicator[]; error?: boolean };
-    const found = new Set<string>();
+  // Em lotes, não numa URL só. Pedir os 45 FIIs do universo de uma vez derruba a
+  // chamada inteira; com 10 funciona. Como a falha é silenciosa (cai no catch e
+  // devolve o mapa vazio), o efeito era o agrupamento por segmento simplesmente não
+  // acontecer na varredura, sem nada quebrar de forma visível.
+  for (let start = 0; start < stale.length; start += FII_PROFILE_BATCH_SIZE) {
+    const batch = stale.slice(start, start + FII_PROFILE_BATCH_SIZE);
+    const url = `https://brapi.dev/api/v2/fii/indicators?symbols=${batch.map(encodeURIComponent).join(",")}`;
 
-    for (const item of body.fiis ?? []) {
-      const ticker = item.symbol.toUpperCase();
-      const segment = item.segmentType?.toLowerCase();
-      const profile: FiiProfile = {
-        segmentType: segment && FII_SEGMENTS.has(segment as FiiSegment) ? (segment as FiiSegment) : null,
-        segmentoAtuacao: item.segmentoAtuacao ?? null,
-        tipoGestao: item.tipoGestao ?? null,
-        priceToNav: item.priceToNav ?? null,
-        dividendYield12m: item.dividendYield12m ?? null,
-      };
-      fiiProfileCache.set(ticker, { profile, fetchedAt: now });
-      fresh.set(ticker, profile);
-      found.add(ticker);
+    try {
+      const response = await fetch(url, { headers });
+      // NOT_FOUND é o caso normal de "não é FII", não uma falha — por isso não logamos
+      // warning aqui, ao contrário dos outros fetchers.
+      const body = (await response.json()) as { fiis?: BrapiFiiIndicator[]; error?: boolean };
+      const found = new Set<string>();
+
+      for (const item of body.fiis ?? []) {
+        const ticker = item.symbol.toUpperCase();
+        const segment = item.segmentType?.toLowerCase();
+        const profile: FiiProfile = {
+          segmentType: segment && FII_SEGMENTS.has(segment as FiiSegment) ? (segment as FiiSegment) : null,
+          segmentoAtuacao: item.segmentoAtuacao ?? null,
+          tipoGestao: item.tipoGestao ?? null,
+          priceToNav: item.priceToNav ?? null,
+          dividendYield12m: item.dividendYield12m ?? null,
+        };
+        fiiProfileCache.set(ticker, { profile, fetchedAt: now });
+        fresh.set(ticker, profile);
+        found.add(ticker);
+      }
+
+      // Quem foi pedido e não voltou (não é FII, ou o plano não cobre) entra no cache
+      // como ausente pra não repetir a chamada a cada request.
+      for (const ticker of batch) {
+        if (!found.has(ticker)) fiiProfileCache.set(ticker, { profile: null, fetchedAt: now });
+      }
+    } catch (err) {
+      // Só este lote se perde; os demais seguem. Não cacheia como ausente aqui —
+      // falha de rede não é "não é FII", e marcar assim esconderia o segmento por
+      // 24h inteiras.
+      logger.warn({ err, tickers: batch }, "brapi.dev FII indicators batch errored");
     }
-
-    // Quem foi pedido e não voltou (não é FII, ou o plano não cobre) entra no cache
-    // como ausente pra não repetir a chamada a cada request.
-    for (const ticker of stale) {
-      if (!found.has(ticker)) fiiProfileCache.set(ticker, { profile: null, fetchedAt: now });
-    }
-  } catch (err) {
-    logger.warn({ err, tickers: stale }, "brapi.dev FII indicators request errored");
   }
 
   return fresh;

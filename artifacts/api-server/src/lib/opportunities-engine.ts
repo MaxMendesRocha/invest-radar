@@ -1,10 +1,11 @@
 import { db, opportunitiesTable, sectorBenchmarksTable, type InsertOpportunity, type InsertSectorBenchmark } from "@workspace/db";
-import { getFundamentals, getDividendEvents, sumLast12Months, classifyDividendFrequency, type Fundamentals } from "./market-data";
+import { getFundamentals, getDividendEvents, getFiiProfiles, sumLast12Months, classifyDividendFrequency, type Fundamentals, type FiiProfile } from "./market-data";
 import { analyzeFundamentals, evalVolatility } from "./analysis-engine";
 import { computeFinancialHealth } from "./financial-health-engine";
 import { classifySustainabilityOf } from "./dividend-value-engine";
 import { fetchTickerUniverse, type UniverseEntry } from "./ticker-universe";
 import { describeOpportunity } from "./opportunities-ai";
+import { benchmarkGroupFor } from "./fii-engine";
 import { logger } from "./logger";
 import type { JobDefinition } from "./scheduler";
 
@@ -40,10 +41,24 @@ function computePotentialReturn(score: number, f: Fundamentals): number {
 // nunca publica uma média de amostra pequena demais.
 const MIN_SECTOR_SAMPLE = 3;
 
-function average(values: (number | null)[]): number | null {
-  const real = values.filter((v): v is number => v != null);
+/**
+ * MEDIANA, não média. O nome das colunas em sector_benchmarks continua `avg_*` por
+ * compatibilidade, mas o que elas guardam é a mediana — trocar isso exigiria uma
+ * migração só para renomear.
+ *
+ * A diferença é material com amostra pequena: o MFII11, com DY declarado de 38% num
+ * grupo de 4 fundos híbridos, puxava a MÉDIA do grupo para 21,75% e assim deixava de
+ * parecer atípico contra uma referência que ele mesmo havia distorcido. A mediana
+ * não se move com um extremo.
+ *
+ * Também alinha o número ao texto: a interface e os prompts sempre disseram
+ * "mediana do setor".
+ */
+function median(values: (number | null)[]): number | null {
+  const real = values.filter((v): v is number => v != null).sort((a, b) => a - b);
   if (real.length === 0) return null;
-  return real.reduce((sum, v) => sum + v, 0) / real.length;
+  const mid = Math.floor(real.length / 2);
+  return real.length % 2 === 0 ? (real[mid - 1] + real[mid]) / 2 : real[mid];
 }
 
 // Médias setoriais reais a partir de TODO o universo com fundamentos disponíveis
@@ -51,22 +66,26 @@ function average(values: (number | null)[]): number | null {
 // calcular a média enviesaria pra cima, fazendo qualquer ativo parecer caro por
 // comparação. Setor vem de Fundamentals.sector (summaryProfile real da brapi.dev),
 // mesma fonte já usada em sectorFor().
-function computeSectorBenchmarks(fundamentalsByTicker: Map<string, Fundamentals>): InsertSectorBenchmark[] {
+function computeSectorBenchmarks(
+  fundamentalsByTicker: Map<string, Fundamentals>,
+  fiiProfileByTicker: Map<string, FiiProfile>,
+): InsertSectorBenchmark[] {
   const bySector = new Map<string, Fundamentals[]>();
-  for (const f of fundamentalsByTicker.values()) {
-    if (!f.sector) continue;
-    if (!bySector.has(f.sector)) bySector.set(f.sector, []);
-    bySector.get(f.sector)!.push(f);
+  for (const [ticker, f] of fundamentalsByTicker) {
+    const group = benchmarkGroupFor(f, fiiProfileByTicker.get(ticker));
+    if (!group) continue;
+    if (!bySector.has(group)) bySector.set(group, []);
+    bySector.get(group)!.push(f);
   }
 
   const rows: InsertSectorBenchmark[] = [];
   for (const [sector, list] of bySector) {
     if (list.length < MIN_SECTOR_SAMPLE) continue;
-    const avgPriceEarnings = average(list.map((f) => f.priceEarnings));
-    const avgPriceToBook = average(list.map((f) => f.priceToBook));
-    const avgReturnOnEquity = average(list.map((f) => f.returnOnEquity));
-    const avgDividendYield = average(list.map((f) => f.dividendYield));
-    const avgProfitMargins = average(list.map((f) => f.profitMargins));
+    const avgPriceEarnings = median(list.map((f) => f.priceEarnings));
+    const avgPriceToBook = median(list.map((f) => f.priceToBook));
+    const avgReturnOnEquity = median(list.map((f) => f.returnOnEquity));
+    const avgDividendYield = median(list.map((f) => f.dividendYield));
+    const avgProfitMargins = median(list.map((f) => f.profitMargins));
     rows.push({
       sector,
       avgPriceEarnings: avgPriceEarnings != null ? String(avgPriceEarnings) : null,
@@ -102,9 +121,12 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
   // dividendEvents em paralelo com fundamentals — o payout ratio avaliado dentro de
   // analyzeFundamentals precisa do DPS real dos últimos 12 meses, mesma fonte já usada
   // pra dividendTrend no Parecer de Ativo e em POST /analysis/generate.
-  const [fundamentalsByTicker, dividendEventsByTicker] = await Promise.all([
+  const [fundamentalsByTicker, dividendEventsByTicker, fiiProfileByTicker] = await Promise.all([
     getFundamentals(universe.map((u) => u.ticker)),
     getDividendEvents(universe.map((u) => ({ ticker: u.ticker, category: u.category }))),
+    // Em lote (?symbols=A,B,C), uma chamada só — o segmento é o que permite comparar
+    // FII contra os pares certos em vez de contra todos os FIIs juntos.
+    getFiiProfiles(universe.filter((u) => u.category === "fiis").map((u) => u.ticker)),
   ]);
   const now = Date.now();
 
@@ -132,7 +154,7 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
         potentialReturn: String(computePotentialReturn(analysis.score, fundamentals)),
         dividendYield: String((fundamentals.dividendYield ?? 0) * 100),
         riskLevel: riskLevelFor(fundamentals),
-        sector: fundamentals.sector,
+        sector: benchmarkGroupFor(fundamentals, fiiProfileByTicker.get(entry.ticker)),
         dividendFrequency: classifyDividendFrequency(dividendEventsByTicker.get(entry.ticker) ?? [], now)?.label ?? null,
         dividendSustainability: classifySustainabilityOf(
           computeFinancialHealth(fundamentals, sumLast12Months(dividendEventsByTicker.get(entry.ticker) ?? [], now)),
@@ -149,7 +171,7 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
   // (fundamentalsByTicker), não só dos candidatos aprovados. Usado por
   // analysis-ai.ts/opinion-ai.ts pra comparação com pares (routes/analysis.ts busca
   // via getSectorBenchmark, leitura barata, sem refazer o scan a cada Parecer de Ativo).
-  const sectorBenchmarkRows = computeSectorBenchmarks(fundamentalsByTicker);
+  const sectorBenchmarkRows = computeSectorBenchmarks(fundamentalsByTicker, fiiProfileByTicker);
 
   // Transação — diferente do delete+insert simples de scripts/src/seed-opportunities.ts,
   // que roda manual e offline. Este job roda em produção com usuários lendo

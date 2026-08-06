@@ -1,4 +1,4 @@
-import type { FiiProfile, FiiSegment } from "./market-data";
+import type { FiiProfile, FiiSegment, Fundamentals } from "./market-data";
 
 // O que cada segmento implica de risco — é o contexto que falta pra IA ler o dividend
 // yield de um FII corretamente. Um DY de 12% num fundo de papel e num de tijolo
@@ -51,4 +51,31 @@ export function describeFiiProfile(profile: FiiProfile | null): string {
 
   if (parts.length === 0) return "";
   return parts.join("; ") + ".";
+}
+
+const FII_SEGMENT_LABEL: Record<FiiSegment, string> = {
+  papel: "FII de Papel",
+  tijolo: "FII de Tijolo",
+  hibrido: "FII Híbrido",
+  fof: "FII de Fundos",
+};
+
+/**
+ * Grupo contra o qual o ativo é comparado. Para ações e ETFs é o setor da brapi;
+ * para FII é o SEGMENTO, não o guarda-chuva "Fundos Imobiliários".
+ *
+ * A distinção importa porque o segmento define o nível estrutural de yield. FII de
+ * papel carrega risco de crédito e rende mais que FII de tijolo por natureza, não
+ * por estar barato. Medido contra a mediana de todos os FIIs juntos, um fundo de
+ * papel aparece com prêmio alto só por ser de papel — foi o que colocou o HCTR11,
+ * um FII de crédito de alto yield, no topo da lista com "8,1 p.p. acima da mediana
+ * do setor". Contra os pares de papel o prêmio dele é o que de fato sobra.
+ *
+ * Sem perfil de FII disponível cai no setor genérico: comparação mais grosseira,
+ * mas ainda real — melhor que excluir o ativo da comparação.
+ */
+export function benchmarkGroupFor(f: Fundamentals, profile: FiiProfile | undefined): string | null {
+  const segment = profile?.segmentType;
+  if (segment) return FII_SEGMENT_LABEL[segment];
+  return f.sector;
 }
