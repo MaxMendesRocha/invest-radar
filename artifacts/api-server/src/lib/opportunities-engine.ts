@@ -144,7 +144,13 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
   const rows: InsertOpportunity[] = await Promise.all(
     candidates.map(async ({ entry, fundamentals, analysis }) => {
       const name = fundamentals.name ?? entry.fallbackName;
-      const ai = await describeOpportunity(entry, name, fundamentals, analysis);
+      const ai = await describeOpportunity(
+        entry,
+        name,
+        fundamentals,
+        analysis,
+        fiiProfileByTicker.get(entry.ticker)?.segmentType ?? null,
+      );
 
       return {
         ticker: entry.ticker,

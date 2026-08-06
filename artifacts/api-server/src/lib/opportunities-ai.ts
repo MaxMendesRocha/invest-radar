@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "./logger";
-import type { Fundamentals } from "./market-data";
+import type { Fundamentals, FiiSegment } from "./market-data";
 import type { AnalysisResult } from "./analysis-engine";
 import type { UniverseEntry } from "./ticker-universe";
 
@@ -23,21 +23,50 @@ function getClient(): Anthropic | null {
   return anthropicClient;
 }
 
-function buildPrompt(entry: UniverseEntry, name: string, f: Fundamentals, analysis: AnalysisResult): string {
+// Números em pt-BR ANTES de entrar no prompt. O modelo copia literalmente o formato
+// que recebe, então `toFixed()` fazia o card exibir "P/VP 0.62" e "21.0%" com ponto,
+// no meio de uma interface que usa vírgula em todo o resto.
+const N2 = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const N1 = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+const num2 = (v: number | null | undefined) => (v != null ? N2.format(v) : "?");
+const pct1 = (v: number | null | undefined) => (v != null ? N1.format(v * 100) : "?");
+
+/**
+ * Como ler desconto sobre valor patrimonial, por segmento de FII. Sem isso o modelo
+ * trata qualquer P/VP abaixo de 1 como "potencial de recuperação de preço" — foi o
+ * que escreveu sobre um FoF negociando 38% abaixo do patrimônio, quando nesse caso o
+ * desconto é justamente o sinal a questionar.
+ */
+const NAV_DISCOUNT_CONTEXT: Record<FiiSegment, string> = {
+  fof: "Este é um FII de fundos: o patrimônio dele são cotas de outros FIIs, líquidas e marcadas a mercado diariamente. Desconto grande sobre o valor patrimonial aqui NÃO é defasagem de laudo — é o mercado discordando da carteira ou precificando a segunda camada de taxa. Trate desconto profundo como pergunta, não como oportunidade.",
+  papel: "Este é um FII de papel (CRI/LCI): o patrimônio é uma carteira de crédito. Desconto sobre valor patrimonial costuma refletir risco de inadimplência dos devedores que o laudo ainda não reconheceu, e yield alto costuma vir de CDI/IPCA elevados — que encolhem quando o juro cai.",
+  tijolo: "Este é um FII de tijolo: o valor patrimonial vem de laudo de avaliação dos imóveis, que é periódico e pode estar defasado em relação ao mercado. Aqui desconto sobre patrimônio tem mais chance de ser oportunidade real, mas confira vacância e qualidade dos contratos antes de concluir.",
+  hibrido: "Este é um FII híbrido: combina carteira de crédito e imóveis, então o desconto sobre patrimônio pode vir de qualquer um dos dois lados e não permite uma leitura única.",
+};
+
+function buildPrompt(
+  entry: UniverseEntry,
+  name: string,
+  f: Fundamentals,
+  analysis: AnalysisResult,
+  fiiSegment: FiiSegment | null,
+): string {
   return (
     `Você é um analista que escreve resumos curtos e objetivos de oportunidades de investimento em ` +
     `ações/FIIs/ETFs/BDRs da B3, para um app de carteira pessoal. NUNCA invente números — use somente ` +
-    `os fornecidos abaixo.\n\n` +
+    `os fornecidos abaixo, e escreva os números exatamente no formato em que aparecem (decimal com vírgula).\n\n` +
     `Ticker: ${entry.ticker} — ${name} (${entry.category})\n` +
     `Score do Radar: ${analysis.score}/100 (${analysis.scoreClassification})\n` +
     // Múltiplos arredondados ANTES de entrar no prompt: sem isso o modelo copia o
     // número cru na resposta e o card exibe coisas como "P/L 7.8125 e P/VP 0.8572569".
     // Os percentuais já vinham com toFixed; P/L, P/VP, dívida/patrimônio e beta não.
-    `Fundamentos: P/L ${f.priceEarnings?.toFixed(2) ?? "?"}, P/VP ${f.priceToBook?.toFixed(2) ?? "?"}, ROE ${f.returnOnEquity != null ? (f.returnOnEquity * 100).toFixed(1) : "?"}%, ` +
-    `Dívida/Patrimônio ${f.debtToEquity?.toFixed(2) ?? "?"}, Margem líquida ${f.profitMargins != null ? (f.profitMargins * 100).toFixed(1) : "?"}%, ` +
-    `Dividend Yield ${f.dividendYield != null ? (f.dividendYield * 100).toFixed(1) : "?"}%, ` +
-    `Crescimento de receita ${f.revenueGrowth != null ? (f.revenueGrowth * 100).toFixed(1) : "?"}%, ` +
-    `Variação 12m ${f.fiftyTwoWeekChange != null ? (f.fiftyTwoWeekChange * 100).toFixed(1) : "?"}%, Beta ${f.beta?.toFixed(2) ?? "?"}\n` +
+    `Fundamentos: P/L ${num2(f.priceEarnings)}, P/VP ${num2(f.priceToBook)}, ROE ${pct1(f.returnOnEquity)}%, ` +
+    `Dívida/Patrimônio ${num2(f.debtToEquity)}, Margem líquida ${pct1(f.profitMargins)}%, ` +
+    `Dividend Yield ${pct1(f.dividendYield)}%, ` +
+    `Crescimento de receita ${pct1(f.revenueGrowth)}%, ` +
+    `Variação 12m ${pct1(f.fiftyTwoWeekChange)}%, Beta ${num2(f.beta)}\n` +
+    (fiiSegment ? `${NAV_DISCOUNT_CONTEXT[fiiSegment]}\n` : "") +
     `Pontos positivos calculados: ${analysis.positives.join("; ") || "nenhum"}\n` +
     `Pontos de atenção calculados: ${analysis.risks.join("; ") || "nenhum"}\n\n` +
     `Retorne SOMENTE um JSON válido, sem texto fora dele, no formato:\n` +
@@ -96,6 +125,7 @@ export async function describeOpportunity(
   name: string,
   fundamentals: Fundamentals,
   analysis: AnalysisResult,
+  fiiSegment: FiiSegment | null,
 ): Promise<OpportunityDescription | null> {
   const client = getClient();
   if (!client) return null;
@@ -104,7 +134,7 @@ export async function describeOpportunity(
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 500,
-      messages: [{ role: "user", content: buildPrompt(entry, name, fundamentals, analysis) }],
+      messages: [{ role: "user", content: buildPrompt(entry, name, fundamentals, analysis, fiiSegment) }],
     });
 
     const text = message.content.find((block) => block.type === "text")?.text?.trim() ?? "";
