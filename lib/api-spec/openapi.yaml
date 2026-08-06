@@ -1063,8 +1063,15 @@ components:
           type: number
         totalDividends:
           type: number
+          description: Acumulado de todos os proventos registrados, sem janela temporal
+        dividendsLast12m:
+          type: number
+        yieldOnCost:
+          type: number
+          description: Proventos de 12 meses sobre o custo de aquisição
         portfolioYield:
           type: number
+          description: Proventos dos últimos 12 meses sobre o valor de mercado atual
         assetCount:
           type: integer
 

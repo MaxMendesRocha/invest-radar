@@ -362,8 +362,10 @@ export const GetPortfolioSummaryResponse = zod.object({
   "totalPatrimony": zod.number(),
   "totalProfitLoss": zod.number(),
   "totalProfitLossPercent": zod.number(),
-  "totalDividends": zod.number(),
-  "portfolioYield": zod.number(),
+  "totalDividends": zod.number().describe('Acumulado de todos os proventos registrados, sem janela temporal'),
+  "dividendsLast12m": zod.number().optional(),
+  "yieldOnCost": zod.number().optional().describe('Proventos de 12 meses sobre o custo de aquisição'),
+  "portfolioYield": zod.number().describe('Proventos dos últimos 12 meses sobre o valor de mercado atual'),
   "assetCount": zod.number()
 })
 
@@ -803,8 +805,10 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "totalPatrimony": zod.number(),
   "totalProfitLoss": zod.number(),
   "totalProfitLossPercent": zod.number(),
-  "totalDividends": zod.number(),
-  "portfolioYield": zod.number(),
+  "totalDividends": zod.number().describe('Acumulado de todos os proventos registrados, sem janela temporal'),
+  "dividendsLast12m": zod.number().optional(),
+  "yieldOnCost": zod.number().optional().describe('Proventos de 12 meses sobre o custo de aquisição'),
+  "portfolioYield": zod.number().describe('Proventos dos últimos 12 meses sobre o valor de mercado atual'),
   "assetCount": zod.number()
 }),
   "analyses": zod.array(zod.object({

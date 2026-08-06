@@ -426,7 +426,12 @@ export interface PortfolioSummary {
   totalPatrimony: number;
   totalProfitLoss: number;
   totalProfitLossPercent: number;
+  /** Acumulado de todos os proventos registrados, sem janela temporal */
   totalDividends: number;
+  dividendsLast12m?: number;
+  /** Proventos de 12 meses sobre o custo de aquisição */
+  yieldOnCost?: number;
+  /** Proventos dos últimos 12 meses sobre o valor de mercado atual */
   portfolioYield: number;
   assetCount: number;
 }
