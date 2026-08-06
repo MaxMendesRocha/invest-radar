@@ -38,7 +38,7 @@ import type {
   MacroSnapshot,
   MonthlyCategoryTax,
   OpportunitiesNextRefresh,
-  Opportunity,
+  OpportunityList,
   PortfolioDistribution,
   PortfolioDividendsProjection,
   PortfolioHealth,
@@ -2108,9 +2108,9 @@ export const getListOpportunitiesUrl = () => {
 /**
  * @summary Top 10 investment opportunities
  */
-export const listOpportunities = async ( options?: RequestInit): Promise<Opportunity[]> => {
+export const listOpportunities = async ( options?: RequestInit): Promise<OpportunityList> => {
 
-  return customFetch<Opportunity[]>(getListOpportunitiesUrl(),
+  return customFetch<OpportunityList>(getListOpportunitiesUrl(),
   {
     ...options,
     method: 'GET'

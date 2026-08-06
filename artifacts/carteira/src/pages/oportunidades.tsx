@@ -8,7 +8,11 @@ import {
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Lightbulb, TrendingUp, ShieldAlert, ArrowRight, Target, RefreshCw } from "lucide-react";
+import { Lightbulb, TrendingUp, ShieldAlert, ArrowRight, Target, RefreshCw, AlertTriangle } from "lucide-react";
+
+// Mesmo motivo do card de Indicadores Oficiais: o ponto do formato en-US colide com
+// o separador de milhar pt-BR usado no resto do app.
+const PP_FORMAT = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 const RISK_MAP = {
   Baixo: "default",
@@ -27,17 +31,27 @@ export default function Oportunidades() {
   const { data: profile } = useGetInvestorProfile({ query: { queryKey: getGetInvestorProfileQueryKey(), retry: false } });
   const { data: nextRefresh } = useGetOpportunitiesNextRefresh();
 
+  const items = opportunities?.items ?? [];
+  const orderedBy = opportunities?.orderedBy;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Oportunidades</h1>
         <p className="text-muted-foreground">Ativos rankeados com base em fundamentos, valuation e momento de mercado.</p>
-        {profile ? (
-          <p className="text-sm text-muted-foreground flex items-center gap-2">
+        {!profile ? null : orderedBy === "premio_dividendo" ? (
+          // Sem flex: o gap transformaria o <strong> em item separado e afastaria a
+          // vírgula seguinte do texto.
+          <p className="text-sm text-muted-foreground">
+            Ordenado pelo <strong className="font-medium text-foreground">prêmio de dividendo sobre o setor</strong>, porque seu objetivo é renda passiva.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-2">
             Priorizado para o seu perfil:
             <Badge variant={CLASSIFICATION_BADGE[profile.classification] ?? "default"}>{profile.classification}</Badge>
           </p>
-        ) : (
+        )}
+        {!profile && (
           <p className="text-sm text-muted-foreground">
             Defina seu perfil de investidor em Configurações para priorizar essa lista pelo seu apetite a risco.
           </p>
@@ -55,13 +69,13 @@ export default function Oportunidades() {
           Array(6).fill(0).map((_, i) => (
             <Card key={i} className="animate-pulse h-80 bg-muted/20" />
           ))
-        ) : opportunities?.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="col-span-full py-12 text-center text-muted-foreground">
             <Lightbulb className="w-12 h-12 mx-auto mb-4 opacity-20" />
             <p>Nenhuma oportunidade detectada no momento.</p>
           </div>
         ) : (
-          opportunities?.map((opp, idx) => (
+          items.map((opp, idx) => (
             <Card key={opp.id} className="flex flex-col overflow-hidden border-border/50 hover:border-primary/50 transition-colors relative">
               <div className="absolute top-0 right-0 p-3">
                 <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold text-sm">
@@ -115,6 +129,27 @@ export default function Oportunidades() {
                     )}
                     <span className="text-muted-foreground ml-auto">Horizonte: {opp.horizon}</span>
                   </div>
+
+                  {opp.dividendPremiumPP != null && (
+                    <p className="text-xs text-muted-foreground mt-2 text-pretty">
+                      {opp.dividendPremiumPP >= 0 ? "+" : "−"}
+                      {PP_FORMAT.format(Math.abs(opp.dividendPremiumPP))} p.p. {opp.dividendPremiumPP >= 0 ? "acima" : "abaixo"} da
+                      mediana do setor{opp.sector ? ` ${opp.sector}` : ""}
+                      {opp.sectorMedianYield != null ? `, que é de ${PP_FORMAT.format(opp.sectorMedianYield)}%` : ""}
+                      {opp.sectorSampleSize != null ? ` (${opp.sectorSampleSize} ativos)` : ""}.
+                    </p>
+                  )}
+
+                  {opp.implausibleYield && (
+                    <div className="flex gap-2 items-start text-xs mt-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-2.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-500 mt-0.5" />
+                      <span className="text-pretty">
+                        Yield acima do dobro da mediana do setor. Nessa faixa costuma indicar amortização de cota
+                        contada como rendimento, evento não recorrente ou preço em colapso — trate como alerta,
+                        não como oportunidade.
+                      </span>
+                    </div>
+                  )}
                 </div>
               </CardContent>
               <CardFooter className="pt-0 pb-4 flex gap-4">

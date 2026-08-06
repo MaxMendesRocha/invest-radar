@@ -557,9 +557,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Opportunity"
+                $ref: "#/components/schemas/OpportunityList"
 
   /opportunities/next-refresh:
     get:
@@ -1262,6 +1260,22 @@ components:
           format: date-time
 
     # ─── OPPORTUNITY SCHEMAS ──────────────────────────────────────────────────
+    OpportunityList:
+      type: object
+      required: [orderedBy, items]
+      properties:
+        orderedBy:
+          type: string
+          enum: [premio_dividendo, perfil_de_risco, score]
+          description: >-
+            Critério que ordenou a lista. premio_dividendo quando o perfil declara
+            objetivo de renda; perfil_de_risco quando há perfil com outro objetivo;
+            score quando não há perfil definido.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Opportunity"
+
     Opportunity:
       type: object
       required: [id, ticker, name, category, score, potentialReturn, dividendYield, riskLevel, reason, positives, risks, horizon]
@@ -1293,6 +1307,20 @@ components:
           type: array
           items:
             type: string
+        sector:
+          type: ["string", "null"]
+        dividendPremiumPP:
+          type: ["number", "null"]
+          description: Diferença em p.p. entre o DY do ativo e a mediana do setor
+        sectorMedianYield:
+          type: ["number", "null"]
+        sectorSampleSize:
+          type: ["integer", "null"]
+        implausibleYield:
+          type: boolean
+          description: DY acima do dobro da mediana setorial — faixa que costuma indicar amortização de cota, evento não recorrente ou preço em colapso
+        dividendSustainability:
+          type: ["string", "null"]
         horizon:
           type: string
         currentPrice:

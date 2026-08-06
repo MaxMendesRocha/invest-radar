@@ -566,7 +566,9 @@ export const DeleteAlertResponse = zod.void()
 /**
  * @summary Top 10 investment opportunities
  */
-export const ListOpportunitiesResponseItem = zod.object({
+export const ListOpportunitiesResponse = zod.object({
+  "orderedBy": zod.enum(['premio_dividendo', 'perfil_de_risco', 'score']).describe('Critério que ordenou a lista. premio_dividendo quando o perfil declara objetivo de renda; perfil_de_risco quando há perfil com outro objetivo; score quando não há perfil definido.'),
+  "items": zod.array(zod.object({
   "id": zod.number(),
   "ticker": zod.string(),
   "name": zod.string(),
@@ -578,11 +580,17 @@ export const ListOpportunitiesResponseItem = zod.object({
   "reason": zod.string(),
   "positives": zod.array(zod.string()),
   "risks": zod.array(zod.string()),
+  "sector": zod.string().nullish(),
+  "dividendPremiumPP": zod.number().nullish().describe('Diferença em p.p. entre o DY do ativo e a mediana do setor'),
+  "sectorMedianYield": zod.number().nullish(),
+  "sectorSampleSize": zod.number().nullish(),
+  "implausibleYield": zod.boolean().optional().describe('DY acima do dobro da mediana setorial — faixa que costuma indicar amortização de cota, evento não recorrente ou preço em colapso'),
+  "dividendSustainability": zod.string().nullish(),
   "horizon": zod.string(),
   "currentPrice": zod.number().nullish(),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.')
+}))
 })
-export const ListOpportunitiesResponse = zod.array(ListOpportunitiesResponseItem)
 
 
 /**
@@ -860,6 +868,12 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "reason": zod.string(),
   "positives": zod.array(zod.string()),
   "risks": zod.array(zod.string()),
+  "sector": zod.string().nullish(),
+  "dividendPremiumPP": zod.number().nullish().describe('Diferença em p.p. entre o DY do ativo e a mediana do setor'),
+  "sectorMedianYield": zod.number().nullish(),
+  "sectorSampleSize": zod.number().nullish(),
+  "implausibleYield": zod.boolean().optional().describe('DY acima do dobro da mediana setorial — faixa que costuma indicar amortização de cota, evento não recorrente ou preço em colapso'),
+  "dividendSustainability": zod.string().nullish(),
   "horizon": zod.string(),
   "currentPrice": zod.number().nullish(),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.')

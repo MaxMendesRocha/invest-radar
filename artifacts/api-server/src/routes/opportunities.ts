@@ -38,32 +38,37 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
     horizon: r.horizon,
   }));
 
+  // Calculado SEMPRE, não só quando ordena: o prêmio é exibido no card em qualquer
+  // objetivo — é informação útil mesmo para quem não está ordenando por ela.
+  const sectors = Array.from(new Set(items.map((i) => i.sector).filter((x): x is string => x != null)));
+  const benchmarks = new Map(
+    await Promise.all(sectors.map(async (sector) => [sector, await getSectorBenchmark(sector)] as const)),
+  );
+  const valueByTicker = new Map<string, DividendValue>();
+  for (const item of items) {
+    const result = computeDividendValue({
+      dividendYield: item.dividendYield / 100, // a coluna guarda em %, o motor espera decimal
+      sector: item.sector,
+      benchmark: benchmarks.get(item.sector ?? "") ?? null,
+      frequency: item.persistedFrequency as never, // gravada na varredura
+      financialHealth: null,
+    });
+    if (result.available) {
+      valueByTicker.set(item.ticker, {
+        ...result.value,
+        // A sustentabilidade vem gravada da varredura, onde os fundamentos existiam.
+        sustainability: (item.dividendSustainability as DividendValue["sustainability"]) ?? "desconhecido",
+      });
+    }
+  }
+
   // Quem declarou objetivo de renda passiva está escolhendo onde colocar o próximo
   // aporte pensando em fluxo, não em valorização — então a lista é ordenada pelo
   // prêmio de dividendo sobre o setor (ver dividend-value-engine.ts) em vez do
   // score geral. Para os demais objetivos a ordenação por perfil de risco continua.
-  if (profile?.objective === "renda") {
-    const sectors = Array.from(new Set(items.map((i) => i.sector).filter((x): x is string => x != null)));
-    const benchmarks = new Map(
-      await Promise.all(sectors.map(async (sector) => [sector, await getSectorBenchmark(sector)] as const)),
-    );
-    const valueByTicker = new Map<string, DividendValue>();
-    for (const item of items) {
-      const result = computeDividendValue({
-        dividendYield: item.dividendYield / 100, // a coluna guarda em %, o motor espera decimal
-        sector: item.sector,
-        benchmark: benchmarks.get(item.sector ?? "") ?? null,
-        frequency: item.persistedFrequency as never, // gravada na varredura
-        financialHealth: null,
-      });
-      if (result.available) {
-        valueByTicker.set(item.ticker, {
-          ...result.value,
-          // A sustentabilidade vem gravada da varredura, onde os fundamentos existiam.
-          sustainability: (item.dividendSustainability as DividendValue["sustainability"]) ?? "desconhecido",
-        });
-      }
-    }
+  const orderedBy = profile?.objective === "renda" ? "premio_dividendo" : profile ? "perfil_de_risco" : "score";
+
+  if (orderedBy === "premio_dividendo") {
     items.sort((a, b) => {
       const va = valueByTicker.get(a.ticker);
       const vb = valueByTicker.get(b.ticker);
@@ -72,7 +77,7 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
       if (!va || !vb) return va ? -1 : vb ? 1 : b.score - a.score;
       return compareDividendValue(va, vb);
     });
-  } else if (profile) {
+  } else if (orderedBy === "perfil_de_risco" && profile) {
     const priority = RISK_PRIORITY[profile.classification] ?? {};
     items.sort((a, b) => {
       const pa = priority[a.riskLevel] ?? 1;
@@ -91,11 +96,22 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
     getDividendEvents(top10.map((item) => ({ ticker: item.ticker, category: item.category }))),
   ]);
   const now = Date.now();
-  res.json(top10.map((item) => ({
+  // A lista passa a vir envelopada: o consumidor precisa saber por qual critério ela
+  // foi ordenada, senão a ordem muda sem explicação quando o objetivo do perfil muda.
+  const items10 = top10.map((item) => {
+    const value = valueByTicker.get(item.ticker) ?? null;
+    return {
     ...item,
     currentPrice: prices.get(item.ticker.toUpperCase()) ?? null,
     dividendFrequency: classifyDividendFrequency(dividendEventsByTicker.get(item.ticker.toUpperCase()) ?? [], now)?.label ?? null,
-  })));
+    dividendPremiumPP: value?.premiumOverSectorPP ?? null,
+    sectorMedianYield: value?.sectorMedianYield ?? null,
+    sectorSampleSize: value?.sampleSize ?? null,
+    implausibleYield: value?.implausible ?? false,
+    };
+  });
+
+  res.json({ orderedBy, items: items10 });
 });
 
 // Quando a lista foi atualizada pela última vez e quando o scheduler (lib/scheduler.ts)
