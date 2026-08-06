@@ -31,6 +31,7 @@ import { estimateCapitalGainsTax, type TaxEstimate } from "../lib/tax-engine";
 import { computeTechnicalIndicators, type TechnicalIndicators } from "../lib/technical-engine";
 import { computeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "../lib/risk-metrics-engine";
 import { getSectorBenchmark, describeSectorComparison } from "../lib/sector-benchmarks";
+import { computeDividendValue, describeDividendValue } from "../lib/dividend-value-engine";
 import { computeFinancialHealth } from "../lib/financial-health-engine";
 
 const router: IRouter = Router();
@@ -443,6 +444,16 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     : "Comparação com o setor não disponível (fundamentos não encontrados para este ativo).";
   const newsItems = newsHeadlines.map(formatHeadline);
   const name = fundamentals?.name ?? null;
+  const dividendValue = describeDividendValue(
+    computeDividendValue({
+      dividendYield: fundamentals?.dividendYield ?? null,
+      sector: fundamentals?.sector ?? null,
+      benchmark: sectorBenchmark,
+      frequency: dividendFrequency,
+      financialHealth,
+    }),
+    fundamentals?.sector ?? null,
+  );
 
   const aiOpinion = await synthesizePrePurchaseOpinion({
     ticker,
@@ -464,6 +475,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     sector: fundamentals?.sector ?? null,
     fiiProfile,
     sectorComparison,
+    dividendValue,
     newsItems,
     macro,
   });
@@ -607,6 +619,17 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         ? describeSectorComparison(assetFundamentals, sectorBenchmark)
         : "Comparação com o setor não disponível (fundamentos não encontrados para este ativo).";
 
+      const dividendValue = describeDividendValue(
+        computeDividendValue({
+          dividendYield: assetFundamentals?.dividendYield ?? null,
+          sector: assetFundamentals?.sector ?? null,
+          benchmark: sectorBenchmark,
+          frequency: dividendFrequencyByTicker.get(analysis.ticker) ?? null,
+          financialHealth,
+        }),
+        assetFundamentals?.sector ?? null,
+      );
+
       const aiRecommendation = await synthesizeAssetRecommendation({
         ticker: analysis.ticker,
         score: analysis.score,
@@ -627,6 +650,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         sector: assetFundamentals?.sector ?? null,
         fiiProfile: fiiProfileByTicker.get(analysis.ticker) ?? null,
         sectorComparison,
+        dividendValue,
       });
 
       // Mutação intencional: `analysis` é a mesma referência presente em `analyses`

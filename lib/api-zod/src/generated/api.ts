@@ -418,6 +418,51 @@ export const GetPortfolioHealthResponse = zod.object({
 
 
 /**
+ * @summary Meta de renda passiva e progresso rumo a ela
+ */
+export const GetIncomeGoalResponse = zod.object({
+  "targetYear": zod.number(),
+  "targetMonthlyIncome": zod.number(),
+  "currentMonthlyIncome": zod.number(),
+  "progressPercent": zod.number(),
+  "monthsRemaining": zod.number(),
+  "achieved": zod.boolean(),
+  "overdue": zod.boolean(),
+  "requiredCapital": zod.number().nullish(),
+  "capitalGap": zod.number().nullish(),
+  "requiredMonthlyContribution": zod.number().nullish()
+}).describe('requiredMonthlyContribution não considera reinvestimento dos proventos, o que o torna conservador por construção — o percurso real tende a ser mais curto.')
+
+
+/**
+ * @summary Define ou atualiza a meta de renda passiva
+ */
+
+export const upsertIncomeGoalBodyTargetYearMin = 2020;
+export const upsertIncomeGoalBodyTargetYearMax = 2100;
+
+
+
+export const UpsertIncomeGoalBody = zod.object({
+  "targetMonthlyIncome": zod.number().min(1),
+  "targetYear": zod.number().min(upsertIncomeGoalBodyTargetYearMin).max(upsertIncomeGoalBodyTargetYearMax)
+})
+
+export const UpsertIncomeGoalResponse = zod.object({
+  "targetYear": zod.number(),
+  "targetMonthlyIncome": zod.number(),
+  "currentMonthlyIncome": zod.number(),
+  "progressPercent": zod.number(),
+  "monthsRemaining": zod.number(),
+  "achieved": zod.boolean(),
+  "overdue": zod.boolean(),
+  "requiredCapital": zod.number().nullish(),
+  "capitalGap": zod.number().nullish(),
+  "requiredMonthlyContribution": zod.number().nullish()
+}).describe('requiredMonthlyContribution não considera reinvestimento dos proventos, o que o torna conservador por construção — o percurso real tende a ser mais curto.')
+
+
+/**
  * @summary Portfolio vs benchmark comparison (CDI, IBOV, IFIX)
  */
 export const GetPortfolioBenchmarksResponse = zod.object({

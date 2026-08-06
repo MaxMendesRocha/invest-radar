@@ -35,6 +35,8 @@ export * from './dividendProjectionMonth';
 export * from './errorResponse';
 export * from './evolutionPoint';
 export * from './healthStatus';
+export * from './incomeGoalInput';
+export * from './incomeGoalProgress';
 export * from './investorProfile';
 export * from './investorProfileClassification';
 export * from './investorProfileExperience';

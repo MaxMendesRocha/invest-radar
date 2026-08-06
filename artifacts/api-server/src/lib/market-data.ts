@@ -738,14 +738,8 @@ export interface DividendFrequency {
   paymentsLast12m: number;
 }
 
-// Periodicidade real de pagamento, a partir do espaçamento entre DATAS distintas de
-// pagamento nos últimos 12 meses — nunca declarada como "Mensal"/"Trimestral"/etc.
-// quando os pagamentos não forem regulares o suficiente (desvio de até 50% do
-// intervalo médio); nesse caso vira "Irregular" em vez de uma rotulagem falsamente
-// precisa. Comum em ações que intercalam dividendo + JCP sem calendário fixo —
-// diferente da maioria dos FIIs, que pagam todo mês. null quando não há nenhum
-// pagamento real no período (não paga, ou histórico insuficiente).
-export function classifyDividendFrequency(events: DividendEvent[], now: number): DividendFrequency | null {
+/** Datas DISTINTAS de pagamento dentro de uma janela, em ordem cronológica. */
+function distinctPaymentTimes(events: DividendEvent[], now: number, windowMs: number): number[] {
   // Agrupa por DATA (não por evento) — é comum um ativo pagar dividendo + JCP na
   // mesma data em linhas separadas do provider; contar cada linha como um pagamento
   // distinto criaria gaps de 0 dias artificiais e classificaria como "Irregular" um
@@ -754,30 +748,91 @@ export function classifyDividendFrequency(events: DividendEvent[], now: number):
   const distinctDates = new Set(
     events
       .map((e) => new Date(e.paymentDate).getTime())
-      .filter((t) => t <= now && now - t <= ONE_YEAR_MS)
+      .filter((t) => t <= now && now - t <= windowMs)
       .map((t) => new Date(t).toISOString().slice(0, 10))
   );
-  const paymentTimes = Array.from(distinctDates)
+  return Array.from(distinctDates)
     .map((d) => new Date(d).getTime())
     .sort((a, b) => a - b);
+}
 
-  if (paymentTimes.length === 0) return null;
-  if (paymentTimes.length === 1) return { label: "Anual", paymentsLast12m: 1 };
-
-  const gapsDays: number[] = [];
+function gapsInDays(paymentTimes: number[]): number[] {
+  const gaps: number[] = [];
   for (let i = 1; i < paymentTimes.length; i++) {
-    gapsDays.push((paymentTimes[i] - paymentTimes[i - 1]) / (24 * 60 * 60 * 1000));
+    gaps.push((paymentTimes[i] - paymentTimes[i - 1]) / (24 * 60 * 60 * 1000));
   }
-  const avgGap = gapsDays.reduce((sum, g) => sum + g, 0) / gapsDays.length;
-  const maxDeviation = Math.max(...gapsDays.map((g) => Math.abs(g - avgGap)));
-  const isRegular = maxDeviation <= avgGap * 0.5;
+  return gaps;
+}
 
-  const paymentsLast12m = paymentTimes.length;
-  if (!isRegular) return { label: "Irregular", paymentsLast12m };
-  if (avgGap <= 40) return { label: "Mensal", paymentsLast12m };
-  if (avgGap <= 100) return { label: "Trimestral", paymentsLast12m };
-  if (avgGap <= 200) return { label: "Semestral", paymentsLast12m };
-  return { label: "Anual", paymentsLast12m };
+/** Desvio máximo de até 50% do intervalo médio. */
+function isRegularCadence(gapsDays: number[]): boolean {
+  if (gapsDays.length === 0) return false;
+  const avgGap = gapsDays.reduce((sum, g) => sum + g, 0) / gapsDays.length;
+  return Math.max(...gapsDays.map((g) => Math.abs(g - avgGap))) <= avgGap * 0.5;
+}
+
+// Periodicidade real de pagamento, a partir do espaçamento entre DATAS distintas de
+// pagamento — nunca declarada como "Mensal"/"Trimestral"/etc. quando os pagamentos
+// não forem regulares o suficiente; nesse caso vira "Irregular" em vez de uma
+// rotulagem falsamente precisa. null quando não há nenhum pagamento real no período
+// (não paga, ou histórico insuficiente).
+//
+// A CADÊNCIA vem dos últimos 12 meses — descreve o ritmo atual, que é o que
+// interessa a quem olha o card hoje. Mas ela só é declarada se TIVER SE SUSTENTADO
+// ao longo de 24 meses: o rótulo é uma promessa sobre quando esperar o próximo
+// pagamento, e doze meses é janela curta demais para distinguir uma pagadora
+// trimestral de verdade de uma que distribui em blocos.
+//
+// O EQPA3 pagou em nov e dez/2024, passou 2025 inteiro sem pagar, e voltou com três
+// pagamentos entre dez/2025 e jul/2026. Nos últimos 12 meses os intervalos ficam em
+// 124 e 70 dias e ele passa por "Trimestral" — que é, aliás, exatamente o que
+// portais de mercado exibem para esse papel.
+//
+// O teste é o VAZIO MÁXIMO em 24 meses contra o teto da cadência declarada, e não a
+// dispersão dos intervalos: medidos por dispersão, EQPA3 (2,9x a mediana) e PETR4
+// (2,8x) são indistinguíveis, mas o maior vazio do primeiro é de 361 dias — um ano
+// sem pagar — contra 92 dias do segundo, que é só o trimestre normal de quem paga em
+// parcelas. Pagadoras que fatiam o provento em várias datas por período continuam
+// classificadas corretamente, porque nenhum vazio delas passa do teto.
+// Vazio máximo tolerado por cadência: o teto do intervalo de cada rótulo mais 60
+// dias de folga, para não punir atraso pontual de calendário societário.
+const MAX_DROUGHT_DAYS: Record<Exclude<DividendFrequencyLabel, "Irregular">, number> = {
+  Mensal: 100,
+  Trimestral: 160,
+  Semestral: 260,
+  Anual: 425,
+};
+
+function cadenceFromAverageGap(avgGap: number): Exclude<DividendFrequencyLabel, "Irregular"> {
+  if (avgGap <= 40) return "Mensal";
+  if (avgGap <= 100) return "Trimestral";
+  if (avgGap <= 200) return "Semestral";
+  return "Anual";
+}
+
+export function classifyDividendFrequency(events: DividendEvent[], now: number): DividendFrequency | null {
+  const last12m = distinctPaymentTimes(events, now, ONE_YEAR_MS);
+  if (last12m.length === 0) return null;
+
+  const paymentsLast12m = last12m.length;
+  const gapsDays = gapsInDays(last12m);
+
+  let label: Exclude<DividendFrequencyLabel, "Irregular">;
+  if (paymentsLast12m === 1) {
+    label = "Anual";
+  } else {
+    if (!isRegularCadence(gapsDays)) return { label: "Irregular", paymentsLast12m };
+    label = cadenceFromAverageGap(gapsDays.reduce((sum, g) => sum + g, 0) / gapsDays.length);
+  }
+
+  // Um único vazio acima do teto derruba o rótulo: significa que a cadência não se
+  // sustentou, mesmo que os pagamentos recentes pareçam espaçados de forma regular.
+  const gaps24m = gapsInDays(distinctPaymentTimes(events, now, ONE_YEAR_MS * 2));
+  if (gaps24m.length > 0 && Math.max(...gaps24m) > MAX_DROUGHT_DAYS[label]) {
+    return { label: "Irregular", paymentsLast12m };
+  }
+
+  return { label, paymentsLast12m };
 }
 
 export interface DividendTrend {
