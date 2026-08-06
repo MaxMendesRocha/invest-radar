@@ -30,11 +30,18 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
 
   let totalPatrimony = 0;
   let totalCost = 0;
+  // Ativos cotados cuja cotação o provider não devolveu. A posição continua entrando
+  // no patrimônio pelo preço médio — excluí-la subestimaria mais do que aproximá-la —
+  // mas o fato é exposto: sem isso, uma falha do provider fazia o ativo aparecer com
+  // 0,00% de lucro/prejuízo, número calculado apresentado como se fosse medido.
+  const pricesUnavailable: string[] = [];
 
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
     const avgPrice = parseFloat(a.averagePrice);
-    const price = prices.get(a.ticker.toUpperCase()) ?? avgPrice;
+    const quoted = prices.get(a.ticker.toUpperCase());
+    if (quoted == null && QUOTED_CATEGORIES.has(a.category)) pricesUnavailable.push(a.ticker.toUpperCase());
+    const price = quoted ?? avgPrice;
     totalPatrimony += qty * price;
     totalCost += qty * avgPrice;
   }
@@ -65,6 +72,7 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
     portfolioYield,
     yieldOnCost,
     assetCount: assets.length,
+    pricesUnavailable,
   });
 });
 

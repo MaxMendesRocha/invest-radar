@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, assetsTable, alertsTable, analysesTable, opportunitiesTable, investorProfilesTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { GetAssetAnalysisParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
 import {
@@ -804,7 +804,10 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   }
   const portfolioYield = totalPatrimony > 0 ? (totalDividends / totalPatrimony) * 100 : 0;
 
-  const opportunities = await db.select().from(opportunitiesTable);
+  // Com orderBy e limit no banco: sem eles, o `.slice(0, 10)` logo abaixo cortava
+  // as 10 PRIMEIRAS linhas que o Postgres devolvesse, em ordem arbitrária — não as
+  // 10 melhores. E carregava as ~120 linhas da tabela inteira para usar 10.
+  const opportunities = await db.select().from(opportunitiesTable).orderBy(desc(opportunitiesTable.score)).limit(10);
 
   res.json({
     generatedAt: new Date().toISOString(),
@@ -826,7 +829,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       title: a.title, message: a.message, ticker: a.ticker,
       isRead: a.isRead, createdAt: a.createdAt.toISOString(),
     })),
-    opportunities: opportunities.slice(0, 10).map((o) => ({
+    opportunities: opportunities.map((o) => ({
       id: o.id, ticker: o.ticker, name: o.name, category: o.category,
       score: parseFloat(o.score), potentialReturn: parseFloat(o.potentialReturn),
       dividendYield: parseFloat(o.dividendYield), riskLevel: o.riskLevel,

@@ -365,6 +365,7 @@ export const GetPortfolioSummaryResponse = zod.object({
   "totalDividends": zod.number().describe('Acumulado de todos os proventos registrados, sem janela temporal'),
   "dividendsLast12m": zod.number().optional(),
   "yieldOnCost": zod.number().optional().describe('Proventos de 12 meses sobre o custo de aquisição'),
+  "pricesUnavailable": zod.array(zod.string()).optional().describe('Tickers cotados sem cotação no momento — a posição entra no patrimônio pelo preço médio, então o lucro\/prejuízo dela aparece como zero.'),
   "portfolioYield": zod.number().describe('Proventos dos últimos 12 meses sobre o valor de mercado atual'),
   "assetCount": zod.number()
 })
@@ -808,6 +809,7 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "totalDividends": zod.number().describe('Acumulado de todos os proventos registrados, sem janela temporal'),
   "dividendsLast12m": zod.number().optional(),
   "yieldOnCost": zod.number().optional().describe('Proventos de 12 meses sobre o custo de aquisição'),
+  "pricesUnavailable": zod.array(zod.string()).optional().describe('Tickers cotados sem cotação no momento — a posição entra no patrimônio pelo preço médio, então o lucro\/prejuízo dela aparece como zero.'),
   "portfolioYield": zod.number().describe('Proventos dos últimos 12 meses sobre o valor de mercado atual'),
   "assetCount": zod.number()
 }),

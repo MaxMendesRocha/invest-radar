@@ -60,6 +60,12 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground mt-1">
               Distribuído em {summary?.assetCount || 0} ativos
             </p>
+            {summary?.pricesUnavailable && summary.pricesUnavailable.length > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-500 mt-1 text-pretty">
+                Sem cotação para {summary.pricesUnavailable.join(", ")} — entram no total pelo preço médio,
+                então aparecem sem lucro nem prejuízo.
+              </p>
+            )}
           </CardContent>
         </Card>
 

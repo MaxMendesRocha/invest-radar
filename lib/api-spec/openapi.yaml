@@ -1069,6 +1069,13 @@ components:
         yieldOnCost:
           type: number
           description: Proventos de 12 meses sobre o custo de aquisição
+        pricesUnavailable:
+          type: array
+          description: >-
+            Tickers cotados sem cotação no momento — a posição entra no patrimônio
+            pelo preço médio, então o lucro/prejuízo dela aparece como zero.
+          items:
+            type: string
         portfolioYield:
           type: number
           description: Proventos dos últimos 12 meses sobre o valor de mercado atual

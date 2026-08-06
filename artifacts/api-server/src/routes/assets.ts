@@ -235,27 +235,36 @@ router.post("/assets/:id/sell", requireAuth, async (req, res): Promise<void> => 
   const tax = estimateCapitalGainsTax(asset.category, soldQty, averagePrice, salePrice);
   const grossGain = tax ? tax.grossGain : (salePrice - averagePrice) * soldQty;
 
-  const [sale] = await db.insert(salesTable).values({
-    userId: req.session.userId!,
-    ticker: asset.ticker,
-    category: asset.category,
-    quantity: String(soldQty),
-    averagePrice: String(averagePrice),
-    salePrice: String(salePrice),
-    saleDate: saleDate.toISOString().slice(0, 10),
-    grossGain: String(grossGain),
-    taxOwed: tax ? String(tax.taxOwed) : null,
-  }).returning();
-
   const remainingQty = existingQty - soldQty;
-  if (remainingQty > QUANTITY_EPSILON) {
-    // Venda parcial: reduz a quantidade, preço médio de compra não muda.
-    await db.update(assetsTable).set({ quantity: String(remainingQty) }).where(eq(assetsTable.id, asset.id));
-  } else {
-    // Venda total: a posição encerrou de verdade, não faz sentido mostrar quantidade
-    // zero em "Minha Carteira".
-    await db.delete(assetsTable).where(eq(assetsTable.id, asset.id));
-  }
+
+  // Registrar a venda e baixar a posição são o mesmo fato e precisam ser atômicos.
+  // Separados, uma falha entre os dois deixaria a venda registrada com a posição
+  // intacta — a mesma quantidade contada duas vezes, em dinheiro, e ainda entrando
+  // na apuração mensal de IR.
+  const sale = await db.transaction(async (tx) => {
+    const [inserted] = await tx.insert(salesTable).values({
+      userId: req.session.userId!,
+      ticker: asset.ticker,
+      category: asset.category,
+      quantity: String(soldQty),
+      averagePrice: String(averagePrice),
+      salePrice: String(salePrice),
+      saleDate: saleDate.toISOString().slice(0, 10),
+      grossGain: String(grossGain),
+      taxOwed: tax ? String(tax.taxOwed) : null,
+    }).returning();
+
+    if (remainingQty > QUANTITY_EPSILON) {
+      // Venda parcial: reduz a quantidade, preço médio de compra não muda.
+      await tx.update(assetsTable).set({ quantity: String(remainingQty) }).where(eq(assetsTable.id, asset.id));
+    } else {
+      // Venda total: a posição encerrou de verdade, não faz sentido mostrar quantidade
+      // zero em "Minha Carteira".
+      await tx.delete(assetsTable).where(eq(assetsTable.id, asset.id));
+    }
+
+    return inserted;
+  });
 
   res.status(201).json(serializeSale(sale));
 });
