@@ -1,6 +1,8 @@
 import { db, opportunitiesTable, sectorBenchmarksTable, type InsertOpportunity, type InsertSectorBenchmark } from "@workspace/db";
-import { getFundamentals, getDividendEvents, sumLast12Months, type Fundamentals } from "./market-data";
+import { getFundamentals, getDividendEvents, sumLast12Months, classifyDividendFrequency, type Fundamentals } from "./market-data";
 import { analyzeFundamentals, evalVolatility } from "./analysis-engine";
+import { computeFinancialHealth } from "./financial-health-engine";
+import { classifySustainabilityOf } from "./dividend-value-engine";
 import { fetchTickerUniverse, type UniverseEntry } from "./ticker-universe";
 import { describeOpportunity } from "./opportunities-ai";
 import { logger } from "./logger";
@@ -130,6 +132,11 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
         potentialReturn: String(computePotentialReturn(analysis.score, fundamentals)),
         dividendYield: String((fundamentals.dividendYield ?? 0) * 100),
         riskLevel: riskLevelFor(fundamentals),
+        sector: fundamentals.sector,
+        dividendFrequency: classifyDividendFrequency(dividendEventsByTicker.get(entry.ticker) ?? [], now)?.label ?? null,
+        dividendSustainability: classifySustainabilityOf(
+          computeFinancialHealth(fundamentals, sumLast12Months(dividendEventsByTicker.get(entry.ticker) ?? [], now)),
+        ),
         reason: ai?.reason ?? analysis.positives[0] ?? analysis.risks[0] ?? "Ativo dentro dos critérios de triagem do Radar.",
         positives: JSON.stringify(ai?.positives ?? analysis.positives.slice(0, 3)),
         risks: JSON.stringify(ai?.risks ?? analysis.risks.slice(0, 3)),

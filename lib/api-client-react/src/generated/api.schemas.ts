@@ -929,6 +929,35 @@ export interface MacroSnapshot {
   updatedAt: string;
 }
 
+export interface IncomeGoalInput {
+  /** @minimum 1 */
+  targetMonthlyIncome: number;
+  /**
+     * @minimum 2020
+     * @maximum 2100
+     */
+  targetYear: number;
+}
+
+/**
+ * requiredMonthlyContribution não considera reinvestimento dos proventos, o que o torna conservador por construção — o percurso real tende a ser mais curto.
+ */
+export interface IncomeGoalProgress {
+  targetYear: number;
+  targetMonthlyIncome: number;
+  currentMonthlyIncome: number;
+  progressPercent: number;
+  monthsRemaining: number;
+  achieved: boolean;
+  overdue: boolean;
+  /** @nullable */
+  requiredCapital?: number | null;
+  /** @nullable */
+  capitalGap?: number | null;
+  /** @nullable */
+  requiredMonthlyContribution?: number | null;
+}
+
 export interface PortfolioReport {
   generatedAt: string;
   summary: PortfolioSummary;

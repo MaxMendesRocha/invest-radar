@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, assetsTable, transactionsTable, investorProfilesTable } from "@workspace/db";
+import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable } from "@workspace/db";
 import { eq, sum } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months } from "../lib/market-data";
@@ -8,6 +8,8 @@ import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-da
 import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/analysis-engine";
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
 import { getMacroSnapshot } from "../lib/macro-data";
+import { computeIncomeGoalProgress } from "../lib/income-goal-engine";
+import { UpsertIncomeGoalBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -398,6 +400,85 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     cdiTotal: Math.round((cdiAcc - 100) * 100) / 100,
     ibovTotal: Math.round((ibovAcc - 100) * 100) / 100,
     ifixTotal: Math.round((ifixAcc - 100) * 100) / 100,
+  });
+});
+
+/**
+ * Renda projetada e patrimônio atuais — a mesma base de
+ * /portfolio/dividends/projection, extraída para servir também à meta.
+ */
+async function currentIncomeAndPatrimony(userId: number): Promise<{ monthlyIncome: number; totalPatrimony: number; portfolioYield: number | null }> {
+  const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, userId));
+  const prices = await getPricesFor(assets);
+  const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
+  const now = Date.now();
+
+  let annualIncome = 0;
+  let totalPatrimony = 0;
+  for (const a of assets) {
+    const qty = parseFloat(a.quantity);
+    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    totalPatrimony += qty * price;
+    if (!QUOTED_CATEGORIES.has(a.category)) continue;
+    const dps12m = sumLast12Months(dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [], now);
+    if (dps12m != null) annualIncome += dps12m * qty;
+  }
+
+  return {
+    monthlyIncome: annualIncome / 12,
+    totalPatrimony,
+    portfolioYield: totalPatrimony > 0 && annualIncome > 0 ? annualIncome / totalPatrimony : null,
+  };
+}
+
+router.get("/portfolio/income-goal", requireAuth, async (req, res): Promise<void> => {
+  const [goal] = await db.select().from(incomeGoalsTable).where(eq(incomeGoalsTable.userId, req.session.userId!));
+  if (!goal) {
+    res.status(404).json({ error: "Meta de renda passiva ainda não definida" });
+    return;
+  }
+  const { monthlyIncome, totalPatrimony, portfolioYield } = await currentIncomeAndPatrimony(req.session.userId!);
+  res.json({
+    targetYear: goal.targetYear,
+    ...computeIncomeGoalProgress({
+      targetMonthlyIncome: parseFloat(goal.targetMonthlyIncome),
+      targetYear: goal.targetYear,
+      currentMonthlyIncome: monthlyIncome,
+      totalPatrimony,
+      portfolioYield,
+      now: new Date(),
+    }),
+  });
+});
+
+router.put("/portfolio/income-goal", requireAuth, async (req, res): Promise<void> => {
+  const parsed = UpsertIncomeGoalBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const values = {
+    userId: req.session.userId!,
+    targetMonthlyIncome: String(parsed.data.targetMonthlyIncome),
+    targetYear: parsed.data.targetYear,
+  };
+  const [goal] = await db
+    .insert(incomeGoalsTable)
+    .values(values)
+    .onConflictDoUpdate({ target: incomeGoalsTable.userId, set: values })
+    .returning();
+
+  const { monthlyIncome, totalPatrimony, portfolioYield } = await currentIncomeAndPatrimony(req.session.userId!);
+  res.json({
+    targetYear: goal.targetYear,
+    ...computeIncomeGoalProgress({
+      targetMonthlyIncome: parseFloat(goal.targetMonthlyIncome),
+      targetYear: goal.targetYear,
+      currentMonthlyIncome: monthlyIncome,
+      totalPatrimony,
+      portfolioYield,
+      now: new Date(),
+    }),
   });
 });
 

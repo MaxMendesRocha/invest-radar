@@ -43,6 +43,8 @@ export interface DividendValue {
   sustainability: SustainabilityFlag;
   /** Cadência regular é pré-requisito para tratar o yield como fluxo esperado. */
   regularCadence: boolean;
+  /** Yield alto demais para ser fluxo recorrente — ver IMPLAUSIBLE_PREMIUM_RATIO. */
+  implausible: boolean;
 }
 
 export type DividendValueResult =
@@ -50,6 +52,17 @@ export type DividendValueResult =
   | { available: false; reason: "sem_yield" | "sem_referencia_setorial" };
 
 const REGULAR_FREQUENCIES = new Set<DividendFrequencyLabel>(["Mensal", "Trimestral", "Semestral"]);
+
+// Yield acima do DOBRO da mediana do setor não é oportunidade, é sinal de outra
+// coisa: amortização de cota contada como rendimento, evento não recorrente, ou
+// preço em colapso. Sem essa guarda o topo da lista foi ocupado por um FII com DY
+// declarado de 38% contra mediana setorial de 11%.
+//
+// É deliberadamente independente da periodicidade: a varredura busca dividendo de
+// FII um ticker por vez e uma falha de rede deixa a cadência nula, o que faria o
+// desempate por regularidade silenciosamente parar de proteger. Esta guarda usa só
+// o yield e a mediana, ambos já persistidos.
+const IMPLAUSIBLE_PREMIUM_RATIO = 2;
 
 /**
  * Cobertura do dividendo pelo fluxo de caixa livre. Acima de 1 o caixa gerado paga a
@@ -59,7 +72,7 @@ const REGULAR_FREQUENCIES = new Set<DividendFrequencyLabel>(["Mensal", "Trimestr
  * "desconhecido" quando o provider não traz fluxo de caixa — comum em FII, cuja
  * estrutura não publica DFC como empresa operacional. Nunca é tratado como coberto.
  */
-function classifySustainability(health: FinancialHealth | null): SustainabilityFlag {
+export function classifySustainabilityOf(health: FinancialHealth | null): SustainabilityFlag {
   const coverage = health?.dividendCashCoverage;
   if (coverage == null) return "desconhecido";
   if (coverage >= 1.2) return "coberto";
@@ -81,8 +94,9 @@ export function computeDividendValue(input: DividendValueInput): DividendValueRe
       premiumOverSectorPP: Math.round((dividendYield - medianYield) * 10000) / 100,
       sectorMedianYield: Math.round(medianYield * 10000) / 100,
       sampleSize: benchmark!.sampleSize,
-      sustainability: classifySustainability(financialHealth),
+      sustainability: classifySustainabilityOf(financialHealth),
       regularCadence: frequency != null && REGULAR_FREQUENCIES.has(frequency),
+      implausible: dividendYield > medianYield * IMPLAUSIBLE_PREMIUM_RATIO,
     },
   };
 }
@@ -119,6 +133,8 @@ const SUSTAINABILITY_RANK: Record<SustainabilityFlag, number> = {
 };
 
 export function compareDividendValue(a: DividendValue, b: DividendValue): number {
+  // Antes de tudo: yield implausível vai pro fim, por maior que seja o prêmio.
+  if (a.implausible !== b.implausible) return a.implausible ? 1 : -1;
   if (a.regularCadence !== b.regularCadence) return a.regularCadence ? -1 : 1;
   const rank = SUSTAINABILITY_RANK[a.sustainability] - SUSTAINABILITY_RANK[b.sustainability];
   if (rank !== 0) return rank;
@@ -140,6 +156,9 @@ export function describeDividendValue(result: DividendValueResult, sector: strin
     `Prêmio de dividendo: ${posicao} da mediana do setor${sector ? ` "${sector}"` : ""}, ` +
     `que é de ${v.sectorMedianYield.toFixed(1)}% (amostra real de ${v.sampleSize} tickers). ` +
     `${SUSTAINABILITY_LABEL[v.sustainability][0].toUpperCase()}${SUSTAINABILITY_LABEL[v.sustainability].slice(1)}. ` +
-    `${v.regularCadence ? "Cadência de pagamento regular." : "Cadência de pagamento irregular — o yield passado não indica fluxo esperado."}`
+    `${v.regularCadence ? "Cadência de pagamento regular." : "Cadência de pagamento irregular ou desconhecida — o yield passado não indica fluxo esperado."}` +
+    (v.implausible
+      ? " ATENÇÃO: yield acima do dobro da mediana do setor, faixa em que costuma indicar amortização de cota, evento não recorrente ou preço em colapso — trate como alerta, não como oportunidade."
+      : "")
   );
 }

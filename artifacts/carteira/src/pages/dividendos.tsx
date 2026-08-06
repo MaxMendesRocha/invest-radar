@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import { Plus, Trash2, Coins, ArrowUpRight, CalendarClock, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { IncomeGoalCard } from "@/components/income-goal-card";
 
 const TYPE_MAP: Record<string, string> = {
   dividendo: "Dividendo",
@@ -175,6 +176,8 @@ export default function Dividendos() {
           </DialogContent>
         </Dialog>
       </div>
+
+      <IncomeGoalCard />
 
       <Card>
         <CardHeader>

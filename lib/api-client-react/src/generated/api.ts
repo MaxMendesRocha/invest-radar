@@ -31,6 +31,8 @@ import type {
   ErrorResponse,
   EvolutionPoint,
   HealthStatus,
+  IncomeGoalInput,
+  IncomeGoalProgress,
   InvestorProfile,
   InvestorProfileInput,
   MacroSnapshot,
@@ -1496,6 +1498,154 @@ export function useGetPortfolioHealth<TData = Awaited<ReturnType<typeof getPortf
 
 
 
+
+export const getGetIncomeGoalUrl = () => {
+
+
+
+
+  return `/api/portfolio/income-goal`
+}
+
+/**
+ * @summary Meta de renda passiva e progresso rumo a ela
+ */
+export const getIncomeGoal = async ( options?: RequestInit): Promise<IncomeGoalProgress> => {
+
+  return customFetch<IncomeGoalProgress>(getGetIncomeGoalUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetIncomeGoalQueryKey = () => {
+    return [
+    `/api/portfolio/income-goal`
+    ] as const;
+    }
+
+
+export const getGetIncomeGoalQueryOptions = <TData = Awaited<ReturnType<typeof getIncomeGoal>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getIncomeGoal>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetIncomeGoalQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getIncomeGoal>>> = ({ signal }) => getIncomeGoal({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getIncomeGoal>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetIncomeGoalQueryResult = NonNullable<Awaited<ReturnType<typeof getIncomeGoal>>>
+export type GetIncomeGoalQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Meta de renda passiva e progresso rumo a ela
+ */
+
+export function useGetIncomeGoal<TData = Awaited<ReturnType<typeof getIncomeGoal>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getIncomeGoal>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetIncomeGoalQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpsertIncomeGoalUrl = () => {
+
+
+
+
+  return `/api/portfolio/income-goal`
+}
+
+/**
+ * @summary Define ou atualiza a meta de renda passiva
+ */
+export const upsertIncomeGoal = async (incomeGoalInput: IncomeGoalInput, options?: RequestInit): Promise<IncomeGoalProgress> => {
+
+  return customFetch<IncomeGoalProgress>(getUpsertIncomeGoalUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(incomeGoalInput)
+  }
+);}
+
+
+
+
+
+export const getUpsertIncomeGoalMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertIncomeGoal>>, TError,{data: BodyType<IncomeGoalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertIncomeGoal>>, TError,{data: BodyType<IncomeGoalInput>}, TContext> => {
+
+const mutationKey = ['upsertIncomeGoal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertIncomeGoal>>, {data: BodyType<IncomeGoalInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertIncomeGoal(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertIncomeGoalMutationResult = NonNullable<Awaited<ReturnType<typeof upsertIncomeGoal>>>
+    export type UpsertIncomeGoalMutationBody = BodyType<IncomeGoalInput>
+    export type UpsertIncomeGoalMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Define ou atualiza a meta de renda passiva
+ */
+export const useUpsertIncomeGoal = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertIncomeGoal>>, TError,{data: BodyType<IncomeGoalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertIncomeGoal>>,
+        TError,
+        {data: BodyType<IncomeGoalInput>},
+        TContext
+      > => {
+      return useMutation(getUpsertIncomeGoalMutationOptions(options));
+    }
 
 export const getGetPortfolioBenchmarksUrl = () => {
 

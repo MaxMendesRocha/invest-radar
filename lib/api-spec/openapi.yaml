@@ -406,6 +406,48 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortfolioHealth"
 
+  /portfolio/income-goal:
+    get:
+      operationId: getIncomeGoal
+      tags: [portfolio]
+      summary: Meta de renda passiva e progresso rumo a ela
+      responses:
+        "200":
+          description: Meta e progresso
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncomeGoalProgress"
+        "404":
+          description: Meta ainda não definida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: upsertIncomeGoal
+      tags: [portfolio]
+      summary: Define ou atualiza a meta de renda passiva
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncomeGoalInput"
+      responses:
+        "200":
+          description: Meta salva, com progresso recalculado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncomeGoalProgress"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /portfolio/benchmarks:
     get:
       operationId: getPortfolioBenchmarks
@@ -1509,6 +1551,46 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    IncomeGoalInput:
+      type: object
+      required: [targetMonthlyIncome, targetYear]
+      properties:
+        targetMonthlyIncome:
+          type: number
+          minimum: 1
+        targetYear:
+          type: integer
+          minimum: 2020
+          maximum: 2100
+
+    IncomeGoalProgress:
+      type: object
+      required: [targetYear, targetMonthlyIncome, currentMonthlyIncome, progressPercent, monthsRemaining, achieved, overdue]
+      description: >-
+        requiredMonthlyContribution não considera reinvestimento dos proventos, o que
+        o torna conservador por construção — o percurso real tende a ser mais curto.
+      properties:
+        targetYear:
+          type: integer
+        targetMonthlyIncome:
+          type: number
+        currentMonthlyIncome:
+          type: number
+        progressPercent:
+          type: number
+        monthsRemaining:
+          type: integer
+        achieved:
+          type: boolean
+        overdue:
+          type: boolean
+        requiredCapital:
+          type: ["number", "null"]
+        capitalGap:
+          type: ["number", "null"]
+        requiredMonthlyContribution:
+          type: ["number", "null"]
 
     PortfolioReport:
       type: object
