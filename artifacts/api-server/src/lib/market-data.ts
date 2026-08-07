@@ -101,7 +101,7 @@ async function recordPriceSnapshots(quotes: Map<string, Quote>): Promise<void> {
 }
 
 /**
- * Além de quanto tempo um preço parado deixa de ser "a última cotação" e vira um
+ * A partir de quanto tempo um preço parado deixa de ser "a última cotação" e vira um
  * número órfão. Dentro da janela, o cenário provável é o provedor fora do ar e o
  * preço continua descrevendo o ativo; muito além dela, o cenário provável é o ticker
  * ter saído de negociação — e aí congelar o último preço para sempre esconderia o
