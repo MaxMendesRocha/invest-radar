@@ -27,15 +27,20 @@ function useIdleLogout(enabled: boolean) {
     const markActive = () => { lastActivityRef.current = Date.now(); };
     ACTIVITY_EVENTS.forEach((event) => window.addEventListener(event, markActive, { passive: true }));
 
-    const interval = setInterval(() => {
+    // mutateAsync em vez de callbacks de mutate pelo mesmo motivo de app-layout.tsx:
+    // a continuação fica numa promise nossa, e não depende de o componente seguir
+    // montado até a resposta chegar.
+    const interval = setInterval(async () => {
       if (Date.now() - lastActivityRef.current < IDLE_TIMEOUT_MS) return;
-      logout.mutate(undefined, {
-        onSuccess: () => {
-          queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
-          toast({ title: 'Sessão expirada por inatividade.' });
-          setLocation('/login');
-        },
-      });
+      try {
+        await logout.mutateAsync();
+      } catch {
+        // Ver app-layout.tsx: falha de rede não deve manter o usuário na área logada.
+      } finally {
+        queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
+        toast({ title: 'Sessão expirada por inatividade.' });
+        setLocation('/login');
+      }
     }, IDLE_CHECK_INTERVAL_MS);
 
     return () => {
