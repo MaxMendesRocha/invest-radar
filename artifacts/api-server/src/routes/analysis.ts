@@ -17,6 +17,7 @@ import {
   sectorFor,
   QUOTED_CATEGORIES,
   type PriceHistory,
+  type PricePoint,
   type Fundamentals,
   type DividendFrequencyLabel,
   type FiiProfile,
@@ -54,7 +55,7 @@ const MIN_DISTINCT_ASSETS = 3;
  */
 function computeConcentrationAlerts(
   assets: { ticker: string; quantity: string; averagePrice: string; sector: string | null }[],
-  prices: Map<string, number>,
+  prices: Map<string, PricePoint>,
   fundamentalsByTicker: Map<string, Fundamentals>,
   userId: number,
 ): AlertToInsert[] {
@@ -64,7 +65,7 @@ function computeConcentrationAlerts(
 
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
-    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
     const value = qty * price;
     totalValue += value;
 
@@ -216,7 +217,7 @@ async function buildPositionPercents(
   let total = 0;
   for (const asset of assets) {
     // Renda fixa não tem cotação: cai no preço médio, que é o valor da posição.
-    const price = prices.get(asset.ticker.toUpperCase()) ?? parseFloat(asset.averagePrice);
+    const price = prices.get(asset.ticker.toUpperCase())?.price ?? parseFloat(asset.averagePrice);
     const value = parseFloat(asset.quantity) * price;
     values.set(asset.ticker.toUpperCase(), value);
     total += value;
@@ -581,7 +582,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   // pelo mesmo motivo dos preços acima.
   let totalPatrimony = 0;
   for (const a of assets) {
-    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
     totalPatrimony += parseFloat(a.quantity) * price;
   }
   const technicalSeriesByTicker = await getTechnicalSeries(available.map((a) => a.ticker));
@@ -597,7 +598,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       const newsItems = (newsByTicker.get(analysis.ticker) ?? []).map(formatHeadline);
 
       const asset = assetsByTicker.get(analysis.ticker);
-      const currentPrice = asset ? (prices.get(analysis.ticker) ?? parseFloat(asset.averagePrice)) : null;
+      const currentPrice = asset ? (prices.get(analysis.ticker)?.price ?? parseFloat(asset.averagePrice)) : null;
       const tax = asset && currentPrice != null
         ? estimateCapitalGainsTax(asset.category, parseFloat(asset.quantity), parseFloat(asset.averagePrice), currentPrice)
         : null;

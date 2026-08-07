@@ -13,7 +13,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { analysisStatusConfig } from "@/lib/analysis-status";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatShortDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -318,7 +318,12 @@ export default function Carteira() {
                       </TableCell>
                       <TableCell className="text-right font-mono">{asset.quantity}</TableCell>
                       <TableCell className="text-right font-mono">{formatCurrency(asset.averagePrice)}</TableCell>
-                      <TableCell className="text-right font-mono">{asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}
+                        {asset.priceAsOf && (
+                          <div className="text-xs font-sans text-amber-700 dark:text-amber-500">{formatShortDateTime(asset.priceAsOf)}</div>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right font-mono">{asset.totalValue ? formatCurrency(asset.totalValue) : '-'}</TableCell>
                       <TableCell className={`text-right font-mono font-medium ${isProfit ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
                         {asset.profitLoss != null && asset.profitLossPercent != null ? (
@@ -410,8 +415,11 @@ export default function Carteira() {
                       <div className="font-mono">{formatCurrency(asset.averagePrice)}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground">Cotação Atual</div>
+                      <div className="text-xs text-muted-foreground">{asset.priceAsOf ? 'Última Cotação' : 'Cotação Atual'}</div>
                       <div className="font-mono">{asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}</div>
+                      {asset.priceAsOf && (
+                        <div className="text-xs text-amber-700 dark:text-amber-500">{formatShortDateTime(asset.priceAsOf)}</div>
+                      )}
                     </div>
                     <div>
                       <div className="text-xs text-muted-foreground">Total</div>

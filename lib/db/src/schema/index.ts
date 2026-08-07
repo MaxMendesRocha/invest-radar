@@ -9,6 +9,7 @@ export * from "./transactions";
 export * from "./analyses";
 export * from "./portfolio-snapshots";
 export * from "./index-snapshots";
+export * from "./price-snapshots";
 export * from "./job-runs";
 export * from "./sales";
 export * from "./sector-benchmarks";

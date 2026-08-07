@@ -813,6 +813,13 @@ components:
           type: ["string", "null"]
         currentPrice:
           type: ["number", "null"]
+        priceAsOf:
+          type: ["string", "null"]
+          format: date-time
+          description: >-
+            Preenchido só quando currentPrice é o último preço conhecido em vez da
+            cotação de agora (provedor indisponível) — é a data dessa última cotação.
+            Null quando o preço é ao vivo.
         totalValue:
           type: ["number", "null"]
         profitLoss:
@@ -1072,10 +1079,25 @@ components:
         pricesUnavailable:
           type: array
           description: >-
-            Tickers cotados sem cotação no momento — a posição entra no patrimônio
-            pelo preço médio, então o lucro/prejuízo dela aparece como zero.
+            Tickers cotados sem preço algum disponível — nem cotação de agora, nem
+            último preço conhecido. A posição entra no patrimônio pelo preço médio de
+            compra, então o lucro/prejuízo dela aparece como zero.
           items:
             type: string
+        pricesStale:
+          type: array
+          description: >-
+            Tickers avaliados pelo último preço conhecido porque o provedor não
+            respondeu. O preço é real, só defasado — asOf diz de quando é.
+          items:
+            type: object
+            required: [ticker, asOf]
+            properties:
+              ticker:
+                type: string
+              asOf:
+                type: string
+                format: date-time
         portfolioYield:
           type: number
           description: Proventos dos últimos 12 meses sobre o valor de mercado atual

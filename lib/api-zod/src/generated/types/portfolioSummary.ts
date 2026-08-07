@@ -5,6 +5,7 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { PortfolioSummaryPricesStaleItem } from './portfolioSummaryPricesStaleItem';
 
 export interface PortfolioSummary {
   totalPatrimony: number;
@@ -15,8 +16,10 @@ export interface PortfolioSummary {
   dividendsLast12m?: number;
   /** Proventos de 12 meses sobre o custo de aquisição */
   yieldOnCost?: number;
-  /** Tickers cotados sem cotação no momento — a posição entra no patrimônio pelo preço médio, então o lucro/prejuízo dela aparece como zero. */
+  /** Tickers cotados sem preço algum disponível — nem cotação de agora, nem último preço conhecido. A posição entra no patrimônio pelo preço médio de compra, então o lucro/prejuízo dela aparece como zero. */
   pricesUnavailable?: string[];
+  /** Tickers avaliados pelo último preço conhecido porque o provedor não respondeu. O preço é real, só defasado — asOf diz de quando é. */
+  pricesStale?: PortfolioSummaryPricesStaleItem[];
   /** Proventos dos últimos 12 meses sobre o valor de mercado atual */
   portfolioYield: number;
   assetCount: number;
