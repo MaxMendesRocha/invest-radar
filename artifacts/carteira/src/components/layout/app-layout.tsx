@@ -93,13 +93,29 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const logout = useLogout();
   const queryClient = useQueryClient();
 
-  const handleLogout = () => {
-    logout.mutate(undefined, {
-      onSuccess: () => {
-        queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
-        setLocation("/login");
-      }
-    });
+  /**
+   * No mobile este componente vive dentro da gaveta, e o clique em "Sair" fecha a
+   * gaveta — desmontando o próprio componente antes de a resposta do servidor chegar.
+   * Callbacks passados para `mutate(vars, { onSuccess })` não são chamados quando o
+   * componente desmonta antes de a mutation resolver, então o POST saía, o servidor
+   * destruía a sessão e a tela continuava exatamente a mesma até o usuário dar F5.
+   * No desktop nada disso aparecia: a sidebar não desmonta, e localmente a resposta
+   * volta rápido demais para perder a corrida — só com a latência real do Railway o
+   * desmonte chegava primeiro.
+   *
+   * Await em mutateAsync mantém a continuação na nossa própria promise, que não
+   * depende do componente continuar montado.
+   */
+  const handleLogout = async () => {
+    try {
+      await logout.mutateAsync();
+    } catch {
+      // Falha de rede não deve prender o usuário na área autenticada: sair da tela é
+      // o caminho seguro, e o AuthGuard revalida a sessão do outro lado.
+    } finally {
+      queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
+      setLocation("/login");
+    }
   };
 
   return (
