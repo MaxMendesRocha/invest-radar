@@ -83,6 +83,11 @@ export interface Asset {
   notes?: string | null;
   /** @nullable */
   currentPrice?: number | null;
+  /**
+     * Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.
+     * @nullable
+     */
+  priceAsOf?: string | null;
   /** @nullable */
   totalValue?: number | null;
   /** @nullable */
@@ -422,6 +427,11 @@ export interface InvestorProfileInput {
   liquidityNeed: InvestorProfileInputLiquidityNeed;
 }
 
+export type PortfolioSummaryPricesStaleItem = {
+  ticker: string;
+  asOf: string;
+};
+
 export interface PortfolioSummary {
   totalPatrimony: number;
   totalProfitLoss: number;
@@ -431,8 +441,10 @@ export interface PortfolioSummary {
   dividendsLast12m?: number;
   /** Proventos de 12 meses sobre o custo de aquisição */
   yieldOnCost?: number;
-  /** Tickers cotados sem cotação no momento — a posição entra no patrimônio pelo preço médio, então o lucro/prejuízo dela aparece como zero. */
+  /** Tickers cotados sem preço algum disponível — nem cotação de agora, nem último preço conhecido. A posição entra no patrimônio pelo preço médio de compra, então o lucro/prejuízo dela aparece como zero. */
   pricesUnavailable?: string[];
+  /** Tickers avaliados pelo último preço conhecido porque o provedor não respondeu. O preço é real, só defasado — asOf diz de quando é. */
+  pricesStale?: PortfolioSummaryPricesStaleItem[];
   /** Proventos dos últimos 12 meses sobre o valor de mercado atual */
   portfolioYield: number;
   assetCount: number;

@@ -3,7 +3,7 @@ import { db, assetsTable, salesTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams, SellAssetParams, SellAssetBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getDividendEvents, getDividendEventsForTicker, classifyDividendFrequency, type DividendFrequency } from "../lib/market-data";
+import { getPricesFor, getDividendEvents, getDividendEventsForTicker, classifyDividendFrequency, type DividendFrequency, type PricePoint } from "../lib/market-data";
 import { estimateCapitalGainsTax } from "../lib/tax-engine";
 import { computeMonthlyTaxSummary } from "../lib/monthly-tax-engine";
 
@@ -14,10 +14,11 @@ function enrichAsset(asset: {
   averagePrice: string; purchaseDate: string | null; category: string;
   sector: string | null; notes: string | null;
   createdAt: Date; updatedAt: Date;
-}, currentPrice: number | null, dividendFrequency: DividendFrequency | null) {
+}, quoted: PricePoint | null, dividendFrequency: DividendFrequency | null) {
   const qty = parseFloat(asset.quantity);
   const avgPrice = parseFloat(asset.averagePrice);
   const totalCost = qty * avgPrice;
+  const currentPrice = quoted?.price ?? null;
   const totalValue = currentPrice ? qty * currentPrice : null;
   const profitLoss = totalValue != null ? totalValue - totalCost : null;
   const profitLossPercent = profitLoss != null && totalCost > 0 ? (profitLoss / totalCost) * 100 : null;
@@ -33,6 +34,11 @@ function enrichAsset(asset: {
     sector: asset.sector,
     notes: asset.notes,
     currentPrice,
+    // Preenchido só quando currentPrice é o último preço conhecido em vez da cotação
+    // de agora (provedor fora do ar). Sem esse campo a tela exibiria um preço datado
+    // com a mesma cara de um preço ao vivo, e o lucro/prejuízo calculado a partir
+    // dele pareceria apurado neste instante.
+    priceAsOf: quoted?.asOf?.toISOString() ?? null,
     totalValue,
     profitLoss,
     profitLossPercent,

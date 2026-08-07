@@ -30,18 +30,27 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
 
   let totalPatrimony = 0;
   let totalCost = 0;
-  // Ativos cotados cuja cotação o provider não devolveu. A posição continua entrando
-  // no patrimônio pelo preço médio — excluí-la subestimaria mais do que aproximá-la —
-  // mas o fato é exposto: sem isso, uma falha do provider fazia o ativo aparecer com
-  // 0,00% de lucro/prejuízo, número calculado apresentado como se fosse medido.
+  // Ativos cotados sem preço NENHUM disponível — nem ao vivo, nem último conhecido
+  // dentro da janela. A posição continua entrando no patrimônio pelo preço médio de
+  // compra — excluí-la subestimaria mais do que aproximá-la — mas o fato é exposto:
+  // sem isso, uma falha do provider fazia o ativo aparecer com 0,00% de lucro/prejuízo,
+  // número calculado apresentado como se fosse medido.
   const pricesUnavailable: string[] = [];
+  // Ativos avaliados pelo último preço conhecido em vez da cotação de agora. Continua
+  // sendo preço real de mercado, só defasado — bem mais próximo da verdade do que o
+  // preço médio de compra —, e a data vai junto para a tela poder dizer de quando é.
+  const pricesStale: { ticker: string; asOf: string }[] = [];
 
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
     const avgPrice = parseFloat(a.averagePrice);
     const quoted = prices.get(a.ticker.toUpperCase());
-    if (quoted == null && QUOTED_CATEGORIES.has(a.category)) pricesUnavailable.push(a.ticker.toUpperCase());
-    const price = quoted ?? avgPrice;
+    if (quoted == null) {
+      if (QUOTED_CATEGORIES.has(a.category)) pricesUnavailable.push(a.ticker.toUpperCase());
+    } else if (quoted.asOf != null) {
+      pricesStale.push({ ticker: a.ticker.toUpperCase(), asOf: quoted.asOf.toISOString() });
+    }
+    const price = quoted?.price ?? avgPrice;
     totalPatrimony += qty * price;
     totalCost += qty * avgPrice;
   }
@@ -73,6 +82,7 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
     yieldOnCost,
     assetCount: assets.length,
     pricesUnavailable,
+    pricesStale,
   });
 });
 
@@ -91,7 +101,7 @@ router.get("/portfolio/distribution", requireAuth, async (req, res): Promise<voi
 
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
-    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
     const value = qty * price;
     total += value;
 
@@ -124,7 +134,7 @@ router.get("/portfolio/evolution", requireAuth, async (req, res): Promise<void> 
   let currentValue = 0;
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
-    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
     currentValue += qty * price;
   }
 
@@ -190,7 +200,7 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
   const valueBySector = new Map<string, number>();
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
-    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
     const value = qty * price;
     const ticker = a.ticker.toUpperCase();
     valueByTicker.set(ticker, (valueByTicker.get(ticker) ?? 0) + value);
@@ -223,7 +233,7 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
 
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
-    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
     const value = qty * price;
     totalValue += value;
     composition.push({ ticker: a.ticker, category: a.category, percent: 0 }); // percent preenchido depois de somar totalValue
@@ -248,7 +258,7 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
   for (const c of composition) {
     const a = assets.find((x) => x.ticker === c.ticker)!;
     const qty = parseFloat(a.quantity);
-    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
     c.percent = totalValue > 0 ? ((qty * price) / totalValue) * 100 : 0;
   }
 
@@ -351,7 +361,7 @@ router.get("/portfolio/dividends/projection", requireAuth, async (req, res): Pro
 
     const qty = parseFloat(a.quantity);
     const averagePrice = parseFloat(a.averagePrice);
-    const currentPrice = prices.get(a.ticker.toUpperCase()) ?? null;
+    const currentPrice = prices.get(a.ticker.toUpperCase())?.price ?? null;
     const events = dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [];
     const dps12m = sumLast12Months(events, now);
     const assetAnnualIncome = dps12m != null ? dps12m * qty : null;
@@ -398,7 +408,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
     const avgPrice = parseFloat(a.averagePrice);
-    const price = prices.get(a.ticker.toUpperCase()) ?? avgPrice;
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? avgPrice;
     totalCost += qty * avgPrice;
     totalValue += qty * price;
   }
@@ -484,7 +494,7 @@ async function currentIncomeAndPatrimony(userId: number): Promise<{ monthlyIncom
   let totalPatrimony = 0;
   for (const a of assets) {
     const qty = parseFloat(a.quantity);
-    const price = prices.get(a.ticker.toUpperCase()) ?? parseFloat(a.averagePrice);
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
     totalPatrimony += qty * price;
     if (!QUOTED_CATEGORIES.has(a.category)) continue;
     const dps12m = sumLast12Months(dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [], now);

@@ -1,3 +1,5 @@
+import { db, priceSnapshotsTable } from "@workspace/db";
+import { inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 const BRAPI_BASE_URL = "https://brapi.dev/api/quote";
@@ -67,9 +69,78 @@ async function fetchQuotes(tickers: string[]): Promise<Map<string, Quote>> {
 }
 
 /**
+ * Grava em price_snapshots as cotações que a brapi.dev acabou de devolver de verdade,
+ * para servirem de último preço conhecido quando ela cair (ver getLastKnownPrices).
+ *
+ * Só é chamada no ramo que foi de fato à rede, então o volume é de no máximo uma
+ * escrita por ticker a cada CACHE_TTL_MS. Falha de banco aqui é registrada e
+ * engolida de propósito: gravar o histórico é acessório, e derrubar a cotação ao vivo
+ * por causa disso trocaria um problema pequeno por um grande.
+ */
+async function recordPriceSnapshots(quotes: Map<string, Quote>): Promise<void> {
+  if (quotes.size === 0) return;
+  const rows = Array.from(quotes, ([ticker, quote]) => ({
+    ticker,
+    price: String(quote.price),
+    capturedAt: new Date(),
+  }));
+  try {
+    await db
+      .insert(priceSnapshotsTable)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: priceSnapshotsTable.ticker,
+        set: {
+          price: sql`excluded.price`,
+          capturedAt: sql`excluded.captured_at`,
+        },
+      });
+  } catch (err) {
+    logger.warn({ err, tickers: Array.from(quotes.keys()) }, "price snapshot upsert failed");
+  }
+}
+
+/**
+ * Além de quanto tempo um preço parado deixa de ser "a última cotação" e vira um
+ * número órfão. Dentro da janela, o cenário provável é o provedor fora do ar e o
+ * preço continua descrevendo o ativo; muito além dela, o cenário provável é o ticker
+ * ter saído de negociação — e aí congelar o último preço para sempre esconderia o
+ * fato em vez de informá-lo. Passado o prazo, volta a valer o aviso de "sem cotação".
+ */
+const MAX_SNAPSHOT_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Último preço real conhecido por ticker, dentro da janela de MAX_SNAPSHOT_AGE_MS. */
+export async function getLastKnownPrices(tickers: string[]): Promise<Map<string, { price: number; capturedAt: Date }>> {
+  const result = new Map<string, { price: number; capturedAt: Date }>();
+  if (tickers.length === 0) return result;
+
+  let rows: { ticker: string; price: string; capturedAt: Date }[] = [];
+  try {
+    rows = await db.select().from(priceSnapshotsTable).where(inArray(priceSnapshotsTable.ticker, tickers));
+  } catch (err) {
+    logger.warn({ err, tickers }, "price snapshot lookup failed");
+    return result;
+  }
+
+  const now = Date.now();
+  for (const row of rows) {
+    const price = parseFloat(row.price);
+    if (Number.isNaN(price) || price <= 0) continue;
+    if (now - row.capturedAt.getTime() > MAX_SNAPSHOT_AGE_MS) continue;
+    result.set(row.ticker.toUpperCase(), { price, capturedAt: row.capturedAt });
+  }
+  return result;
+}
+
+/**
  * Batched, cached lookup of real-time B3 quotes (ações, FIIs, ETFs, BDRs) via brapi.dev.
  * Tickers with no quote available (delisted, wrong category, provider error) are simply
- * absent from the returned map — callers fall back to average purchase price.
+ * absent from the returned map.
+ *
+ * Devolve SÓ cotação ao vivo, de propósito — o fallback de último preço conhecido mora
+ * em getPricesFor, uma camada acima. Quem chama aqui (fundamentos, alerta de preço)
+ * precisa saber que o dado é de agora: um alerta de preço disparado a partir de uma
+ * cotação de ontem avisaria sobre um patamar que o ativo pode nem ter tocado.
  */
 export async function getQuotes(tickers: string[]): Promise<Map<string, Quote>> {
   const uniqueTickers = Array.from(new Set(tickers.map((t) => t.toUpperCase())));
@@ -100,6 +171,7 @@ export async function getQuotes(tickers: string[]): Promise<Map<string, Quote>> 
       cache.set(ticker, { quote, fetchedAt: now });
       if (quote) fresh.set(ticker, quote);
     }
+    await recordPriceSnapshots(fetched);
   }
 
   return fresh;
@@ -1076,17 +1148,44 @@ export async function getTechnicalSeries(tickers: string[]): Promise<Map<string,
   return fresh;
 }
 
+export interface PricePoint {
+  price: number;
+  /**
+   * null quando o preço é a cotação ao vivo. Preenchido com o instante da captura
+   * quando é o último preço conhecido, servido porque o provedor não respondeu — ou
+   * seja, `asOf != null` É a marca de defasagem, não existe um booleano paralelo que
+   * possa discordar dela. Quem exibe o valor ao usuário tem obrigação de dizer a
+   * data; quem só agrega (percentual de concentração, distribuição por setor) pode
+   * ignorar o campo, e nesses casos um preço datado ainda descreve a carteira muito
+   * melhor do que o preço médio de compra.
+   */
+  asOf: Date | null;
+}
+
 /**
  * Convenience wrapper around getQuotes for a list of { ticker, category } records
  * (assets, opportunities, ...): filters to quotable categories and returns a
- * ticker -> price map. Missing entries mean no quote was available — callers
- * fall back to whatever price they already have on hand.
+ * ticker -> PricePoint map.
+ *
+ * Ticker ausente do mapa significa que não há preço nenhum — nem ao vivo, nem
+ * guardado dentro da janela — e o chamador cai no preço que já tem em mãos (o médio
+ * de compra). Esse era o único comportamento antes; hoje ele é o terceiro degrau,
+ * usado só depois de a cotação ao vivo e o último preço conhecido falharem.
  */
-export async function getPricesFor(items: { ticker: string; category: string }[]): Promise<Map<string, number>> {
-  const tickers = items.filter((i) => QUOTED_CATEGORIES.has(i.category)).map((i) => i.ticker);
-  const prices = new Map<string, number>();
+export async function getPricesFor(items: { ticker: string; category: string }[]): Promise<Map<string, PricePoint>> {
+  const tickers = items.filter((i) => QUOTED_CATEGORIES.has(i.category)).map((i) => i.ticker.toUpperCase());
+  const prices = new Map<string, PricePoint>();
   if (tickers.length === 0) return prices;
+
   const quotes = await getQuotes(tickers);
-  for (const [ticker, quote] of quotes) prices.set(ticker, quote.price);
+  for (const [ticker, quote] of quotes) prices.set(ticker, { price: quote.price, asOf: null });
+
+  const missing = Array.from(new Set(tickers)).filter((ticker) => !prices.has(ticker));
+  if (missing.length > 0) {
+    for (const [ticker, snapshot] of await getLastKnownPrices(missing)) {
+      prices.set(ticker, { price: snapshot.price, asOf: snapshot.capturedAt });
+    }
+  }
+
   return prices;
 }

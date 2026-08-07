@@ -91,6 +91,7 @@ export const ListAssetsResponseItem = zod.object({
   "sector": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "currentPrice": zod.number().nullish(),
+  "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.'),
   "totalValue": zod.number().nullish(),
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
@@ -127,6 +128,7 @@ export const CreateAssetResponse = zod.object({
   "sector": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "currentPrice": zod.number().nullish(),
+  "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.'),
   "totalValue": zod.number().nullish(),
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
@@ -153,6 +155,7 @@ export const GetAssetResponse = zod.object({
   "sector": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "currentPrice": zod.number().nullish(),
+  "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.'),
   "totalValue": zod.number().nullish(),
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
@@ -189,6 +192,7 @@ export const UpdateAssetResponse = zod.object({
   "sector": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "currentPrice": zod.number().nullish(),
+  "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.'),
   "totalValue": zod.number().nullish(),
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
@@ -365,7 +369,11 @@ export const GetPortfolioSummaryResponse = zod.object({
   "totalDividends": zod.number().describe('Acumulado de todos os proventos registrados, sem janela temporal'),
   "dividendsLast12m": zod.number().optional(),
   "yieldOnCost": zod.number().optional().describe('Proventos de 12 meses sobre o custo de aquisição'),
-  "pricesUnavailable": zod.array(zod.string()).optional().describe('Tickers cotados sem cotação no momento — a posição entra no patrimônio pelo preço médio, então o lucro\/prejuízo dela aparece como zero.'),
+  "pricesUnavailable": zod.array(zod.string()).optional().describe('Tickers cotados sem preço algum disponível — nem cotação de agora, nem último preço conhecido. A posição entra no patrimônio pelo preço médio de compra, então o lucro\/prejuízo dela aparece como zero.'),
+  "pricesStale": zod.array(zod.object({
+  "ticker": zod.string(),
+  "asOf": zod.coerce.date()
+})).optional().describe('Tickers avaliados pelo último preço conhecido porque o provedor não respondeu. O preço é real, só defasado — asOf diz de quando é.'),
   "portfolioYield": zod.number().describe('Proventos dos últimos 12 meses sobre o valor de mercado atual'),
   "assetCount": zod.number()
 })
@@ -809,7 +817,11 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "totalDividends": zod.number().describe('Acumulado de todos os proventos registrados, sem janela temporal'),
   "dividendsLast12m": zod.number().optional(),
   "yieldOnCost": zod.number().optional().describe('Proventos de 12 meses sobre o custo de aquisição'),
-  "pricesUnavailable": zod.array(zod.string()).optional().describe('Tickers cotados sem cotação no momento — a posição entra no patrimônio pelo preço médio, então o lucro\/prejuízo dela aparece como zero.'),
+  "pricesUnavailable": zod.array(zod.string()).optional().describe('Tickers cotados sem preço algum disponível — nem cotação de agora, nem último preço conhecido. A posição entra no patrimônio pelo preço médio de compra, então o lucro\/prejuízo dela aparece como zero.'),
+  "pricesStale": zod.array(zod.object({
+  "ticker": zod.string(),
+  "asOf": zod.coerce.date()
+})).optional().describe('Tickers avaliados pelo último preço conhecido porque o provedor não respondeu. O preço é real, só defasado — asOf diz de quando é.'),
   "portfolioYield": zod.number().describe('Proventos dos últimos 12 meses sobre o valor de mercado atual'),
   "assetCount": zod.number()
 }),

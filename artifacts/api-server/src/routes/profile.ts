@@ -26,7 +26,7 @@ async function buildRevealedProfile(userId: number) {
   return computeRevealedProfile(
     assets.map((asset) => {
       const ticker = asset.ticker.toUpperCase();
-      const price = prices.get(ticker) ?? parseFloat(asset.averagePrice);
+      const price = prices.get(ticker)?.price ?? parseFloat(asset.averagePrice);
       return {
         ticker,
         category: asset.category,

@@ -8,7 +8,7 @@ import {
   getGetPortfolioDistributionQueryKey,
   getGetPortfolioBenchmarksQueryKey
 } from "@workspace/api-client-react";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatShortDateTime } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -60,6 +60,13 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground mt-1">
               Distribuído em {summary?.assetCount || 0} ativos
             </p>
+            {summary?.pricesStale && summary.pricesStale.length > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-500 mt-1 text-pretty">
+                Cotação indisponível para {summary.pricesStale.map((s) => s.ticker).join(", ")} — avaliados
+                pelo último preço conhecido, o mais antigo deles de{" "}
+                {formatShortDateTime(summary.pricesStale.reduce((oldest, s) => (s.asOf < oldest ? s.asOf : oldest), summary.pricesStale[0].asOf))}.
+              </p>
+            )}
             {summary?.pricesUnavailable && summary.pricesUnavailable.length > 0 && (
               <p className="text-xs text-amber-700 dark:text-amber-500 mt-1 text-pretty">
                 Sem cotação para {summary.pricesUnavailable.join(", ")} — entram no total pelo preço médio,

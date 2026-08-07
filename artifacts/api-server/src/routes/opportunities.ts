@@ -112,7 +112,7 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
     const value = valueByTicker.get(item.ticker) ?? null;
     return {
     ...item,
-    currentPrice: prices.get(item.ticker.toUpperCase()) ?? null,
+    currentPrice: prices.get(item.ticker.toUpperCase())?.price ?? null,
     dividendFrequency: classifyDividendFrequency(dividendEventsByTicker.get(item.ticker.toUpperCase()) ?? [], now)?.label ?? null,
     dividendPremiumPP: value?.premiumOverSectorPP ?? null,
     sectorMedianYield: value?.sectorMedianYield ?? null,

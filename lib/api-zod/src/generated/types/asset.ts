@@ -23,6 +23,11 @@ export interface Asset {
   notes?: string | null;
   /** @nullable */
   currentPrice?: number | null;
+  /**
+     * Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.
+     * @nullable
+     */
+  priceAsOf?: Date | null;
   /** @nullable */
   totalValue?: number | null;
   /** @nullable */

@@ -70,6 +70,7 @@ export * from './portfolioHealth';
 export * from './portfolioHealthClassification';
 export * from './portfolioReport';
 export * from './portfolioSummary';
+export * from './portfolioSummaryPricesStaleItem';
 export * from './sale';
 export * from './saleCategory';
 export * from './sellAssetInput';
