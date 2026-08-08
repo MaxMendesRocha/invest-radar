@@ -30,6 +30,18 @@ export const treasuryBondsTable = pgTable("treasury_bonds", {
    */
   buyRate: numeric("buy_rate", { precision: 8, scale: 4 }).notNull(),
   buyUnitPrice: numeric("buy_unit_price", { precision: 14, scale: 2 }).notNull(),
+  /**
+   * Taxa e PU de RECOMPRA — o que o Tesouro paga a quem vende o título de volta.
+   *
+   * Existe separado do lado de compra porque os dois servem a perguntas diferentes, e
+   * trocá-los produz erro material: quem AINDA VAI COMPRAR se guia pelo PU de compra,
+   * mas uma posição JÁ DETIDA vale o que se consegue ao vender, que é sempre menos. No
+   * arquivo de 06/08 o spread ia de 0,06% (Selic curto) a 2,66% (IPCA+ 2050) — marcar
+   * a carteira pelo preço de compra infla o patrimônio exatamente nessa medida, e mais
+   * nos títulos longos, justamente os de posição maior.
+   */
+  sellRate: numeric("sell_rate", { precision: 8, scale: 4 }),
+  sellUnitPrice: numeric("sell_unit_price", { precision: 14, scale: 2 }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
   unique("treasury_bonds_type_maturity_unique").on(table.bondType, table.maturityDate),

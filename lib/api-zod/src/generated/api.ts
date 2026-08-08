@@ -90,6 +90,8 @@ export const ListAssetsResponseItem = zod.object({
   "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']),
   "sector": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "treasuryBondType": zod.string().nullish(),
+  "treasuryMaturityDate": zod.coerce.date().nullish(),
   "currentPrice": zod.number().nullish(),
   "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.'),
   "totalValue": zod.number().nullish(),
@@ -108,7 +110,9 @@ export const ListAssetsResponse = zod.array(ListAssetsResponseItem)
 
 
 export const CreateAssetBody = zod.object({
-  "ticker": zod.string().min(1),
+  "ticker": zod.string().min(1).describe('Ignorado quando treasuryBondType\/treasuryMaturityDate são enviados — nesse caso o servidor deriva um rótulo canônico do próprio título, para que duas compras do mesmo papel consolidem em vez de virarem posições separadas por diferença de digitação.'),
+  "treasuryBondType": zod.string().nullish().describe('Família do título público, exatamente como o Tesouro publica (\"Tesouro IPCA+ com Juros Semestrais\"). Só válido com category=renda_fixa, e sempre junto de treasuryMaturityDate. Ausente = renda fixa privada (CDB\/LCI\/LCA), que não tem fonte pública e segue no preço médio de compra.'),
+  "treasuryMaturityDate": zod.coerce.date().nullish(),
   "quantity": zod.number(),
   "averagePrice": zod.number(),
   "purchaseDate": zod.coerce.date().nullish(),
@@ -127,6 +131,8 @@ export const CreateAssetResponse = zod.object({
   "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']),
   "sector": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "treasuryBondType": zod.string().nullish(),
+  "treasuryMaturityDate": zod.coerce.date().nullish(),
   "currentPrice": zod.number().nullish(),
   "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.'),
   "totalValue": zod.number().nullish(),
@@ -154,6 +160,8 @@ export const GetAssetResponse = zod.object({
   "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']),
   "sector": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "treasuryBondType": zod.string().nullish(),
+  "treasuryMaturityDate": zod.coerce.date().nullish(),
   "currentPrice": zod.number().nullish(),
   "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.'),
   "totalValue": zod.number().nullish(),
@@ -191,6 +199,8 @@ export const UpdateAssetResponse = zod.object({
   "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']),
   "sector": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "treasuryBondType": zod.string().nullish(),
+  "treasuryMaturityDate": zod.coerce.date().nullish(),
   "currentPrice": zod.number().nullish(),
   "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.'),
   "totalValue": zod.number().nullish(),
@@ -426,6 +436,21 @@ export const GetPortfolioHealthResponse = zod.object({
   "concentration": zod.number(),
   "aiDiagnosis": zod.string().nullish()
 })
+
+
+/**
+ * @summary Títulos do Tesouro Direto disponíveis para cadastro de posição
+ */
+export const ListTreasuryBondsResponseItem = zod.object({
+  "bondType": zod.string(),
+  "maturityDate": zod.coerce.date(),
+  "baseDate": zod.coerce.date(),
+  "buyRate": zod.number(),
+  "buyUnitPrice": zod.number(),
+  "sellUnitPrice": zod.number().nullish().describe('PU de recompra — é este lado que marca uma posição já detida. Null quando o arquivo não trouxe: a posição fica no preço médio em vez de ser marcada pelo preço de compra, que a superestimaria.'),
+  "label": zod.string().describe('Rótulo canônico usado como ticker da posição, ex. \"TESOURO IPCA+ 2035\".')
+})
+export const ListTreasuryBondsResponse = zod.array(ListTreasuryBondsResponseItem)
 
 
 /**

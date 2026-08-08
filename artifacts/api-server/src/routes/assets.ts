@@ -4,6 +4,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams, SellAssetParams, SellAssetBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getDividendEvents, getDividendEventsForTicker, classifyDividendFrequency, type DividendFrequency, type PricePoint } from "../lib/market-data";
+import { canonicalTickerFor, findTreasuryBond } from "../lib/treasury-identity";
 import { estimateCapitalGainsTax } from "../lib/tax-engine";
 import { computeMonthlyTaxSummary } from "../lib/monthly-tax-engine";
 
@@ -12,6 +13,7 @@ const router: IRouter = Router();
 function enrichAsset(asset: {
   id: number; userId: number; ticker: string; quantity: string;
   averagePrice: string; purchaseDate: string | null; category: string;
+  treasuryBondType: string | null; treasuryMaturityDate: string | null;
   sector: string | null; notes: string | null;
   createdAt: Date; updatedAt: Date;
 }, quoted: PricePoint | null, dividendFrequency: DividendFrequency | null) {
@@ -31,6 +33,8 @@ function enrichAsset(asset: {
     averagePrice: avgPrice,
     purchaseDate: asset.purchaseDate,
     category: asset.category,
+    treasuryBondType: asset.treasuryBondType,
+    treasuryMaturityDate: asset.treasuryMaturityDate,
     sector: asset.sector,
     notes: asset.notes,
     currentPrice,
@@ -45,6 +49,16 @@ function enrichAsset(asset: {
     dividendFrequency: dividendFrequency?.label ?? null,
     createdAt: asset.createdAt.toISOString(),
   };
+}
+
+/**
+ * O zod gerado a partir de `format: date` no OpenAPI entrega Date, não string — mesmo
+ * caso de purchaseDate, que a rota já normaliza com um typeof. Aqui a normalização é
+ * obrigatória e não cosmética: o vencimento é metade da chave que liga a posição à
+ * tabela de preços, e um Date serializado por acidente nunca casaria com a coluna date.
+ */
+function isoDate(value: string | Date): string {
+  return typeof value === "string" ? value : value.toISOString().slice(0, 10);
 }
 
 // Usado pelas rotas de mutação/leitura de um único ativo (criar/editar/buscar), onde
@@ -76,7 +90,35 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const { ticker, quantity, averagePrice, purchaseDate, category, sector, notes } = parsed.data;
-  const tickerUpper = ticker.toUpperCase();
+  const { treasuryBondType, treasuryMaturityDate } = parsed.data;
+
+  // Título público: o par identifica o papel e o ticker passa a ser derivado dele, não
+  // digitado — ver treasury-identity.ts para o porquê.
+  const treasuryRef = treasuryBondType && treasuryMaturityDate
+    ? { bondType: treasuryBondType, maturityDate: isoDate(treasuryMaturityDate) }
+    : null;
+
+  if (treasuryRef && category !== "renda_fixa") {
+    res.status(400).json({ error: "Título do Tesouro Direto só pode ser cadastrado na categoria Renda Fixa." });
+    return;
+  }
+  // Metade do par é sempre erro de chamada, e aceitá-lo gravaria uma posição que se
+  // apresenta como título público sem conseguir ser ligada a preço nenhum.
+  if (!treasuryRef && (treasuryBondType || treasuryMaturityDate)) {
+    res.status(400).json({ error: "Informe família e vencimento do título juntos, ou nenhum dos dois." });
+    return;
+  }
+  if (treasuryRef) {
+    const { found, tableEmpty } = await findTreasuryBond(treasuryRef);
+    // Tabela vazia é falha nossa (sincronização diária ainda não rodou), não do usuário
+    // — o cadastro passa e a posição é marcada a mercado na primeira sincronização.
+    if (!found && !tableEmpty) {
+      res.status(400).json({ error: `Título não encontrado na lista do Tesouro Direto: ${treasuryRef.bondType} ${treasuryRef.maturityDate}.` });
+      return;
+    }
+  }
+
+  const tickerUpper = treasuryRef ? canonicalTickerFor(treasuryRef) : ticker.toUpperCase();
 
   // Comprar mais de um ticker que já está na carteira consolida na mesma linha em vez
   // de criar uma segunda posição — soma a quantidade e recalcula o preço médio
@@ -110,6 +152,8 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     averagePrice: String(averagePrice),
     purchaseDate: typeof purchaseDate === "string" ? purchaseDate : null,
     category,
+    treasuryBondType: treasuryRef?.bondType ?? null,
+    treasuryMaturityDate: treasuryRef?.maturityDate ?? null,
     sector: sector ?? null,
     notes: notes ?? null,
   }).returning();

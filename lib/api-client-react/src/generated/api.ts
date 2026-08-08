@@ -53,6 +53,7 @@ import type {
   SuccessResponse,
   Transaction,
   TransactionInput,
+  TreasuryBondOption,
   UpcomingDividend,
   User,
   UserLoginInput,
@@ -1491,6 +1492,83 @@ export function useGetPortfolioHealth<TData = Awaited<ReturnType<typeof getPortf
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPortfolioHealthQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListTreasuryBondsUrl = () => {
+
+
+
+
+  return `/api/treasury/bonds`
+}
+
+/**
+ * @summary Títulos do Tesouro Direto disponíveis para cadastro de posição
+ */
+export const listTreasuryBonds = async ( options?: RequestInit): Promise<TreasuryBondOption[]> => {
+
+  return customFetch<TreasuryBondOption[]>(getListTreasuryBondsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTreasuryBondsQueryKey = () => {
+    return [
+    `/api/treasury/bonds`
+    ] as const;
+    }
+
+
+export const getListTreasuryBondsQueryOptions = <TData = Awaited<ReturnType<typeof listTreasuryBonds>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTreasuryBonds>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTreasuryBondsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTreasuryBonds>>> = ({ signal }) => listTreasuryBonds({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTreasuryBonds>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTreasuryBondsQueryResult = NonNullable<Awaited<ReturnType<typeof listTreasuryBonds>>>
+export type ListTreasuryBondsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Títulos do Tesouro Direto disponíveis para cadastro de posição
+ */
+
+export function useListTreasuryBonds<TData = Awaited<ReturnType<typeof listTreasuryBonds>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTreasuryBonds>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTreasuryBondsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

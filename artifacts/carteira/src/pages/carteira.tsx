@@ -6,6 +6,8 @@ import {
   useDeleteAsset,
   useSellAsset,
   useListAssetAnalyses,
+  useListTreasuryBonds,
+  getListTreasuryBondsQueryKey,
   getListAssetsQueryKey,
   getListAssetAnalysesQueryKey,
   getListSalesQueryKey,
@@ -13,7 +15,17 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { analysisStatusConfig } from "@/lib/analysis-status";
-import { formatCurrency, formatPercent, formatShortDateTime } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatShortDateTime, formatShortDate } from "@/lib/utils";
+
+/**
+ * Título público carrega DATA-BASE (um dia), cotação de bolsa carrega um INSTANTE.
+ * Formatar os dois com hora fazia o PU do Tesouro aparecer como "07/08 às 00h00" —
+ * meia-noite não é quando o Tesouro publicou nada, é só o começo do dia virando hora.
+ */
+function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: string | null }): string {
+  if (!asset.priceAsOf) return "";
+  return asset.treasuryBondType ? formatShortDate(asset.priceAsOf.slice(0, 10)) : formatShortDateTime(asset.priceAsOf);
+}
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,6 +65,21 @@ export default function Carteira() {
   const [quantity, setQuantity] = useState("");
   const [averagePrice, setAveragePrice] = useState("");
   const [category, setCategory] = useState("acoes");
+  /**
+   * "" = nada escolhido ainda, "outro" = renda fixa privada (CDB/LCI/LCA, texto livre,
+   * sem fonte pública de preço), qualquer outro valor = chave "família|vencimento" de
+   * um título público.
+   *
+   * O estado começa vazio em vez de já em "outro" de propósito: pré-selecionar o texto
+   * livre esconderia a existência dos 60 títulos do Tesouro de quem não abrisse o
+   * seletor, e o caminho que o app sabe avaliar de verdade ficaria sendo o menos óbvio.
+   */
+  const [treasuryKey, setTreasuryKey] = useState("");
+  // Depois do useState de `category` de propósito: declarado antes, cairia na zona morta
+  // da const e quebraria na renderização. Só busca quando a categoria é renda fixa —
+  // não faz sentido carregar a lista do Tesouro para quem cadastra uma ação.
+  const { data: treasuryBonds } = useListTreasuryBonds({ query: { queryKey: getListTreasuryBondsQueryKey(), enabled: category === "renda_fixa" } });
+  const selectedBond = treasuryBonds?.find((b) => `${b.bondType}|${b.maturityDate}` === treasuryKey) ?? null;
 
   // Sell Form State
   const [salePrice, setSalePrice] = useState("");
@@ -72,20 +99,34 @@ export default function Carteira() {
     setQuantity("");
     setAveragePrice("");
     setCategory("acoes");
+    setTreasuryKey("");
     setEditingId(null);
   };
 
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (category === "renda_fixa" && !treasuryKey) {
+      toast({ title: "Escolha o título, ou \"Outro\" para renda fixa privada.", variant: "destructive" });
+      return;
+    }
     const enteredQuantity = Number(quantity);
-    const existing = assets?.find((a) => a.ticker === ticker.toUpperCase() && a.category === category);
+    // Para título público a comparação é pelo par, não pelo ticker: o ticker é derivado
+    // no servidor, então o cliente não sabe qual string vai sair e erraria o aviso de
+    // consolidação.
+    const existing = selectedBond
+      ? assets?.find((a) => a.treasuryBondType === selectedBond.bondType && a.treasuryMaturityDate === selectedBond.maturityDate)
+      : assets?.find((a) => a.ticker === ticker.toUpperCase() && a.category === category);
 
     createAsset.mutate({
       data: {
-        ticker,
+        // Ignorado pelo servidor quando o par vai preenchido, mas o campo é obrigatório
+        // no contrato — o rótulo do título serve de valor honesto.
+        ticker: selectedBond ? selectedBond.label : ticker,
         quantity: enteredQuantity,
         averagePrice: Number(averagePrice),
-        category: category as any
+        category: category as any,
+        treasuryBondType: selectedBond?.bondType ?? null,
+        treasuryMaturityDate: selectedBond?.maturityDate ?? null,
       }
     }, {
       onSuccess: (asset) => {
@@ -237,23 +278,11 @@ export default function Carteira() {
               <DialogDescription>Adicione uma nova posição à sua carteira.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateSubmit} className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Ticker</Label>
-                <Input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="PETR4" required />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Quantidade</Label>
-                  <Input type="number" step="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
-                </div>
-                <div className="space-y-2">
-                  <Label>Preço Médio</Label>
-                  <Input type="number" step="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
-                </div>
-              </div>
+              {/* Categoria primeiro: é ela que decide se o campo seguinte é um seletor
+                  de título público ou um ticker de bolsa digitado. */}
               <div className="space-y-2">
                 <Label>Categoria</Label>
-                <Select value={category} onValueChange={setCategory}>
+                <Select value={category} onValueChange={(v) => { setCategory(v); setTreasuryKey(""); }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {Object.entries(CATEGORY_MAP).map(([k, v]) => (
@@ -261,6 +290,56 @@ export default function Carteira() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {category === "renda_fixa" ? (
+                <div className="space-y-2">
+                  <Label>Título</Label>
+                  <Select value={treasuryKey} onValueChange={setTreasuryKey}>
+                    <SelectTrigger><SelectValue placeholder="Selecione o título…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="outro">Outro (CDB, LCI, LCA…)</SelectItem>
+                      {(treasuryBonds ?? []).map((b) => (
+                        <SelectItem key={`${b.bondType}|${b.maturityDate}`} value={`${b.bondType}|${b.maturityDate}`}>
+                          {b.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {treasuryBonds?.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-pretty">
+                      A lista do Tesouro Direto ainda não foi sincronizada — ela é atualizada uma vez por dia.
+                      Até lá, cadastre como "Outro".
+                    </p>
+                  )}
+                  {selectedBond && (
+                    <p className="text-xs text-muted-foreground text-pretty">
+                      PU de compra em {formatShortDate(selectedBond.baseDate)}: {formatCurrency(selectedBond.buyUnitPrice)} ·
+                      a posição será marcada a mercado pelo PU de recompra.
+                    </p>
+                  )}
+                  {/* Renda fixa privada não tem fonte pública de preço, então continua
+                      identificada por texto livre e avaliada pelo preço médio. */}
+                  {treasuryKey === "outro" && (
+                    <Input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="CDB BANCO X 2028" required />
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Ticker</Label>
+                  <Input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="PETR4" required />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Quantidade</Label>
+                  <Input type="number" step="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label>{selectedBond ? "PU pago" : "Preço Médio"}</Label>
+                  <Input type="number" step="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
+                </div>
               </div>
               <DialogFooter>
                 <Button type="submit" disabled={createAsset.isPending}>
@@ -321,7 +400,11 @@ export default function Carteira() {
                       <TableCell className="text-right font-mono">
                         {asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}
                         {asset.priceAsOf && (
-                          <div className="text-xs font-sans text-amber-700 dark:text-amber-500">{formatShortDateTime(asset.priceAsOf)}</div>
+                          // Âmbar sinaliza problema, e título público datado não é
+                          // problema: o Tesouro publica o PU com atraso por natureza.
+                          <div className={`text-xs font-sans ${asset.treasuryBondType ? "text-muted-foreground" : "text-amber-700 dark:text-amber-500"}`}>
+                            {priceMoment(asset)}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell className="text-right font-mono">{asset.totalValue ? formatCurrency(asset.totalValue) : '-'}</TableCell>
@@ -415,10 +498,14 @@ export default function Carteira() {
                       <div className="font-mono">{formatCurrency(asset.averagePrice)}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground">{asset.priceAsOf ? 'Última Cotação' : 'Cotação Atual'}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {asset.treasuryBondType ? 'PU de Recompra' : asset.priceAsOf ? 'Última Cotação' : 'Cotação Atual'}
+                      </div>
                       <div className="font-mono">{asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}</div>
                       {asset.priceAsOf && (
-                        <div className="text-xs text-amber-700 dark:text-amber-500">{formatShortDateTime(asset.priceAsOf)}</div>
+                        <div className={`text-xs ${asset.treasuryBondType ? "text-muted-foreground" : "text-amber-700 dark:text-amber-500"}`}>
+                          {priceMoment(asset)}
+                        </div>
                       )}
                     </div>
                     <div>

@@ -95,6 +95,7 @@ export * from './transaction';
 export * from './transactionInput';
 export * from './transactionInputType';
 export * from './transactionType';
+export * from './treasuryBondOption';
 export * from './treasurySuggestion';
 export * from './upcomingDividend';
 export * from './user';

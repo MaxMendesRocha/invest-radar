@@ -8,8 +8,18 @@
 import type { AssetInputCategory } from './assetInputCategory';
 
 export interface AssetInput {
-  /** @minLength 1 */
+  /**
+     * Ignorado quando treasuryBondType/treasuryMaturityDate são enviados — nesse caso o servidor deriva um rótulo canônico do próprio título, para que duas compras do mesmo papel consolidem em vez de virarem posições separadas por diferença de digitação.
+     * @minLength 1
+     */
   ticker: string;
+  /**
+     * Família do título público, exatamente como o Tesouro publica ("Tesouro IPCA+ com Juros Semestrais"). Só válido com category=renda_fixa, e sempre junto de treasuryMaturityDate. Ausente = renda fixa privada (CDB/LCI/LCA), que não tem fonte pública e segue no preço médio de compra.
+     * @nullable
+     */
+  treasuryBondType?: string | null;
+  /** @nullable */
+  treasuryMaturityDate?: Date | null;
   quantity: number;
   averagePrice: number;
   /** @nullable */
