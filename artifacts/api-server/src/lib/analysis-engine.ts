@@ -3,11 +3,19 @@ import type { Fundamentals } from "./market-data";
 export type AnalysisStatus = "COMPRAR" | "MANTER" | "VENDER";
 export type ScoreClassification = "Excelente" | "Forte" | "Estavel" | "Atencao" | "Critico";
 
+/**
+ * Por que o status é o que é. Só faz sentido para VENDER, onde a mesma palavra vinha
+ * de duas causas que pedem ações opostas — ver resolveStatusReason.
+ */
+export type StatusReason = "fundamentos" | "concentracao" | "fundamentos_e_concentracao";
+
 export interface AnalysisResult {
   available: boolean;
   score: number;
   scoreClassification: ScoreClassification;
   status: AnalysisStatus;
+  /** Preenchido só quando status é VENDER. Null nos demais. */
+  statusReason: StatusReason | null;
   positives: string[];
   risks: string[];
   monitoringRecommendation: string;
@@ -240,6 +248,70 @@ export function resolveAnalysisStatus(
   return "MANTER";
 }
 
+/**
+ * Qual das duas condições acima disparou o VENDER.
+ *
+ * Existe porque as duas pedem coisas opostas e o badge sozinho não distinguia:
+ *
+ * - `fundamentos` (score < 40): o argumento é sobre o ATIVO. Não há quantidade certa a
+ *   vender — quanto reduzir de um papel cuja tese piorou depende de convicção, prazo e
+ *   imposto, que o app não tem como decidir por ninguém.
+ * - `concentracao` (posição acima do crítico do perfil): o argumento é sobre o TAMANHO,
+ *   e o ativo pode ser ótimo. Aqui existe resposta aritmética — reduzir até a faixa
+ *   saudável — e vender tudo destruiria uma posição boa por um problema de proporção.
+ *
+ * Quando as duas disparam, as duas precisam ser ditas: reduzir a posição não conserta
+ * fundamento ruim, e reavaliar a tese não conserta concentração.
+ */
+export function resolveStatusReason(
+  score: number,
+  positionPercent: number,
+  limits: ConcentrationLimits = DEFAULT_CONCENTRATION_LIMITS,
+): StatusReason | null {
+  const weakFundamentals = score < 40;
+  const overConcentrated = positionPercent > limits.critical;
+  if (weakFundamentals && overConcentrated) return "fundamentos_e_concentracao";
+  if (weakFundamentals) return "fundamentos";
+  if (overConcentrated) return "concentracao";
+  return null;
+}
+
+export interface TrimSuggestion {
+  /** Valor a reduzir para a posição voltar à faixa saudável (limite `high`). */
+  value: number;
+  /** Percentual da posição que isso representa. */
+  percentOfPosition: number;
+  targetPercent: number;
+}
+
+/**
+ * Quanto vender para a posição voltar ao limite `high` do perfil.
+ *
+ * Com patrimônio T, posição v e alvo h, resolve v − X = h·T, ou seja X = v − h·T.
+ *
+ * Isso assume que o valor vendido é REALOCADO dentro da carteira, mantendo T. Se o
+ * dinheiro sair, o patrimônio medido pelo app encolhe junto e a conta correta seria
+ * X = (v − h·T)/(1 − h), que dá quase um terço a mais. As duas contas são defensáveis
+ * e a diferença é grande demais para escolher em silêncio — a premissa vai escrita na
+ * tela, e realocar é o que o resto do app já assume (o plano de aporte rebalanceia sem
+ * vender, então reduzir aqui é a outra ponta do mesmo movimento).
+ */
+export function computeTrimSuggestion(
+  positionValue: number,
+  totalPortfolioValue: number,
+  limits: ConcentrationLimits = DEFAULT_CONCENTRATION_LIMITS,
+): TrimSuggestion | null {
+  if (!(positionValue > 0) || !(totalPortfolioValue > 0)) return null;
+  const target = (limits.high / 100) * totalPortfolioValue;
+  const value = positionValue - target;
+  if (!(value > 0)) return null;
+  return {
+    value,
+    percentOfPosition: (value / positionValue) * 100,
+    targetPercent: limits.high,
+  };
+}
+
 function buildRecommendation(risks: string[]): string {
   if (risks.length === 0) {
     return "Fundamentos sólidos no momento. Acompanhar os próximos resultados trimestrais e eventuais mudanças no cenário macroeconômico.";
@@ -252,6 +324,7 @@ const NO_FUNDAMENTALS_RESULT: AnalysisResult = {
   score: 0,
   scoreClassification: "Estavel",
   status: "MANTER",
+  statusReason: null,
   positives: [],
   risks: [],
   monitoringRecommendation: "Dados fundamentalistas não disponíveis para este ativo no momento.",
@@ -262,6 +335,7 @@ const NOT_QUOTED_RESULT: AnalysisResult = {
   score: 60,
   scoreClassification: "Estavel",
   status: "MANTER",
+  statusReason: null,
   positives: [],
   risks: [],
   monitoringRecommendation: "Ativo de renda fixa ou fundo sem ticker de bolsa — fora do escopo da análise fundamentalista automatizada.",
@@ -275,6 +349,7 @@ const PENDING_RESULT: AnalysisResult = {
   score: 0,
   scoreClassification: "Estavel",
   status: "MANTER",
+  statusReason: null,
   positives: [],
   risks: [],
   monitoringRecommendation: "Não foi possível obter os fundamentos deste ativo agora — tente gerar a análise novamente em alguns minutos.",
@@ -358,6 +433,7 @@ export function analyzeFundamentals(
     score,
     scoreClassification: scoreClassification(score),
     status: resolveAnalysisStatus(score, positionPercent, limits),
+    statusReason: resolveStatusReason(score, positionPercent, limits),
     positives,
     risks,
     monitoringRecommendation: buildRecommendation(risks),

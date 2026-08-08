@@ -22,7 +22,7 @@ import {
   type DividendFrequencyLabel,
   type FiiProfile,
 } from "../lib/market-data";
-import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, computeDuPontBreakdown, type AnalysisResult, concentrationLimitsFor, type ConcentrationLimits } from "../lib/analysis-engine";
+import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, computeDuPontBreakdown, computeTrimSuggestion, resolveStatusReason, type AnalysisResult, concentrationLimitsFor, type ConcentrationLimits } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { getCdiTrailingAnnual } from "../lib/benchmark-data";
@@ -209,22 +209,38 @@ async function concentrationLimitsForUser(userId: number): Promise<Concentration
   return concentrationLimitsFor(profile?.classification ?? null);
 }
 
-async function buildPositionPercents(
+/**
+ * Percentual, valor e preço de cada posição, mais o total da carteira.
+ *
+ * Antes devolvia só o percentual. O valor e o preço passaram a ser necessários para
+ * dizer QUANTO vender quando o status é VENDER por concentração — sem eles a resposta
+ * seria "reduza", que é justamente a parte que o usuário já sabia.
+ */
+interface PositionContext {
+  percents: Map<string, number>;
+  values: Map<string, number>;
+  prices: Map<string, number>;
+  total: number;
+}
+
+async function buildPositionContext(
   assets: { ticker: string; category: string; quantity: string; averagePrice: string }[],
-): Promise<Map<string, number>> {
-  const prices = await getPricesFor(assets);
+): Promise<PositionContext> {
+  const quoted = await getPricesFor(assets);
   const values = new Map<string, number>();
+  const prices = new Map<string, number>();
   let total = 0;
   for (const asset of assets) {
-    // Renda fixa não tem cotação: cai no preço médio, que é o valor da posição.
-    const price = prices.get(asset.ticker.toUpperCase())?.price ?? parseFloat(asset.averagePrice);
+    // Renda fixa privada não tem cotação: cai no preço médio, que é o valor da posição.
+    const price = quoted.get(asset.ticker.toUpperCase())?.price ?? parseFloat(asset.averagePrice);
     const value = parseFloat(asset.quantity) * price;
+    prices.set(asset.ticker.toUpperCase(), price);
     values.set(asset.ticker.toUpperCase(), value);
     total += value;
   }
   const percents = new Map<string, number>();
   for (const [ticker, value] of values) percents.set(ticker, total > 0 ? (value / total) * 100 : 0);
-  return percents;
+  return { percents, values, prices, total };
 }
 
 interface DividendDerivedMaps {
@@ -264,11 +280,43 @@ async function getNewsItemsFor(ticker: string, category: string): Promise<string
   return headlines.map(formatHeadline);
 }
 
-function serializePersisted(row: typeof analysesTable.$inferSelect, dividendFrequency: DividendFrequencyLabel | null) {
+function serializePersisted(
+  row: typeof analysesTable.$inferSelect,
+  dividendFrequency: DividendFrequencyLabel | null,
+  live?: {
+    asset: { category: string; quantity: string; averagePrice: string };
+    context: PositionContext;
+    limits: ConcentrationLimits;
+  },
+) {
+  /**
+   * statusReason e trimSuggestion são RECALCULADOS na leitura, não lidos do banco.
+   *
+   * Não é economia de coluna: os dois dependem da carteira de AGORA. A posição que
+   * pesava 45% quando a análise foi gerada pode pesar 20% hoje porque outro ativo
+   * subiu, e um "venda R$ 3 mil" persistido continuaria afirmando isso com números da
+   * semana passada. O score e os fundamentos ficam parados de propósito (são caros e
+   * mudam devagar); concentração muda a cada oscilação de preço.
+   *
+   * Sem isso, a tela lia o VENDER do banco e caía no texto de "não há número
+   * calculável" mesmo quando a causa era concentração e o número existia — foi
+   * exatamente o que apareceu no primeiro teste de tela.
+   */
+  const score = parseFloat(row.score);
+  const upper = row.ticker.toUpperCase();
+  const statusReason = live && row.status === "VENDER"
+    ? resolveStatusReason(score, live.context.percents.get(upper) ?? 0, live.limits)
+    : null;
+  const trimSuggestion = live
+    ? buildTrim({ ...({} as AnalysisResult), status: row.status as AnalysisResult["status"], statusReason }, row.ticker, live.asset, live.context, live.limits)
+    : null;
+
   return {
     ticker: row.ticker,
     available: true,
     status: row.status,
+    statusReason,
+    trimSuggestion,
     score: parseFloat(row.score),
     scoreClassification: row.scoreClassification,
     positives: JSON.parse(row.positives) as string[],
@@ -289,11 +337,55 @@ function serializePersisted(row: typeof analysesTable.$inferSelect, dividendFreq
   };
 }
 
-function toApiShape(ticker: string, result: AnalysisResult, newsItems: string[], dividendFrequency: DividendFrequencyLabel | null) {
+/**
+ * Quanto vender, e qual o IR estimado sobre esse recorte.
+ *
+ * Só faz sentido quando a concentração é (uma d)as causas do VENDER: ali existe uma
+ * resposta aritmética. Quando o VENDER vem só de fundamento fraco, não há quantidade
+ * calculável — quanto reduzir depende de convicção e prazo, e devolver um número
+ * daria ares de cálculo a um palpite.
+ */
+function buildTrim(
+  result: AnalysisResult,
+  ticker: string,
+  asset: { category: string; quantity: string; averagePrice: string } | undefined,
+  context: PositionContext,
+  limits: ConcentrationLimits,
+) {
+  if (!asset) return null;
+  if (result.statusReason !== "concentracao" && result.statusReason !== "fundamentos_e_concentracao") return null;
+
+  const upper = ticker.toUpperCase();
+  const trim = computeTrimSuggestion(context.values.get(upper) ?? 0, context.total, limits);
+  if (!trim) return null;
+
+  const price = context.prices.get(upper) ?? parseFloat(asset.averagePrice);
+  const quantityToSell = price > 0 ? trim.value / price : 0;
+  // IR sobre a FATIA vendida, não sobre a posição inteira: a faixa de isenção de
+  // R$ 20 mil/mês em ações é sobre o valor da venda, então estimar pelo total
+  // exageraria o imposto justamente no caso em que a venda parcial o evita.
+  const tax = quantityToSell > 0
+    ? estimateCapitalGainsTax(asset.category, quantityToSell, parseFloat(asset.averagePrice), price)
+    : null;
+
+  return {
+    value: trim.value,
+    quantity: quantityToSell,
+    percentOfPosition: trim.percentOfPosition,
+    targetPercent: trim.targetPercent,
+    taxEstimate: tax,
+  };
+}
+
+function toApiShape(ticker: string, result: AnalysisResult, newsItems: string[], dividendFrequency: DividendFrequencyLabel | null, trim: ReturnType<typeof buildTrim> = null) {
   return {
     ticker: ticker.toUpperCase(),
     available: result.available,
     status: result.status,
+    // Distingue os dois VENDER, que pedem ações opostas — ver resolveStatusReason.
+    statusReason: result.statusReason,
+    // Preenchido só quando a concentração é causa do VENDER: aí "quanto vender" é conta.
+    trimSuggestion: trim,
     score: result.score,
     scoreClassification: result.scoreClassification,
     positives: result.positives,
@@ -321,20 +413,22 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
   // dividendFrequency não é persistido (sempre recalculado ao vivo, ver serializePersisted),
   // então busca pra TODOS os ativos (não só os pendentes) — o dps12mByTicker resultante
   // cobre os pendentes de qualquer forma, então não precisa de uma segunda busca.
-  const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker }, positionPercentByTicker, concentrationLimits] = await Promise.all([
+  const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker }, positionContext, concentrationLimits] = await Promise.all([
     getFundamentals(pendingAssets.map((a) => a.ticker)),
     buildDividendDerivedMaps(assets.map((a) => ({ ticker: a.ticker, category: a.category }))),
-    buildPositionPercents(assets),
+    buildPositionContext(assets),
     concentrationLimitsForUser(req.session.userId!),
   ]);
+  const positionPercentByTicker = positionContext.percents;
 
   const result = await Promise.all(
     assets.map(async (asset) => {
       const dividendFrequency = dividendFrequencyByTicker.get(asset.ticker.toUpperCase()) ?? null;
       const existing = analysisMap.get(asset.ticker);
-      if (existing) return serializePersisted(existing, dividendFrequency);
+      if (existing) return serializePersisted(existing, dividendFrequency, { asset, context: positionContext, limits: concentrationLimits });
       const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-      return toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits), newsItems, dividendFrequency);
+      const analysisResult = computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits);
+      return toApiShape(asset.ticker, analysisResult, newsItems, dividendFrequency, buildTrim(analysisResult, asset.ticker, asset, positionContext, concentrationLimits));
     })
   );
 
@@ -352,16 +446,6 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
     and(eq(analysesTable.ticker, params.data.ticker.toUpperCase()), eq(analysesTable.userId, req.session.userId!))
   );
 
-  if (existing) {
-    // analysesTable não guarda category — getDividendEventsForTicker não precisa dela
-    // (tenta o endpoint de ações/ETFs/BDRs, cai pro de FII se vier vazio), então serve
-    // bem aqui sem precisar buscar o asset só por causa disso.
-    const events = await getDividendEventsForTicker(existing.ticker);
-    const dividendFrequency = classifyDividendFrequency(events, Date.now())?.label ?? null;
-    res.json(serializePersisted(existing, dividendFrequency));
-    return;
-  }
-
   const [asset] = await db.select().from(assetsTable).where(
     and(eq(assetsTable.ticker, params.data.ticker.toUpperCase()), eq(assetsTable.userId, req.session.userId!))
   );
@@ -371,12 +455,26 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
     return;
   }
 
-  const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-  // A carteira inteira, não só este ativo: a concentração que decide o status é a
+  // Carregado antes do ramo de análise persistida, e não só depois: o "quanto vender"
+  // é recalculado na leitura (ver serializePersisted) e precisa da carteira de agora.
+  // A carteira INTEIRA, não só este ativo — a concentração que decide o status é a
   // fração do patrimônio total, então o denominador exige todas as posições.
   const allAssets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
-  const positionPercentByTicker = await buildPositionPercents(allAssets);
+  const positionContext = await buildPositionContext(allAssets);
+  const positionPercentByTicker = positionContext.percents;
   const concentrationLimits = await concentrationLimitsForUser(req.session.userId!);
+
+  if (existing) {
+    // analysesTable não guarda category — getDividendEventsForTicker não precisa dela
+    // (tenta o endpoint de ações/ETFs/BDRs, cai pro de FII se vier vazio), então serve
+    // bem aqui sem precisar buscar o asset só por causa disso.
+    const events = await getDividendEventsForTicker(existing.ticker);
+    const dividendFrequency = classifyDividendFrequency(events, Date.now())?.label ?? null;
+    res.json(serializePersisted(existing, dividendFrequency, { asset, context: positionContext, limits: concentrationLimits }));
+    return;
+  }
+
+  const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
   const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker }] = QUOTED_CATEGORIES.has(asset.category)
     ? await Promise.all([
         getFundamentals([asset.ticker]),
@@ -384,7 +482,8 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
       ])
     : [new Map<string, Fundamentals>(), { dps12mByTicker: new Map<string, number | null>(), dividendFrequencyByTicker: new Map<string, DividendFrequencyLabel | null>() }];
   const dividendFrequency = dividendFrequencyByTicker.get(asset.ticker.toUpperCase()) ?? null;
-  res.json(toApiShape(asset.ticker, computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits), newsItems, dividendFrequency));
+  const analysisResult = computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits);
+  res.json(toApiShape(asset.ticker, analysisResult, newsItems, dividendFrequency, buildTrim(analysisResult, asset.ticker, asset, positionContext, concentrationLimits)));
 });
 
 // Cacheado por ticker (não por usuário nem por carteira) — o parecer não depende de
@@ -550,16 +649,23 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   // Antes do map porque o status de cada ativo depende da concentração. O
   // getPricesFor daqui a pouco reaproveita o cache por ticker de getQuotes, então
   // isso não custa uma segunda ida à rede.
-  const positionPercentByTicker = await buildPositionPercents(assets);
+  const positionContext = await buildPositionContext(assets);
+  const positionPercentByTicker = positionContext.percents;
   const concentrationLimits = await concentrationLimitsForUser(req.session.userId!);
 
-  const analyses = assets.map((a) => ({
-    ticker: a.ticker.toUpperCase(),
-    ...computeAnalysis(a.ticker, a.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits),
-    taxEstimate: null as TaxEstimate | null,
-    technical: null as TechnicalIndicators | null,
-    dividendFrequency: dividendFrequencyByTicker.get(a.ticker.toUpperCase()) ?? null,
-  }));
+  const analyses = assets.map((a) => {
+    const result = computeAnalysis(a.ticker, a.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits);
+    return {
+      ticker: a.ticker.toUpperCase(),
+      ...result,
+      // Mesma informação que as rotas GET devolvem: sem isso, a tela que dispara a
+      // geração receberia um VENDER sem dizer se é de tese ou de tamanho.
+      trimSuggestion: buildTrim(result, a.ticker, a, positionContext, concentrationLimits),
+      taxEstimate: null as TaxEstimate | null,
+      technical: null as TechnicalIndicators | null,
+      dividendFrequency: dividendFrequencyByTicker.get(a.ticker.toUpperCase()) ?? null,
+    };
+  });
 
   // Only persist (and alert on) results that are actually available — pending
   // ones have nothing real to save yet and shouldn't spam the Radar.

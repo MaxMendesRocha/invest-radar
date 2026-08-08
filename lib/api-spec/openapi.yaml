@@ -1613,6 +1613,46 @@ components:
           type: [string, "null"]
           enum: [golden_cross_recente, death_cross_recente, acima_sma200, abaixo_sma200, null]
 
+    TaxEstimate:
+      type: object
+      required: [grossGain, taxRate, taxOwed, netGain, exempt]
+      properties:
+        grossGain:
+          type: number
+        taxRate:
+          type: number
+        taxOwed:
+          type: number
+        netGain:
+          type: number
+        exempt:
+          type: boolean
+          description: True quando dentro da isenção de ações (venda ≤ R$ 20.000 no mês).
+
+    TrimSuggestion:
+      type: object
+      required: [value, quantity, percentOfPosition, targetPercent]
+      properties:
+        value:
+          type: number
+          description: Valor a reduzir, em reais.
+        quantity:
+          type: number
+          description: Quantidade correspondente, ao preço atual.
+        percentOfPosition:
+          type: number
+        targetPercent:
+          type: number
+          description: Faixa de concentração para onde a posição volta depois da redução.
+        taxEstimate:
+          description: >-
+            IR estimado sobre a FATIA vendida, não sobre a posição inteira — a isenção
+            mensal de R$ 20 mil em ações é sobre o valor da venda, então estimar pelo
+            total exageraria o imposto justamente quando a venda parcial o evita.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/TaxEstimate"
+
     AssetAnalysis:
       type: object
       required: [ticker, available, status, score, scoreClassification, positives, risks, newsItems, alerts, monitoringRecommendation, technical, updatedAt]
@@ -1625,6 +1665,23 @@ components:
         status:
           type: string
           enum: [COMPRAR, MANTER, VENDER]
+        statusReason:
+          type: ["string", "null"]
+          enum: [fundamentos, concentracao, fundamentos_e_concentracao, null]
+          description: >-
+            Por que o status é VENDER — null nos demais. As duas causas pedem ações
+            opostas: "fundamentos" é sobre o ativo (a tese piorou, e não há quantidade
+            calculável a vender), "concentracao" é sobre o tamanho da posição (o ativo
+            pode ser ótimo, e a resposta é reduzir até a faixa saudável).
+        trimSuggestion:
+          description: >-
+            Quanto vender para a posição voltar ao limite saudável do perfil. Presente
+            só quando a concentração é causa do VENDER, porque só nesse caso "quanto
+            vender" é conta e não opinião. Assume que o valor é realocado dentro da
+            carteira — se o dinheiro sair, seria preciso vender mais.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/TrimSuggestion"
         score:
           type: number
         scoreClassification:
@@ -1649,20 +1706,10 @@ components:
         monitoringRecommendation:
           type: string
         taxEstimate:
-          type: [object, "null"]
           description: Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível.
-          properties:
-            grossGain:
-              type: number
-            taxRate:
-              type: number
-            taxOwed:
-              type: number
-            netGain:
-              type: number
-            exempt:
-              type: boolean
-          required: [grossGain, taxRate, taxOwed, netGain, exempt]
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/TaxEstimate"
         technical:
           anyOf:
             - $ref: "#/components/schemas/TechnicalIndicators"

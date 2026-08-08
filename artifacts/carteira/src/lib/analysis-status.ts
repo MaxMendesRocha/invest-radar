@@ -32,3 +32,25 @@ export const ANALYSIS_STATUS: Record<string, AnalysisStatusConfig> = {
 export function analysisStatusConfig(status: string | null | undefined): AnalysisStatusConfig {
   return ANALYSIS_STATUS[status ?? ""] ?? ANALYSIS_STATUS.MANTER;
 }
+
+/**
+ * O mesmo VENDER vinha de duas causas que pedem ações opostas, e a palavra sozinha não
+ * distinguia — quem lia não sabia se devia vender tudo ou parte.
+ *
+ * "Reduzir" quando o problema é o TAMANHO da posição: o ativo pode ser ótimo, e a
+ * resposta é vender só o excedente. Laranja e não vermelho porque não é um problema de
+ * qualidade do ativo.
+ *
+ * "Vender" continua quando o problema é o ATIVO, e aí o rótulo não sugere quantidade
+ * nenhuma de propósito: quanto reduzir de um papel cuja tese piorou depende de
+ * convicção e prazo, e o app não tem como decidir isso.
+ */
+export function analysisStatusConfigFor(
+  status: string | null | undefined,
+  statusReason: string | null | undefined,
+): AnalysisStatusConfig {
+  if (status === "VENDER" && statusReason === "concentracao") {
+    return { label: "Reduzir", className: ORANGE };
+  }
+  return analysisStatusConfig(status);
+}

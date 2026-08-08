@@ -802,6 +802,20 @@ export const ListAssetAnalysesResponseItem = zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
   "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
+  "statusReason": zod.union([zod.literal('fundamentos'),zod.literal('concentracao'),zod.literal('fundamentos_e_concentracao'),zod.literal(null)]).nullish().describe('Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: \"fundamentos\" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), \"concentracao\" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).'),
+  "trimSuggestion": zod.union([zod.null(),zod.object({
+  "value": zod.number().describe('Valor a reduzir, em reais.'),
+  "quantity": zod.number().describe('Quantidade correspondente, ao preço atual.'),
+  "percentOfPosition": zod.number(),
+  "targetPercent": zod.number().describe('Faixa de concentração para onde a posição volta depois da redução.'),
+  "taxEstimate": zod.union([zod.null(),zod.object({
+  "grossGain": zod.number(),
+  "taxRate": zod.number(),
+  "taxOwed": zod.number(),
+  "netGain": zod.number(),
+  "exempt": zod.boolean().describe('True quando dentro da isenção de ações (venda ≤ R$ 20.000 no mês).')
+})]).optional().describe('IR estimado sobre a FATIA vendida, não sobre a posição inteira — a isenção mensal de R$ 20 mil em ações é sobre o valor da venda, então estimar pelo total exageraria o imposto justamente quando a venda parcial o evita.')
+})]).optional().describe('Quanto vender para a posição voltar ao limite saudável do perfil. Presente só quando a concentração é causa do VENDER, porque só nesse caso \"quanto vender\" é conta e não opinião. Assume que o valor é realocado dentro da carteira — se o dinheiro sair, seria preciso vender mais.'),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
@@ -809,13 +823,13 @@ export const ListAssetAnalysesResponseItem = zod.object({
   "newsItems": zod.array(zod.string()),
   "alerts": zod.array(zod.string()),
   "monitoringRecommendation": zod.string(),
-  "taxEstimate": zod.object({
+  "taxEstimate": zod.union([zod.null(),zod.object({
   "grossGain": zod.number(),
   "taxRate": zod.number(),
   "taxOwed": zod.number(),
   "netGain": zod.number(),
-  "exempt": zod.boolean()
-}).nullish().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
+  "exempt": zod.boolean().describe('True quando dentro da isenção de ações (venda ≤ R$ 20.000 no mês).')
+})]).optional().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
   "technical": zod.union([zod.object({
   "sma20": zod.number().nullable(),
   "sma50": zod.number().nullable(),
@@ -851,6 +865,20 @@ export const GetAssetAnalysisResponse = zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
   "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
+  "statusReason": zod.union([zod.literal('fundamentos'),zod.literal('concentracao'),zod.literal('fundamentos_e_concentracao'),zod.literal(null)]).nullish().describe('Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: \"fundamentos\" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), \"concentracao\" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).'),
+  "trimSuggestion": zod.union([zod.null(),zod.object({
+  "value": zod.number().describe('Valor a reduzir, em reais.'),
+  "quantity": zod.number().describe('Quantidade correspondente, ao preço atual.'),
+  "percentOfPosition": zod.number(),
+  "targetPercent": zod.number().describe('Faixa de concentração para onde a posição volta depois da redução.'),
+  "taxEstimate": zod.union([zod.null(),zod.object({
+  "grossGain": zod.number(),
+  "taxRate": zod.number(),
+  "taxOwed": zod.number(),
+  "netGain": zod.number(),
+  "exempt": zod.boolean().describe('True quando dentro da isenção de ações (venda ≤ R$ 20.000 no mês).')
+})]).optional().describe('IR estimado sobre a FATIA vendida, não sobre a posição inteira — a isenção mensal de R$ 20 mil em ações é sobre o valor da venda, então estimar pelo total exageraria o imposto justamente quando a venda parcial o evita.')
+})]).optional().describe('Quanto vender para a posição voltar ao limite saudável do perfil. Presente só quando a concentração é causa do VENDER, porque só nesse caso \"quanto vender\" é conta e não opinião. Assume que o valor é realocado dentro da carteira — se o dinheiro sair, seria preciso vender mais.'),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
@@ -858,13 +886,13 @@ export const GetAssetAnalysisResponse = zod.object({
   "newsItems": zod.array(zod.string()),
   "alerts": zod.array(zod.string()),
   "monitoringRecommendation": zod.string(),
-  "taxEstimate": zod.object({
+  "taxEstimate": zod.union([zod.null(),zod.object({
   "grossGain": zod.number(),
   "taxRate": zod.number(),
   "taxOwed": zod.number(),
   "netGain": zod.number(),
-  "exempt": zod.boolean()
-}).nullish().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
+  "exempt": zod.boolean().describe('True quando dentro da isenção de ações (venda ≤ R$ 20.000 no mês).')
+})]).optional().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
   "technical": zod.union([zod.object({
   "sma20": zod.number().nullable(),
   "sma50": zod.number().nullable(),
@@ -961,6 +989,20 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
   "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
+  "statusReason": zod.union([zod.literal('fundamentos'),zod.literal('concentracao'),zod.literal('fundamentos_e_concentracao'),zod.literal(null)]).nullish().describe('Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: \"fundamentos\" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), \"concentracao\" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).'),
+  "trimSuggestion": zod.union([zod.null(),zod.object({
+  "value": zod.number().describe('Valor a reduzir, em reais.'),
+  "quantity": zod.number().describe('Quantidade correspondente, ao preço atual.'),
+  "percentOfPosition": zod.number(),
+  "targetPercent": zod.number().describe('Faixa de concentração para onde a posição volta depois da redução.'),
+  "taxEstimate": zod.union([zod.null(),zod.object({
+  "grossGain": zod.number(),
+  "taxRate": zod.number(),
+  "taxOwed": zod.number(),
+  "netGain": zod.number(),
+  "exempt": zod.boolean().describe('True quando dentro da isenção de ações (venda ≤ R$ 20.000 no mês).')
+})]).optional().describe('IR estimado sobre a FATIA vendida, não sobre a posição inteira — a isenção mensal de R$ 20 mil em ações é sobre o valor da venda, então estimar pelo total exageraria o imposto justamente quando a venda parcial o evita.')
+})]).optional().describe('Quanto vender para a posição voltar ao limite saudável do perfil. Presente só quando a concentração é causa do VENDER, porque só nesse caso \"quanto vender\" é conta e não opinião. Assume que o valor é realocado dentro da carteira — se o dinheiro sair, seria preciso vender mais.'),
   "score": zod.number(),
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
@@ -968,13 +1010,13 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "newsItems": zod.array(zod.string()),
   "alerts": zod.array(zod.string()),
   "monitoringRecommendation": zod.string(),
-  "taxEstimate": zod.object({
+  "taxEstimate": zod.union([zod.null(),zod.object({
   "grossGain": zod.number(),
   "taxRate": zod.number(),
   "taxOwed": zod.number(),
   "netGain": zod.number(),
-  "exempt": zod.boolean()
-}).nullish().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
+  "exempt": zod.boolean().describe('True quando dentro da isenção de ações (venda ≤ R$ 20.000 no mês).')
+})]).optional().describe('Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa\/fundos ou quando o preço atual não está disponível.'),
   "technical": zod.union([zod.object({
   "sma20": zod.number().nullable(),
   "sma50": zod.number().nullable(),
