@@ -32,9 +32,21 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 const SUGGESTION_NOTE: Record<string, string> = {
-  sem_ticker_de_bolsa: "Sem sugestão de ativo: renda fixa e fundos não têm ticker de bolsa para ranquear.",
+  sem_ticker_de_bolsa: "Sem sugestão de ativo: fundos não têm ticker de bolsa nem fonte pública de dados para ranquear.",
   sem_candidato: "Sem candidato na varredura atual — ETFs não têm fundamento individual (P/L, ROE, margem), então não passam pela triagem por fundamentos.",
+  tesouro_indisponivel: "A sincronização com o Tesouro Direto ainda não rodou. As sugestões aparecem assim que ela acontecer — é uma vez por dia.",
 };
+
+/** "2045-05-15" -> "2045" — o ano basta para o usuário reconhecer o título. */
+function maturityYear(iso: string): string {
+  return iso.slice(0, 4);
+}
+
+/** "2026-08-06" -> "06/08" */
+function shortDate(iso: string): string {
+  const [, month, day] = iso.split("-");
+  return `${day}/${month}`;
+}
 
 /** "89,6" — pt-BR, uma casa. As barras e os textos abaixo falam em pontos percentuais. */
 const decimal = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -184,7 +196,7 @@ function ContributionPlan() {
                   <span className="font-medium">{CATEGORY_LABEL[item.category] ?? item.category}</span>
                   <span className="font-mono font-bold">{formatCurrency(item.amount)}</span>
                 </div>
-                {item.suggestions.length > 0 ? (
+                {item.suggestions.length > 0 && (
                   <div className="space-y-1">
                     {item.suggestions.map((s) => (
                       <div key={s.ticker} className="text-sm flex gap-2">
@@ -193,7 +205,28 @@ function ContributionPlan() {
                       </div>
                     ))}
                   </div>
-                ) : (
+                )}
+
+                {item.treasurySuggestions && item.treasurySuggestions.length > 0 && (
+                  <div className="space-y-2">
+                    {item.treasurySuggestions.map((t, index) => (
+                      <div key={`${t.bondType}-${t.maturityDate}`} className={index === 0 ? "" : "opacity-70"}>
+                        <div className="text-sm flex flex-wrap gap-x-2 items-baseline">
+                          <span className="font-medium">{t.bondType} {maturityYear(t.maturityDate)}</span>
+                          <span className="font-mono text-xs">{t.rateLabel}</span>
+                        </div>
+                        {/* O primeiro é a recomendação; os outros existem para o usuário
+                            ver o contraponto, então só o primeiro leva a justificativa. */}
+                        {index === 0 && <p className="text-xs text-muted-foreground text-pretty mt-0.5">{t.reason}</p>}
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          A partir de {formatCurrency(t.minimumInvestment)} · taxa de {shortDate(t.baseDate)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {item.suggestions.length === 0 && (item.treasurySuggestions?.length ?? 0) === 0 && (
                   <p className="text-xs text-muted-foreground text-pretty">{SUGGESTION_NOTE[item.suggestionsStatus]}</p>
                 )}
               </div>

@@ -7,7 +7,7 @@
  */
 
 /**
- * Por que a lista de sugestões está vazia, quando está. "sem_ticker_de_bolsa" = renda fixa e fundos, que não são ranqueáveis por ticker. "sem_candidato" = classe negociada em bolsa que não tem nenhum ativo aprovado na varredura — hoje é o caso dos ETFs, que não têm fundamento individual (P/L, ROE, margem) e por isso não passam pela triagem por fundamentos.
+ * Por que a lista de sugestões está vazia, quando está. "sem_ticker_de_bolsa" = renda fixa e fundos, que não são ranqueáveis por ticker. "sem_candidato" = classe negociada em bolsa que não tem nenhum ativo aprovado na varredura — hoje é o caso dos ETFs, que não têm fundamento individual (P/L, ROE, margem) e por isso não passam pela triagem por fundamentos. "tesouro_indisponivel" = renda fixa cuja sincronização com o Tesouro Direto ainda não rodou ou falhou; `sem_ticker_de_bolsa` segue valendo para fundos, que não têm fonte nenhuma.
  */
 export type AllocationPlanItemSuggestionsStatus = typeof AllocationPlanItemSuggestionsStatus[keyof typeof AllocationPlanItemSuggestionsStatus];
 
@@ -16,4 +16,5 @@ export const AllocationPlanItemSuggestionsStatus = {
   ok: 'ok',
   sem_ticker_de_bolsa: 'sem_ticker_de_bolsa',
   sem_candidato: 'sem_candidato',
+  tesouro_indisponivel: 'tesouro_indisponivel',
 } as const;

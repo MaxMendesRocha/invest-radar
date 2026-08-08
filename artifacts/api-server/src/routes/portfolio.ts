@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable } from "@workspace/db";
+import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable, treasuryBondsTable } from "@workspace/db";
 import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months } from "../lib/market-data";
@@ -20,6 +20,7 @@ import {
   type PolicyTargets,
 } from "../lib/allocation-engine";
 import { rankOpportunitiesFor } from "../lib/opportunity-ranking";
+import { suggestTreasuryBonds } from "../lib/treasury-engine";
 import type { ProfileClassification } from "../lib/investor-profile-engine";
 
 const router: IRouter = Router();
@@ -603,24 +604,52 @@ router.get("/portfolio/allocation/plan", requireAuth, async (req, res): Promise<
   // classe — ver lib/opportunity-ranking.ts. Renda fixa e fundos não têm ticker de
   // bolsa, então saem com lista vazia em vez de uma sugestão inventada.
   const ranking = await rankOpportunitiesFor(req.session.userId!);
+
+  // Renda fixa não passa pelo ranking de bolsa — vem do Tesouro Direto, escolhido por
+  // característica do título contra o perfil declarado (ver treasury-engine.ts). Só
+  // busca se o plano de fato destinar algo à classe.
+  const wantsTreasury = slices.some((slice) => slice.category === "renda_fixa");
+  const [profileRow] = wantsTreasury
+    ? await db.select().from(investorProfilesTable).where(eq(investorProfilesTable.userId, req.session.userId!))
+    : [];
+  const treasuryBonds = wantsTreasury ? await db.select().from(treasuryBondsTable) : [];
+  const treasurySuggestions = wantsTreasury
+    ? suggestTreasuryBonds(treasuryBonds, {
+        liquidityNeed: profileRow?.liquidityNeed ?? null,
+        emergencyFund: profileRow?.emergencyFund ?? null,
+        horizonYears: profileRow?.horizonYears ?? null,
+        objective: profileRow?.objective ?? null,
+      })
+    : [];
+
   const items = slices.map((slice) => {
     const suggestions = ranking.items
       .filter((item) => item.category === slice.category)
       .slice(0, 3)
       .map((item) => ({ ticker: item.ticker, name: item.name, score: item.score, reason: item.reason }));
 
-    // Lista vazia tem duas causas muito diferentes, e a tela precisa saber qual:
-    // renda fixa/fundos não têm ticker para ranquear (estrutural), enquanto uma classe
-    // de bolsa sem candidato é uma lacuna da varredura — hoje os ETFs, que não têm
-    // fundamento individual e por isso nunca passam pela triagem. Deixar as duas como
-    // "vazio" faria a tela dar a mesma explicação para situações diferentes.
-    const suggestionsStatus = suggestions.length > 0
+    const bondsForSlice = slice.category === "renda_fixa" ? treasurySuggestions : [];
+
+    // Lista vazia tem causas diferentes, e a tela precisa saber qual — deixar todas
+    // como "vazio" faria o app dar a mesma explicação para situações que não têm nada
+    // a ver entre si: ETF sem fundamento para triar, fundo sem fonte alguma, e Tesouro
+    // que só não sincronizou ainda (esse último se resolve sozinho, os outros não).
+    const suggestionsStatus = suggestions.length > 0 || bondsForSlice.length > 0
       ? "ok"
       : QUOTED_CATEGORIES.has(slice.category)
         ? "sem_candidato"
-        : "sem_ticker_de_bolsa";
+        : slice.category === "renda_fixa"
+          ? "tesouro_indisponivel"
+          : "sem_ticker_de_bolsa";
 
-    return { category: slice.category, amount: slice.amount, sharePercent: slice.sharePercent, suggestionsStatus, suggestions };
+    return {
+      category: slice.category,
+      amount: slice.amount,
+      sharePercent: slice.sharePercent,
+      suggestionsStatus,
+      suggestions,
+      treasurySuggestions: bondsForSlice,
+    };
   });
 
   res.json({

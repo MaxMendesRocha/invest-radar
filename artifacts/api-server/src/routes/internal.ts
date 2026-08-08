@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { requireInternalToken } from "../middlewares/internal-auth";
 import { OPPORTUNITIES_JOB } from "../lib/opportunities-engine";
+import { TREASURY_JOB } from "../lib/treasury-data";
 import { runJobAndRecord } from "../lib/scheduler";
 import { logger } from "../lib/logger";
 
@@ -24,6 +25,22 @@ router.post("/internal/opportunities/regenerate", requireInternalToken, async (r
   } catch (err) {
     logger.error({ err }, "POST /internal/opportunities/regenerate falhou");
     res.status(500).json({ error: "Falha ao regenerar oportunidades — ver logs do servidor" });
+  }
+});
+
+// Mesmo padrão do handler acima: dispara o job diário do Tesouro sob demanda, para
+// popular a tabela num ambiente novo sem esperar a primeira janela do scheduler.
+router.post("/internal/treasury/sync", requireInternalToken, async (req, res): Promise<void> => {
+  try {
+    const result = await runJobAndRecord(TREASURY_JOB);
+    if (!result) {
+      res.status(409).json({ error: "Job já está em execução" });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "POST /internal/treasury/sync falhou");
+    res.status(500).json({ error: "Falha ao sincronizar o Tesouro Direto — ver logs do servidor" });
   }
 });
 

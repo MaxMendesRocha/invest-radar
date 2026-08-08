@@ -1048,8 +1048,22 @@ export interface AllocationPlanSuggestion {
   reason: string;
 }
 
+export interface TreasurySuggestion {
+  bondType: string;
+  maturityDate: string;
+  /** Data-base da taxa. O Tesouro publica o arquivo com um ou dois dias úteis de atraso, então a taxa nunca é "de agora" — exibir a data junto. */
+  baseDate: string;
+  /** Taxa já rotulada conforme a família ("IPCA + 8,04% a.a.", "14,11% a.a.", "Selic + 0,04%"). O número cru significa coisas diferentes em cada uma — no Tesouro Selic é ágio/deságio sobre a Selic, não o rendimento. */
+  rateLabel: string;
+  /** Preço do título inteiro. */
+  unitPrice: number;
+  /** Compra mínima — 1% do título, com piso de R$ 30 do Tesouro Direto. */
+  minimumInvestment: number;
+  reason: string;
+}
+
 /**
- * Por que a lista de sugestões está vazia, quando está. "sem_ticker_de_bolsa" = renda fixa e fundos, que não são ranqueáveis por ticker. "sem_candidato" = classe negociada em bolsa que não tem nenhum ativo aprovado na varredura — hoje é o caso dos ETFs, que não têm fundamento individual (P/L, ROE, margem) e por isso não passam pela triagem por fundamentos.
+ * Por que a lista de sugestões está vazia, quando está. "sem_ticker_de_bolsa" = renda fixa e fundos, que não são ranqueáveis por ticker. "sem_candidato" = classe negociada em bolsa que não tem nenhum ativo aprovado na varredura — hoje é o caso dos ETFs, que não têm fundamento individual (P/L, ROE, margem) e por isso não passam pela triagem por fundamentos. "tesouro_indisponivel" = renda fixa cuja sincronização com o Tesouro Direto ainda não rodou ou falhou; `sem_ticker_de_bolsa` segue valendo para fundos, que não têm fonte nenhuma.
  */
 export type AllocationPlanItemSuggestionsStatus = typeof AllocationPlanItemSuggestionsStatus[keyof typeof AllocationPlanItemSuggestionsStatus];
 
@@ -1058,6 +1072,7 @@ export const AllocationPlanItemSuggestionsStatus = {
   ok: 'ok',
   sem_ticker_de_bolsa: 'sem_ticker_de_bolsa',
   sem_candidato: 'sem_candidato',
+  tesouro_indisponivel: 'tesouro_indisponivel',
 } as const;
 
 export interface AllocationPlanItem {
@@ -1065,10 +1080,12 @@ export interface AllocationPlanItem {
   amount: number;
   /** Fatia deste aporte, não o alvo da classe na carteira. */
   sharePercent: number;
-  /** Por que a lista de sugestões está vazia, quando está. "sem_ticker_de_bolsa" = renda fixa e fundos, que não são ranqueáveis por ticker. "sem_candidato" = classe negociada em bolsa que não tem nenhum ativo aprovado na varredura — hoje é o caso dos ETFs, que não têm fundamento individual (P/L, ROE, margem) e por isso não passam pela triagem por fundamentos. */
+  /** Por que a lista de sugestões está vazia, quando está. "sem_ticker_de_bolsa" = renda fixa e fundos, que não são ranqueáveis por ticker. "sem_candidato" = classe negociada em bolsa que não tem nenhum ativo aprovado na varredura — hoje é o caso dos ETFs, que não têm fundamento individual (P/L, ROE, margem) e por isso não passam pela triagem por fundamentos. "tesouro_indisponivel" = renda fixa cuja sincronização com o Tesouro Direto ainda não rodou ou falhou; `sem_ticker_de_bolsa` segue valendo para fundos, que não têm fonte nenhuma. */
   suggestionsStatus: AllocationPlanItemSuggestionsStatus;
   /** Ativos da classe, na mesma ordem da tela de Oportunidades. */
   suggestions: AllocationPlanSuggestion[];
+  /** Títulos do Tesouro Direto sugeridos para a fatia de renda fixa. Lista separada de `suggestions` de propósito: título público não tem ticker nem score do Radar, e encaixá-lo naquele formato exigiria inventar os dois. */
+  treasurySuggestions?: TreasurySuggestion[];
 }
 
 export type AllocationPlanSource = typeof AllocationPlanSource[keyof typeof AllocationPlanSource];

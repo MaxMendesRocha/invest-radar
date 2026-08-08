@@ -3,6 +3,7 @@ export * from "./assets";
 export * from "./investor-profile";
 export * from "./income-goals";
 export * from "./allocation-policies";
+export * from "./treasury-bonds";
 export * from "./session";
 export * from "./alerts";
 export * from "./opportunities";
