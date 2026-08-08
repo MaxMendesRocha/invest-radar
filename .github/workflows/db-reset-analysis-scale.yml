@@ -1,0 +1,32 @@
+name: Limpa análises da escala antiga (one-off)
+
+# Workflow temporário, criado só para a subida do PR #44. As linhas gravadas em
+# `analyses` e `opportunities` guardam o score da escala antiga (que ia de 43 a 74);
+# convivendo com as novas na mesma tela, um 71 velho apareceria ao lado de um 84 novo
+# medindo coisas diferentes. As duas tabelas são cache: `analyses` se recompõe na
+# próxima leitura de /analysis/assets e `opportunities` é regenerada inteira pelo job.
+# APAGAR este arquivo depois de rodar.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apaga o cache de análises na escala antiga
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL não configurado — abortando sem tocar em nada."
+            exit 1
+          fi
+          echo "== antes =="
+          psql "$DATABASE_URL" -c "select 'analyses' as tabela, count(*) from analyses union all select 'opportunities', count(*) from opportunities;"
+          psql "$DATABASE_URL" -c "delete from analyses;"
+          psql "$DATABASE_URL" -c "delete from opportunities;"
+          echo "== depois =="
+          psql "$DATABASE_URL" -c "select 'analyses' as tabela, count(*) from analyses union all select 'opportunities', count(*) from opportunities;"
+          echo "Feito. As duas tabelas se repovoam sozinhas: analyses na próxima leitura, opportunities no próximo ciclo do job."
