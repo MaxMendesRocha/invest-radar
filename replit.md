@@ -108,6 +108,11 @@ Depois do primeiro deploy dos três, testar cadastro/login/navegação pelo dom�
 - **Railway/Nixpacks não suporta pnpm 11** — trata como v9 desconhecida e quebra com um erro enganoso (`ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`, sem nenhuma relação óbvia com versão de pnpm). `package.json` está fixado em `pnpm@10.34.5` por causa disso — não subir pra 11.x sem checar se o Nixpacks já suporta.
 - **Cookie de sessão não era definido em produção** (login retornava 200 mas sem `Set-Cookie`): Railway/Vercel terminam TLS antes da requisição chegar no processo Node, e sem `app.set("trust proxy", 1)` o Express não confia no `X-Forwarded-Proto`, então `req.secure` fica `false` e o `express-session` recusa definir um cookie `secure: true` (não é só a flag, ele nem tenta). Já corrigido em `app.ts` — se voltar a acontecer num novo ambiente atrás de proxy, é o primeiro lugar pra olhar.
 - **Rotas client-side davam 404 na Vercel** (`/login`, `/carteira` etc. só existem no React Router, não são arquivos): faltava um rewrite catch-all pro `index.html` em `vercel.json`, depois do rewrite de `/api/*` (ordem importa, primeiro match vence).
+- **Merge em `main` não garante deploy.** Railway e Vercel disparam por evento de git, e o evento pode se perder ou falhar sem que nada apareça no GitHub — nenhum dos dois publica status no commit, então a PR fica verde e o código continua não sendo publicado. Como diagnosticar sem acesso aos painéis:
+  - *Backend*: pedir uma rota que só existe no código novo. **404 significa build antigo no ar**; 401 significa que a rota existe e o deploy chegou (comparar sempre com uma rota antiga protegida, que deve dar 401 nos dois casos).
+  - *Frontend*: comparar o hash do bundle servido (`curl -s <url> | grep -o 'assets/index-[A-Za-z0-9_-]*\.js'`) com o de um `BASE_PATH=/ vite build` local no mesmo commit. Hash diferente = a Vercel não publicou esse commit.
+  - Antes de suspeitar do código, rodar os dois builds de produção localmente — se passam, o problema é de plataforma.
+  - As duas falhas exigem tratamentos diferentes: se o host **tem** registro do deploy e ele falhou, "Redeploy" resolve; se **não tem registro nenhum** (evento perdido), Redeploy só reexecuta o deploy anterior, com o código velho — nesse caso o único caminho é um commit novo em `main`, que gera um evento novo.
 
 ## Pointers
 
