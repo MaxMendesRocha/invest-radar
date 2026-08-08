@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Target, Wallet, Pencil } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatShortDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -40,12 +40,6 @@ const SUGGESTION_NOTE: Record<string, string> = {
 /** "2045-05-15" -> "2045" — o ano basta para o usuário reconhecer o título. */
 function maturityYear(iso: string): string {
   return iso.slice(0, 4);
-}
-
-/** "2026-08-06" -> "06/08" */
-function shortDate(iso: string): string {
-  const [, month, day] = iso.split("-");
-  return `${day}/${month}`;
 }
 
 /** "89,6" — pt-BR, uma casa. As barras e os textos abaixo falam em pontos percentuais. */
@@ -219,7 +213,7 @@ function ContributionPlan() {
                             ver o contraponto, então só o primeiro leva a justificativa. */}
                         {index === 0 && <p className="text-xs text-muted-foreground text-pretty mt-0.5">{t.reason}</p>}
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          A partir de {formatCurrency(t.minimumInvestment)} · taxa de {shortDate(t.baseDate)}
+                          A partir de {formatCurrency(t.minimumInvestment)} · taxa de {formatShortDate(t.baseDate)}
                         </p>
                       </div>
                     ))}

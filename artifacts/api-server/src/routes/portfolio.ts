@@ -21,6 +21,7 @@ import {
 } from "../lib/allocation-engine";
 import { rankOpportunitiesFor } from "../lib/opportunity-ranking";
 import { suggestTreasuryBonds } from "../lib/treasury-engine";
+import { listTreasuryBondOptions } from "../lib/treasury-identity";
 import type { ProfileClassification } from "../lib/investor-profile-engine";
 
 const router: IRouter = Router();
@@ -59,7 +60,13 @@ router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> =>
     const quoted = prices.get(a.ticker.toUpperCase());
     if (quoted == null) {
       if (QUOTED_CATEGORIES.has(a.category)) pricesUnavailable.push(a.ticker.toUpperCase());
-    } else if (quoted.asOf != null) {
+    } else if (quoted.asOf != null && QUOTED_CATEGORIES.has(a.category)) {
+      // Só categoria de bolsa entra aqui. Título público também vem com preço datado,
+      // mas por natureza — o Tesouro publica o PU com um ou dois dias úteis de atraso,
+      // e isso é o normal, não falha de provedor. Incluí-lo faria o Dashboard alertar
+      // "cotação indisponível" todos os dias para uma carteira perfeitamente saudável,
+      // e um aviso que aparece sempre deixa de ser lido. A data do PU continua visível
+      // onde é relevante: na linha do ativo, em Minha Carteira.
       pricesStale.push({ ticker: a.ticker.toUpperCase(), asOf: quoted.asOf.toISOString() });
     }
     const price = quoted?.price ?? avgPrice;
@@ -537,6 +544,13 @@ async function allocationOverview(userId: number) {
   const { total, items } = computeAllocation(valueByCategory, targets);
   return { source, totalPatrimony: total, items };
 }
+
+// Alimenta o seletor de título no cadastro de ativo. Lista vazia significa que a
+// sincronização diária ainda não rodou — a tela precisa dizer isso em vez de sugerir
+// que não existem títulos.
+router.get("/treasury/bonds", requireAuth, async (_req, res): Promise<void> => {
+  res.json(await listTreasuryBondOptions());
+});
 
 router.get("/portfolio/allocation", requireAuth, async (req, res): Promise<void> => {
   res.json(await allocationOverview(req.session.userId!));

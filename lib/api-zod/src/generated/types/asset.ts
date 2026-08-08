@@ -22,6 +22,10 @@ export interface Asset {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
+  treasuryBondType?: string | null;
+  /** @nullable */
+  treasuryMaturityDate?: Date | null;
+  /** @nullable */
   currentPrice?: number | null;
   /**
      * Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.

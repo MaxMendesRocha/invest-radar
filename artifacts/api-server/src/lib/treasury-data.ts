@@ -37,6 +37,10 @@ export interface TreasuryRow {
   baseDate: string; // ISO
   buyRate: number;
   buyUnitPrice: number;
+  // Lado da recompra — nulo quando o arquivo não traz (acontece em datas antigas).
+  // Ver o comentário no schema: é este lado que vale para marcar posição detida.
+  sellRate: number | null;
+  sellUnitPrice: number | null;
 }
 
 /** "1.234,56" -> 1234.56; vazio/inválido -> null. */
@@ -85,6 +89,11 @@ class LatestBaseDateCollector {
     const bondType = get("Tipo Titulo").trim();
     const buyRate = parseNumber(get("Taxa Compra Manha"));
     const buyUnitPrice = parseNumber(get("PU Compra Manha"));
+    // Recompra não entra na condição de descarte abaixo de propósito: o título é
+    // utilizável para sugestão de aporte mesmo sem ela, e exigi-la jogaria fora linha
+    // boa. Quem marca posição a mercado é que precisa tratar o nulo.
+    const sellRate = parseNumber(get("Taxa Venda Manha"));
+    const sellUnitPrice = parseNumber(get("PU Venda Manha"));
 
     // Linha incompleta é descartada em silêncio: o arquivo tem duas décadas de
     // histórico e nem todo título tinha todas as colunas preenchidas em toda data.
@@ -94,7 +103,7 @@ class LatestBaseDateCollector {
       this.latestBaseDate = baseDate;
       this.collected = [];
     }
-    this.collected.push({ bondType, maturityDate, baseDate, buyRate, buyUnitPrice });
+    this.collected.push({ bondType, maturityDate, baseDate, buyRate, buyUnitPrice, sellRate, sellUnitPrice });
   }
 
   rows(): TreasuryRow[] {
@@ -159,6 +168,8 @@ export async function syncTreasuryBonds(): Promise<{ summary: string }> {
         baseDate: r.baseDate,
         buyRate: String(r.buyRate),
         buyUnitPrice: String(r.buyUnitPrice),
+        sellRate: r.sellRate == null ? null : String(r.sellRate),
+        sellUnitPrice: r.sellUnitPrice == null ? null : String(r.sellUnitPrice),
       })),
     );
   });

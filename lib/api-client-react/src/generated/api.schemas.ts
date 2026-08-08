@@ -82,6 +82,10 @@ export interface Asset {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
+  treasuryBondType?: string | null;
+  /** @nullable */
+  treasuryMaturityDate?: string | null;
+  /** @nullable */
   currentPrice?: number | null;
   /**
      * Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.
@@ -115,8 +119,18 @@ export const AssetInputCategory = {
 } as const;
 
 export interface AssetInput {
-  /** @minLength 1 */
+  /**
+     * Ignorado quando treasuryBondType/treasuryMaturityDate são enviados — nesse caso o servidor deriva um rótulo canônico do próprio título, para que duas compras do mesmo papel consolidem em vez de virarem posições separadas por diferença de digitação.
+     * @minLength 1
+     */
   ticker: string;
+  /**
+     * Família do título público, exatamente como o Tesouro publica ("Tesouro IPCA+ com Juros Semestrais"). Só válido com category=renda_fixa, e sempre junto de treasuryMaturityDate. Ausente = renda fixa privada (CDB/LCI/LCA), que não tem fonte pública e segue no preço médio de compra.
+     * @nullable
+     */
+  treasuryBondType?: string | null;
+  /** @nullable */
+  treasuryMaturityDate?: string | null;
   quantity: number;
   averagePrice: number;
   /** @nullable */
@@ -1051,6 +1065,21 @@ export interface AllocationPlanSuggestion {
   name: string;
   score: number;
   reason: string;
+}
+
+export interface TreasuryBondOption {
+  bondType: string;
+  maturityDate: string;
+  baseDate: string;
+  buyRate: number;
+  buyUnitPrice: number;
+  /**
+     * PU de recompra — é este lado que marca uma posição já detida. Null quando o arquivo não trouxe: a posição fica no preço médio em vez de ser marcada pelo preço de compra, que a superestimaria.
+     * @nullable
+     */
+  sellUnitPrice?: number | null;
+  /** Rótulo canônico usado como ticker da posição, ex. "TESOURO IPCA+ 2035". */
+  label: string;
 }
 
 export interface TreasurySuggestion {

@@ -25,6 +25,12 @@ export function formatShortDateTime(iso: string): string {
   return `${day} às ${time.replace(":", "h")}`
 }
 
+/** "2026-08-06" -> "06/08". Data pura, sem hora — ex. data-base do Tesouro. */
+export function formatShortDate(iso: string): string {
+  const [, month, day] = iso.split("-")
+  return month && day ? `${day}/${month}` : iso
+}
+
 export function formatPercent(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
     style: "percent",

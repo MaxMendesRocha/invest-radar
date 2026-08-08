@@ -1,4 +1,4 @@
-import { db, priceSnapshotsTable } from "@workspace/db";
+import { db, priceSnapshotsTable, treasuryBondsTable } from "@workspace/db";
 import { inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
@@ -1162,30 +1162,92 @@ export interface PricePoint {
   asOf: Date | null;
 }
 
+export interface PriceableItem {
+  ticker: string;
+  category: string;
+  /** Preenchidos só em posição de Tesouro Direto — ver o schema de assets. */
+  treasuryBondType?: string | null;
+  treasuryMaturityDate?: string | null;
+}
+
+/**
+ * Marca a mercado as posições de Tesouro Direto, pelo PU de RECOMPRA da data-base mais
+ * recente sincronizada (treasury_bonds).
+ *
+ * Recompra e não compra: a posição vale o que se consegue ao vendê-la, e o spread entre
+ * os dois lados chega a 2,66% nos IPCA+ longos — usar o preço de compra infla o
+ * patrimônio justamente nos títulos de maior prazo. Se o arquivo não trouxer o lado da
+ * recompra, o título não é marcado, em vez de cair no preço de compra: melhor a posição
+ * seguir no preço médio, com o motivo visível, do que exibir um valor otimista.
+ *
+ * `asOf` recebe a data-base do arquivo porque o PU é sempre de um ou dois dias úteis
+ * atrás — é dado real e datado, exatamente a semântica do campo.
+ */
+async function getTreasuryPrices(items: PriceableItem[]): Promise<Map<string, PricePoint>> {
+  const prices = new Map<string, PricePoint>();
+  const treasuryItems = items.filter((i) => i.treasuryBondType && i.treasuryMaturityDate);
+  if (treasuryItems.length === 0) return prices;
+
+  let rows: { bondType: string; maturityDate: string; baseDate: string; sellUnitPrice: string | null }[] = [];
+  try {
+    rows = await db
+      .select({
+        bondType: treasuryBondsTable.bondType,
+        maturityDate: treasuryBondsTable.maturityDate,
+        baseDate: treasuryBondsTable.baseDate,
+        sellUnitPrice: treasuryBondsTable.sellUnitPrice,
+      })
+      .from(treasuryBondsTable);
+  } catch (err) {
+    logger.warn({ err }, "consulta de títulos do Tesouro falhou");
+    return prices;
+  }
+
+  const byKey = new Map(rows.map((r) => [`${r.bondType}|${r.maturityDate}`, r]));
+  for (const item of treasuryItems) {
+    const bond = byKey.get(`${item.treasuryBondType}|${item.treasuryMaturityDate}`);
+    if (!bond?.sellUnitPrice) continue;
+    const price = parseFloat(bond.sellUnitPrice);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    prices.set(item.ticker.toUpperCase(), { price, asOf: new Date(`${bond.baseDate}T00:00:00Z`) });
+  }
+
+  return prices;
+}
+
 /**
  * Convenience wrapper around getQuotes for a list of { ticker, category } records
  * (assets, opportunities, ...): filters to quotable categories and returns a
  * ticker -> PricePoint map.
  *
  * Ticker ausente do mapa significa que não há preço nenhum — nem ao vivo, nem
- * guardado dentro da janela — e o chamador cai no preço que já tem em mãos (o médio
- * de compra). Esse era o único comportamento antes; hoje ele é o terceiro degrau,
- * usado só depois de a cotação ao vivo e o último preço conhecido falharem.
+ * guardado dentro da janela, nem PU de título público — e o chamador cai no preço que
+ * já tem em mãos (o médio de compra). Esse era o único comportamento antes; hoje ele é
+ * o último degrau.
+ *
+ * Renda fixa entra por aqui mesmo estando fora de QUOTED_CATEGORIES: título público não
+ * tem cotação de bolsa, mas tem PU diário publicado, e é este helper que todas as telas
+ * usam para valorizar posição. Ligar a marcação aqui, em vez de em cada rota, é o que
+ * faz patrimônio, distribuição, saúde, concentração e meta de renda passarem a contar o
+ * Tesouro corretamente de uma vez.
  */
-export async function getPricesFor(items: { ticker: string; category: string }[]): Promise<Map<string, PricePoint>> {
-  const tickers = items.filter((i) => QUOTED_CATEGORIES.has(i.category)).map((i) => i.ticker.toUpperCase());
+export async function getPricesFor(items: PriceableItem[]): Promise<Map<string, PricePoint>> {
   const prices = new Map<string, PricePoint>();
-  if (tickers.length === 0) return prices;
 
-  const quotes = await getQuotes(tickers);
-  for (const [ticker, quote] of quotes) prices.set(ticker, { price: quote.price, asOf: null });
+  const tickers = items.filter((i) => QUOTED_CATEGORIES.has(i.category)).map((i) => i.ticker.toUpperCase());
+  if (tickers.length > 0) {
+    const quotes = await getQuotes(tickers);
+    for (const [ticker, quote] of quotes) prices.set(ticker, { price: quote.price, asOf: null });
 
-  const missing = Array.from(new Set(tickers)).filter((ticker) => !prices.has(ticker));
-  if (missing.length > 0) {
-    for (const [ticker, snapshot] of await getLastKnownPrices(missing)) {
-      prices.set(ticker, { price: snapshot.price, asOf: snapshot.capturedAt });
+    const missing = Array.from(new Set(tickers)).filter((ticker) => !prices.has(ticker));
+    if (missing.length > 0) {
+      for (const [ticker, snapshot] of await getLastKnownPrices(missing)) {
+        prices.set(ticker, { price: snapshot.price, asOf: snapshot.capturedAt });
+      }
     }
   }
+
+  for (const [ticker, point] of await getTreasuryPrices(items)) prices.set(ticker, point);
 
   return prices;
 }
