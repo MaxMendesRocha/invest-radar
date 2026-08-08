@@ -1067,6 +1067,12 @@ export interface AllocationPlanSuggestion {
   reason: string;
 }
 
+export interface TreasuryPriceOnDate {
+  /** Data-base efetivamente usada. Pode ser anterior à pedida — compra em fim de semana ou feriado não tem publicação no próprio dia, e a tela precisa dizer de quando é o número. */
+  baseDate: string;
+  buyUnitPrice: number;
+}
+
 export interface TreasuryBondOption {
   bondType: string;
   maturityDate: string;
@@ -1179,6 +1185,18 @@ export interface PortfolioReport {
   topAlerts: Alert[];
   opportunities: Opportunity[];
 }
+
+export type GetTreasuryPriceOnDateParams = {
+bondType: string;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+maturityDate: string;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+date: string;
+};
 
 export type GetAllocationPlanParams = {
 /**

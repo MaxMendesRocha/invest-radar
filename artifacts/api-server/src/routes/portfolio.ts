@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable, treasuryBondsTable } from "@workspace/db";
+import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable } from "@workspace/db";
 import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months } from "../lib/market-data";
@@ -9,7 +9,7 @@ import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/ana
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { computeIncomeGoalProgress } from "../lib/income-goal-engine";
-import { UpsertIncomeGoalBody, UpsertAllocationBody, GetAllocationPlanQueryParams } from "@workspace/api-zod";
+import { UpsertIncomeGoalBody, UpsertAllocationBody, GetAllocationPlanQueryParams, GetTreasuryPriceOnDateQueryParams } from "@workspace/api-zod";
 import {
   ALLOCATION_CATEGORIES,
   defaultPolicyFor,
@@ -21,7 +21,7 @@ import {
 } from "../lib/allocation-engine";
 import { rankOpportunitiesFor } from "../lib/opportunity-ranking";
 import { suggestTreasuryBonds } from "../lib/treasury-engine";
-import { listTreasuryBondOptions } from "../lib/treasury-identity";
+import { listTreasuryBondOptions, latestTreasuryBonds, priceOnDate } from "../lib/treasury-identity";
 import type { ProfileClassification } from "../lib/investor-profile-engine";
 
 const router: IRouter = Router();
@@ -552,6 +552,27 @@ router.get("/treasury/bonds", requireAuth, async (_req, res): Promise<void> => {
   res.json(await listTreasuryBondOptions());
 });
 
+/**
+ * PU de compra na data em que o usuário comprou, para o cadastro não exigir que ele
+ * descubra o número em outro lugar — e para o app não precisar pré-preencher com o PU
+ * de hoje, que gravaria um preço médio errado.
+ */
+router.get("/treasury/price", requireAuth, async (req, res): Promise<void> => {
+  const parsed = GetTreasuryPriceOnDateQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const { bondType, maturityDate, date } = parsed.data;
+
+  const found = await priceOnDate({ bondType, maturityDate }, date);
+  if (!found) {
+    res.status(404).json({ error: "Sem publicação para esse título até a data informada." });
+    return;
+  }
+  res.json(found);
+});
+
 router.get("/portfolio/allocation", requireAuth, async (req, res): Promise<void> => {
   res.json(await allocationOverview(req.session.userId!));
 });
@@ -626,7 +647,7 @@ router.get("/portfolio/allocation/plan", requireAuth, async (req, res): Promise<
   const [profileRow] = wantsTreasury
     ? await db.select().from(investorProfilesTable).where(eq(investorProfilesTable.userId, req.session.userId!))
     : [];
-  const treasuryBonds = wantsTreasury ? await db.select().from(treasuryBondsTable) : [];
+  const treasuryBonds = wantsTreasury ? await latestTreasuryBonds() : [];
   const treasurySuggestions = wantsTreasury
     ? suggestTreasuryBonds(treasuryBonds, {
         liquidityNeed: profileRow?.liquidityNeed ?? null,

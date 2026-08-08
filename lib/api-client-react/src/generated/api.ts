@@ -34,6 +34,7 @@ import type {
   ErrorResponse,
   EvolutionPoint,
   GetAllocationPlanParams,
+  GetTreasuryPriceOnDateParams,
   HealthStatus,
   IncomeGoalInput,
   IncomeGoalProgress,
@@ -54,6 +55,7 @@ import type {
   Transaction,
   TransactionInput,
   TreasuryBondOption,
+  TreasuryPriceOnDate,
   UpcomingDividend,
   User,
   UserLoginInput,
@@ -1569,6 +1571,90 @@ export function useListTreasuryBonds<TData = Awaited<ReturnType<typeof listTreas
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListTreasuryBondsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetTreasuryPriceOnDateUrl = (params: GetTreasuryPriceOnDateParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/treasury/price?${stringifiedParams}` : `/api/treasury/price`
+}
+
+/**
+ * @summary PU de compra de um título na data informada (ou na data-base anterior mais próxima)
+ */
+export const getTreasuryPriceOnDate = async (params: GetTreasuryPriceOnDateParams, options?: RequestInit): Promise<TreasuryPriceOnDate> => {
+
+  return customFetch<TreasuryPriceOnDate>(getGetTreasuryPriceOnDateUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTreasuryPriceOnDateQueryKey = (params?: GetTreasuryPriceOnDateParams,) => {
+    return [
+    `/api/treasury/price`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetTreasuryPriceOnDateQueryOptions = <TData = Awaited<ReturnType<typeof getTreasuryPriceOnDate>>, TError = ErrorType<ErrorResponse>>(params: GetTreasuryPriceOnDateParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTreasuryPriceOnDate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTreasuryPriceOnDateQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTreasuryPriceOnDate>>> = ({ signal }) => getTreasuryPriceOnDate(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTreasuryPriceOnDate>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTreasuryPriceOnDateQueryResult = NonNullable<Awaited<ReturnType<typeof getTreasuryPriceOnDate>>>
+export type GetTreasuryPriceOnDateQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary PU de compra de um título na data informada (ou na data-base anterior mais próxima)
+ */
+
+export function useGetTreasuryPriceOnDate<TData = Awaited<ReturnType<typeof getTreasuryPriceOnDate>>, TError = ErrorType<ErrorResponse>>(
+ params: GetTreasuryPriceOnDateParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTreasuryPriceOnDate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTreasuryPriceOnDateQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

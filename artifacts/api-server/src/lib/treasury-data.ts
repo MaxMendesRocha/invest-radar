@@ -1,4 +1,5 @@
 import { db, treasuryBondsTable } from "@workspace/db";
+import { countDistinct, max, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import type { JobDefinition } from "./scheduler";
 
@@ -60,26 +61,55 @@ function parseDate(raw: string): string | null {
 }
 
 /**
- * Percorre o CSV linha a linha guardando SÓ as linhas da data-base mais recente vista
- * até ali, descartando as anteriores conforme avança.
+ * Percorre o CSV linha a linha, gravando em lotes as linhas cuja data-base ainda não
+ * temos.
  *
- * O arquivo tem ~14 MB e ~175 mil linhas (histórico desde 2002) e interessa apenas o
- * último dia. Materializá-lo inteiro em objetos JS custaria centenas de MB numa
- * instância pequena do Railway para jogar 99,9% fora — e não dá para simplesmente ler
- * o fim do arquivo, porque a ordenação das linhas não é garantida pela fonte. Uma
- * passada só, com memória proporcional a um único dia (~60 linhas).
+ * O arquivo tem ~14 MB e ~175 mil linhas (histórico desde 2002). Acumulá-lo inteiro em
+ * objetos JS custaria centenas de MB numa instância pequena do Railway, então as linhas
+ * são descarregadas no banco a cada BATCH_SIZE e o array volta a zero — memória
+ * constante, independente do tamanho do arquivo.
+ *
+ * `sinceBaseDate` é a data-base máxima já gravada. Na primeira execução ela é null e
+ * tudo entra (o backfill do histórico); nas seguintes, só o que é mais novo. A própria
+ * data máxima é reprocessada de propósito: o Tesouro às vezes republica o arquivo do
+ * dia, e o upsert corrige a linha em vez de duplicá-la.
  */
-class LatestBaseDateCollector {
-  private header: string[] | null = null;
-  private latestBaseDate = "";
-  private collected: TreasuryRow[] = [];
+const BATCH_SIZE = 2000;
 
-  push(line: string): void {
-    if (line.trim() === "") return;
+class TreasuryIngester {
+  private header: string[] | null = null;
+  private buffer: TreasuryRow[] = [];
+  private inserted = 0;
+  private latestSeen = "";
+
+  constructor(private readonly sinceBaseDate: string | null, private readonly flush: (rows: TreasuryRow[]) => Promise<void>) {}
+
+  async push(line: string): Promise<void> {
+    const row = this.parse(line);
+    if (!row) return;
+    this.buffer.push(row);
+    if (this.buffer.length >= BATCH_SIZE) await this.drain();
+  }
+
+  async finish(): Promise<{ inserted: number; latestBaseDate: string }> {
+    await this.drain();
+    return { inserted: this.inserted, latestBaseDate: this.latestSeen };
+  }
+
+  private async drain(): Promise<void> {
+    if (this.buffer.length === 0) return;
+    const batch = this.buffer;
+    this.buffer = [];
+    await this.flush(batch);
+    this.inserted += batch.length;
+  }
+
+  private parse(line: string): TreasuryRow | null {
+    if (line.trim() === "") return null;
     const cells = line.split(";");
     if (!this.header) {
       this.header = cells.map((c) => c.trim());
-      return;
+      return null;
     }
 
     const header = this.header;
@@ -89,33 +119,20 @@ class LatestBaseDateCollector {
     const bondType = get("Tipo Titulo").trim();
     const buyRate = parseNumber(get("Taxa Compra Manha"));
     const buyUnitPrice = parseNumber(get("PU Compra Manha"));
-    // Recompra não entra na condição de descarte abaixo de propósito: o título é
-    // utilizável para sugestão de aporte mesmo sem ela, e exigi-la jogaria fora linha
-    // boa. Quem marca posição a mercado é que precisa tratar o nulo.
+    // Recompra não entra na condição de descarte de propósito: o título é utilizável
+    // para sugestão de aporte mesmo sem ela, e exigi-la jogaria fora linha boa. Quem
+    // marca posição a mercado é que precisa tratar o nulo.
     const sellRate = parseNumber(get("Taxa Venda Manha"));
     const sellUnitPrice = parseNumber(get("PU Venda Manha"));
 
     // Linha incompleta é descartada em silêncio: o arquivo tem duas décadas de
     // histórico e nem todo título tinha todas as colunas preenchidas em toda data.
-    if (!baseDate || !maturityDate || !bondType || buyRate == null || buyUnitPrice == null) return;
-    if (baseDate < this.latestBaseDate) return;
-    if (baseDate > this.latestBaseDate) {
-      this.latestBaseDate = baseDate;
-      this.collected = [];
-    }
-    this.collected.push({ bondType, maturityDate, baseDate, buyRate, buyUnitPrice, sellRate, sellUnitPrice });
-  }
+    if (!baseDate || !maturityDate || !bondType || buyRate == null || buyUnitPrice == null) return null;
+    if (baseDate > this.latestSeen) this.latestSeen = baseDate;
+    if (this.sinceBaseDate && baseDate < this.sinceBaseDate) return null;
 
-  rows(): TreasuryRow[] {
-    return this.collected;
+    return { bondType, maturityDate, baseDate, buyRate, buyUnitPrice, sellRate, sellUnitPrice };
   }
-}
-
-/** Versão síncrona, usada nos testes com um CSV pequeno em memória. */
-export function collectLatestBaseDate(lines: Iterable<string>): TreasuryRow[] {
-  const collector = new LatestBaseDateCollector();
-  for (const line of lines) collector.push(line);
-  return collector.rows();
 }
 
 /** Baixa o CSV decodificando latin-1 em streaming e entrega linha a linha. */
@@ -142,26 +159,10 @@ async function* streamCsvLines(url: string): AsyncGenerator<string> {
   if (buffer.trim() !== "") yield buffer.replace(/\r$/, "");
 }
 
-async function collectFromUrl(url: string): Promise<TreasuryRow[]> {
-  const collector = new LatestBaseDateCollector();
-  for await (const line of streamCsvLines(url)) collector.push(line);
-  return collector.rows();
-}
-
-export async function syncTreasuryBonds(): Promise<{ summary: string }> {
-  const url = await resolveCsvUrl();
-  if (!url) return { summary: "URL do CSV não resolvida — tabela mantida como estava" };
-
-  const rows = await collectFromUrl(url);
-  // Arquivo vazio ou ilegível não pode esvaziar a tabela: o mesmo princípio do job de
-  // oportunidades, onde universo vazio aborta sem mexer no que já existe. Uma tabela
-  // zerada apagaria as sugestões de renda fixa sem nenhum aviso na tela.
-  if (rows.length === 0) return { summary: "nenhuma linha válida no CSV — tabela mantida como estava" };
-
-  const baseDate = rows[0].baseDate;
-  await db.transaction(async (tx) => {
-    await tx.delete(treasuryBondsTable);
-    await tx.insert(treasuryBondsTable).values(
+async function persistBatch(rows: TreasuryRow[]): Promise<void> {
+  await db
+    .insert(treasuryBondsTable)
+    .values(
       rows.map((r) => ({
         bondType: r.bondType,
         maturityDate: r.maturityDate,
@@ -171,10 +172,54 @@ export async function syncTreasuryBonds(): Promise<{ summary: string }> {
         sellRate: r.sellRate == null ? null : String(r.sellRate),
         sellUnitPrice: r.sellUnitPrice == null ? null : String(r.sellUnitPrice),
       })),
-    );
-  });
+    )
+    // Reexecutar a sincronização é inofensivo, e uma republicação do arquivo do dia
+    // corrige a linha em vez de duplicá-la.
+    .onConflictDoUpdate({
+      target: [treasuryBondsTable.bondType, treasuryBondsTable.maturityDate, treasuryBondsTable.baseDate],
+      set: {
+        buyRate: sql`excluded.buy_rate`,
+        buyUnitPrice: sql`excluded.buy_unit_price`,
+        sellRate: sql`excluded.sell_rate`,
+        sellUnitPrice: sql`excluded.sell_unit_price`,
+      },
+    });
+}
 
-  return { summary: `${rows.length} títulos do Tesouro Direto sincronizados (data-base ${baseDate})` };
+export async function syncTreasuryBonds(): Promise<{ summary: string }> {
+  const url = await resolveCsvUrl();
+  if (!url) return { summary: "URL do CSV não resolvida — tabela mantida como estava" };
+
+  // "Tenho histórico?" é medido por QUANTAS datas-base distintas existem, não por
+  // haver linhas. Uma instalação que já rodava a versão anterior tem exatamente uma
+  // data-base — a foto do dia — e olhar só a data máxima faria o sync concluir que
+  // está em dia e nunca baixar as duas décadas anteriores. O recurso inteiro depende
+  // desse histórico, então a condição precisa reconhecer esse estado e refazer a
+  // varredura completa. Depois do backfill existem milhares de datas e o caminho
+  // incremental volta a valer sozinho.
+  const [stats] = await db
+    .select({ latest: max(treasuryBondsTable.baseDate), distinctDates: countDistinct(treasuryBondsTable.baseDate) })
+    .from(treasuryBondsTable);
+  const hasHistory = (stats?.distinctDates ?? 0) > 1;
+  const sinceBaseDate = hasHistory ? (stats?.latest ?? null) : null;
+
+  // Nada é apagado antes de gravar: o histórico é acumulativo, então arquivo vazio ou
+  // ilegível simplesmente não escreve nada, em vez de destruir o que já existe.
+  const ingester = new TreasuryIngester(sinceBaseDate, persistBatch);
+  for await (const line of streamCsvLines(url)) await ingester.push(line);
+  const { inserted, latestBaseDate } = await ingester.finish();
+
+  if (inserted === 0) {
+    return { summary: `nenhuma linha nova (data-base mais recente já registrada: ${sinceBaseDate ?? "nenhuma"})` };
+  }
+  return {
+    summary: hasHistory
+      // "processadas" e não "novas": a data-base máxima é sempre reprocessada para
+      // capturar republicação do arquivo, então parte dessas linhas costuma ser
+      // atualização e não inserção.
+      ? `${inserted} linhas processadas do Tesouro Direto (até a data-base ${latestBaseDate})`
+      : `histórico do Tesouro Direto carregado: ${inserted} linhas, até a data-base ${latestBaseDate}`,
+  };
 }
 
 /**

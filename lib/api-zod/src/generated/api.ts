@@ -454,6 +454,25 @@ export const ListTreasuryBondsResponse = zod.array(ListTreasuryBondsResponseItem
 
 
 /**
+ * @summary PU de compra de um título na data informada (ou na data-base anterior mais próxima)
+ */
+export const getTreasuryPriceOnDateQueryMaturityDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getTreasuryPriceOnDateQueryDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const GetTreasuryPriceOnDateQueryParams = zod.object({
+  "bondType": zod.coerce.string(),
+  "maturityDate": zod.coerce.string().regex(getTreasuryPriceOnDateQueryMaturityDateRegExp),
+  "date": zod.coerce.string().regex(getTreasuryPriceOnDateQueryDateRegExp)
+})
+
+export const GetTreasuryPriceOnDateResponse = zod.object({
+  "baseDate": zod.coerce.date().describe('Data-base efetivamente usada. Pode ser anterior à pedida — compra em fim de semana ou feriado não tem publicação no próprio dia, e a tela precisa dizer de quando é o número.'),
+  "buyUnitPrice": zod.number()
+})
+
+
+/**
  * @summary Alocação-alvo por classe e desvio da carteira real em relação a ela
  */
 export const GetAllocationResponse = zod.object({

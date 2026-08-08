@@ -1,4 +1,5 @@
-import { db, treasuryBondsTable } from "@workspace/db";
+import { db, treasuryBondsTable, type TreasuryBond } from "@workspace/db";
+import { and, desc, eq, lte, max } from "drizzle-orm";
 
 /**
  * Identidade de uma posição em título público.
@@ -44,8 +45,51 @@ export interface TreasuryBondOption extends TreasuryRef {
   label: string;
 }
 
+/**
+ * Data-base mais recente já sincronizada. A tabela virou série histórica, então tudo
+ * que quer dizer "hoje" precisa passar por aqui — sem o filtro, uma consulta traria
+ * duas décadas de preços do mesmo título.
+ */
+export async function latestBaseDate(): Promise<string | null> {
+  const [row] = await db.select({ latest: max(treasuryBondsTable.baseDate) }).from(treasuryBondsTable);
+  return row?.latest ?? null;
+}
+
+/** Todos os títulos na data-base mais recente — o equivalente à antiga "foto do dia". */
+export async function latestTreasuryBonds(): Promise<TreasuryBond[]> {
+  const latest = await latestBaseDate();
+  if (!latest) return [];
+  return db.select().from(treasuryBondsTable).where(eq(treasuryBondsTable.baseDate, latest));
+}
+
+/**
+ * PU de compra do título na data pedida, ou na data-base publicada imediatamente antes.
+ *
+ * O "ou antes" não é conveniência: compra em sábado, domingo ou feriado não tem
+ * publicação no próprio dia, e exigir data exata devolveria "não encontrado" para uma
+ * compra perfeitamente válida. A data-base efetivamente usada volta junto para a tela
+ * poder dizer de quando é o número — se o usuário comprou num sábado, o PU exibido é o
+ * da sexta, e ele merece saber disso.
+ */
+export async function priceOnDate(ref: TreasuryRef, date: string): Promise<{ baseDate: string; buyUnitPrice: number } | null> {
+  const [row] = await db
+    .select({ baseDate: treasuryBondsTable.baseDate, buyUnitPrice: treasuryBondsTable.buyUnitPrice })
+    .from(treasuryBondsTable)
+    .where(and(
+      eq(treasuryBondsTable.bondType, ref.bondType),
+      eq(treasuryBondsTable.maturityDate, ref.maturityDate),
+      lte(treasuryBondsTable.baseDate, date),
+    ))
+    .orderBy(desc(treasuryBondsTable.baseDate))
+    .limit(1);
+
+  if (!row) return null;
+  const price = parseFloat(row.buyUnitPrice);
+  return Number.isFinite(price) && price > 0 ? { baseDate: row.baseDate, buyUnitPrice: price } : null;
+}
+
 export async function listTreasuryBondOptions(): Promise<TreasuryBondOption[]> {
-  const rows = await db.select().from(treasuryBondsTable);
+  const rows = await latestTreasuryBonds();
   return rows
     .map((row) => ({
       bondType: row.bondType,
@@ -69,7 +113,7 @@ export async function listTreasuryBondOptions(): Promise<TreasuryBondOption[]> {
  * ainda não rodou puniria o usuário por um estado interno do servidor.
  */
 export async function findTreasuryBond(ref: TreasuryRef): Promise<{ found: boolean; tableEmpty: boolean }> {
-  const rows = await db.select({ bondType: treasuryBondsTable.bondType, maturityDate: treasuryBondsTable.maturityDate }).from(treasuryBondsTable);
+  const rows = await latestTreasuryBonds();
   if (rows.length === 0) return { found: false, tableEmpty: true };
   const found = rows.some((r) => r.bondType === ref.bondType && r.maturityDate === ref.maturityDate);
   return { found, tableEmpty: false };

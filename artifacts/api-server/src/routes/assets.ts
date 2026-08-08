@@ -52,10 +52,14 @@ function enrichAsset(asset: {
 }
 
 /**
- * O zod gerado a partir de `format: date` no OpenAPI entrega Date, não string — mesmo
- * caso de purchaseDate, que a rota já normaliza com um typeof. Aqui a normalização é
- * obrigatória e não cosmética: o vencimento é metade da chave que liga a posição à
- * tabela de preços, e um Date serializado por acidente nunca casaria com a coluna date.
+ * O zod gerado a partir de `format: date` no OpenAPI entrega Date, não string
+ * (`zod.coerce.date()`), enquanto as colunas de data usam `mode: "string"`.
+ *
+ * Isso já causava um bug silencioso: a rota testava `typeof purchaseDate === "string"`
+ * e, como o valor sempre chegava como Date depois da coerção, gravava null — TODA data
+ * de compra enviada era descartada sem erro nenhum. Só apareceu quando o formulário
+ * passou a mandar o campo. Aqui a normalização é ainda mais crítica: o vencimento é
+ * metade da chave que liga a posição à tabela de preços.
  */
 function isoDate(value: string | Date): string {
   return typeof value === "string" ? value : value.toISOString().slice(0, 10);
@@ -150,7 +154,7 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     ticker: tickerUpper,
     quantity: String(quantity),
     averagePrice: String(averagePrice),
-    purchaseDate: typeof purchaseDate === "string" ? purchaseDate : null,
+    purchaseDate: purchaseDate ? isoDate(purchaseDate) : null,
     category,
     treasuryBondType: treasuryRef?.bondType ?? null,
     treasuryMaturityDate: treasuryRef?.maturityDate ?? null,
@@ -195,7 +199,7 @@ router.patch("/assets/:id", requireAuth, async (req, res): Promise<void> => {
   if (parsed.data.ticker != null) updates.ticker = parsed.data.ticker.toUpperCase();
   if (parsed.data.quantity != null) updates.quantity = String(parsed.data.quantity);
   if (parsed.data.averagePrice != null) updates.averagePrice = String(parsed.data.averagePrice);
-  if (parsed.data.purchaseDate !== undefined) updates.purchaseDate = parsed.data.purchaseDate;
+  if (parsed.data.purchaseDate !== undefined) updates.purchaseDate = parsed.data.purchaseDate ? isoDate(parsed.data.purchaseDate) : null;
   if (parsed.data.category != null) updates.category = parsed.data.category;
   if (parsed.data.sector !== undefined) updates.sector = parsed.data.sector;
   if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;

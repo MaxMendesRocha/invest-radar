@@ -1,4 +1,5 @@
-import { db, priceSnapshotsTable, treasuryBondsTable } from "@workspace/db";
+import { db, priceSnapshotsTable } from "@workspace/db";
+import { latestTreasuryBonds } from "./treasury-identity";
 import { inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
@@ -1190,14 +1191,9 @@ async function getTreasuryPrices(items: PriceableItem[]): Promise<Map<string, Pr
 
   let rows: { bondType: string; maturityDate: string; baseDate: string; sellUnitPrice: string | null }[] = [];
   try {
-    rows = await db
-      .select({
-        bondType: treasuryBondsTable.bondType,
-        maturityDate: treasuryBondsTable.maturityDate,
-        baseDate: treasuryBondsTable.baseDate,
-        sellUnitPrice: treasuryBondsTable.sellUnitPrice,
-      })
-      .from(treasuryBondsTable);
+    // latestTreasuryBonds e não a tabela inteira: ela guarda o histórico desde 2002, e
+    // sem o filtro cada marcação a mercado varreria duas décadas de preços.
+    rows = await latestTreasuryBonds();
   } catch (err) {
     logger.warn({ err }, "consulta de títulos do Tesouro falhou");
     return prices;

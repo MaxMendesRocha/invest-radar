@@ -423,6 +423,46 @@ paths:
                 items:
                   $ref: "#/components/schemas/TreasuryBondOption"
 
+  /treasury/price:
+    get:
+      operationId: getTreasuryPriceOnDate
+      tags: [portfolio]
+      summary: PU de compra de um título na data informada (ou na data-base anterior mais próxima)
+      parameters:
+        - name: bondType
+          in: query
+          required: true
+          schema:
+            type: string
+        # `pattern` e não `format: date`: o orval gera zod.date() para format em query
+        # param, e query string é sempre texto — o endpoint recusava toda chamada com
+        # 400. O pattern documenta o formato E valida, sem depender de coerção.
+        - name: maturityDate
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+      responses:
+        "200":
+          description: PU encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreasuryPriceOnDate"
+        "404":
+          description: Sem publicação para esse título até a data pedida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /portfolio/allocation:
     get:
       operationId: getAllocation
@@ -1799,6 +1839,20 @@ components:
           type: number
         reason:
           type: string
+
+    TreasuryPriceOnDate:
+      type: object
+      required: [baseDate, buyUnitPrice]
+      properties:
+        baseDate:
+          type: string
+          format: date
+          description: >-
+            Data-base efetivamente usada. Pode ser anterior à pedida — compra em fim de
+            semana ou feriado não tem publicação no próprio dia, e a tela precisa dizer
+            de quando é o número.
+        buyUnitPrice:
+          type: number
 
     TreasuryBondOption:
       type: object

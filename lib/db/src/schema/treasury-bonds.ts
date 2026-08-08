@@ -1,15 +1,26 @@
-import { pgTable, serial, text, numeric, date, timestamp, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, date, timestamp, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 /**
- * Títulos do Tesouro Direto na data-base mais recente publicada, com a taxa e o preço
- * unitário de compra. Global, não por usuário.
+ * Série histórica de preços do Tesouro Direto: uma linha por título por data-base.
+ * Global, não por usuário.
  *
  * Fonte: dados abertos do Tesouro Nacional (Tesouro Transparente, CKAN, licença ODbL),
- * sincronizados uma vez por dia — ver treasury-data.ts. Só a foto mais recente fica
- * aqui: a série histórica completa do arquivo (desde 2002, ~175 mil linhas) não serve
- * para sugerir onde aportar hoje, e guardá-la seria carregar 14 MB por nada.
+ * sincronizados uma vez por dia — ver treasury-data.ts.
+ *
+ * Começou guardando só a data-base mais recente, o que bastava para sugerir aporte e
+ * marcar posição a mercado. Passou a guardar o histórico inteiro (desde 2002, ~175 mil
+ * linhas) por causa de uma pergunta que a foto do dia não responde: **quanto o título
+ * custava no dia em que o usuário comprou**. Sem isso, cadastrar uma compra antiga
+ * exigia que ele descobrisse o PU pago em outro lugar — e pré-preencher com o PU de
+ * hoje teria gravado um preço médio errado, corrompendo o lucro/prejuízo da posição
+ * para sempre.
+ *
+ * Quem precisa do "hoje" filtra pela data-base máxima (`latestTreasuryBonds()` em
+ * treasury-identity.ts); quem precisa de uma data específica busca a data-base mais
+ * recente ANTERIOR OU IGUAL à procurada, porque compra em fim de semana ou feriado não
+ * tem publicação no próprio dia.
  *
  * `baseDate` não é decorativo. O arquivo é publicado com um ou dois dias úteis de
  * atraso, então a taxa exibida nunca é "de agora" — a data vai junto na tela pelo mesmo
@@ -44,7 +55,11 @@ export const treasuryBondsTable = pgTable("treasury_bonds", {
   sellUnitPrice: numeric("sell_unit_price", { precision: 14, scale: 2 }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
-  unique("treasury_bonds_type_maturity_unique").on(table.bondType, table.maturityDate),
+  // A chave natural inclui a data-base: o mesmo título aparece uma vez por pregão.
+  unique("treasury_bonds_type_maturity_base_unique").on(table.bondType, table.maturityDate, table.baseDate),
+  // Todas as consultas ou filtram pela data-base máxima ou procuram a data mais
+  // recente até um limite — as duas varrem por esta coluna.
+  index("IDX_treasury_bonds_base_date").on(table.baseDate),
 ]);
 
 export const insertTreasuryBondSchema = createInsertSchema(treasuryBondsTable).omit({ id: true, updatedAt: true });
