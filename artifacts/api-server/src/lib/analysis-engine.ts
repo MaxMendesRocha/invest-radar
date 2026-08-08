@@ -27,27 +27,65 @@ interface MetricEval {
   risk?: string;
 }
 
+/**
+ * Interpola linearmente entre pontos de ancoragem `[valor do indicador, nota]`, com
+ * os extremos achatados (abaixo do primeiro ponto vale a nota do primeiro; acima do
+ * último, a do último).
+ *
+ * Existe porque as faixas discretas que havia antes ("P/L até 15 vale 90, de 15 a 25
+ * vale 65") apagavam quase toda a informação: dois ativos com P/L 8 e 15 recebiam a
+ * mesma nota, e um centavo de diferença no indicador derrubava 25 pontos. Medindo o
+ * universo real, 29% dos ativos caíam no mesmo score final e o intervalo inteiro
+ * cabia entre 43 e 74 — não por serem parecidos, mas porque a régua não tinha
+ * resolução para separá-los.
+ *
+ * Os pontos de ancoragem mantêm de propósito as mesmas notas das faixas antigas nos
+ * mesmos limites (P/L 15 continua valendo ~85, P/L 25 ~62): a mudança é dar
+ * resolução entre eles, não reinventar o que é bom ou ruim.
+ */
+function interpolate(value: number, points: readonly (readonly [number, number])[]): number {
+  const first = points[0];
+  if (value <= first[0]) return first[1];
+  for (let i = 1; i < points.length; i++) {
+    const [x1, y1] = points[i];
+    if (value <= x1) {
+      const [x0, y0] = points[i - 1];
+      const t = (value - x0) / (x1 - x0);
+      return y0 + t * (y1 - y0);
+    }
+  }
+  return points[points.length - 1][1];
+}
+
+// Nas funções abaixo a nota vem da interpolação, mas as frases de positivo/risco
+// continuam presas exatamente aos mesmos limites de antes. É deliberado: a nota é
+// contínua, o texto não pode ser — "P/L atrativo" ou aparece ou não aparece, e mudar
+// junto o gatilho das frases misturaria duas mudanças diferentes numa só.
+
 function evalPE(pe: number | null): MetricEval | null {
   if (pe == null) return null;
+  // P/L negativo não é "P/L muito baixo": é prejuízo. Fica fora da curva, com nota fixa.
   if (pe <= 0) return { score: 20, risk: "Empresa reportou prejuízo no período (P/L negativo)" };
-  if (pe <= 15) return { score: 90, positive: "P/L atrativo frente à média histórica do mercado" };
-  if (pe <= 25) return { score: 65 };
-  return { score: 35, risk: "P/L elevado — valuation esticado frente aos fundamentos" };
+  const score = interpolate(pe, [[8, 92], [15, 85], [25, 62], [40, 35], [60, 22]]);
+  if (pe <= 15) return { score, positive: "P/L atrativo frente à média histórica do mercado" };
+  if (pe <= 25) return { score };
+  return { score, risk: "P/L elevado — valuation esticado frente aos fundamentos" };
 }
 
 function evalPriceToBook(pb: number | null): MetricEval | null {
   if (pb == null) return null;
-  if (pb <= 1) return { score: 90, positive: "Negociado abaixo do valor patrimonial (P/VP ≤ 1)" };
-  if (pb <= 2.5) return { score: 65 };
-  return { score: 40, risk: "P/VP elevado frente ao valor patrimonial" };
+  const score = interpolate(pb, [[0.7, 92], [1, 88], [2.5, 62], [4, 42], [6, 30]]);
+  if (pb <= 1) return { score, positive: "Negociado abaixo do valor patrimonial (P/VP ≤ 1)" };
+  if (pb <= 2.5) return { score };
+  return { score, risk: "P/VP elevado frente ao valor patrimonial" };
 }
 
 function evalROE(roe: number | null): MetricEval | null {
   if (roe == null) return null;
   if (roe < 0) return { score: 20, risk: "Retorno sobre patrimônio (ROE) negativo" };
-  if (roe >= 0.15) return { score: 90, positive: "ROE elevado — boa geração de retorno sobre o patrimônio" };
-  if (roe >= 0.08) return { score: 65 };
-  return { score: 45 };
+  const score = interpolate(roe, [[0, 40], [0.08, 62], [0.15, 85], [0.25, 95]]);
+  if (roe >= 0.15) return { score, positive: "ROE elevado — boa geração de retorno sobre o patrimônio" };
+  return { score };
 }
 
 export interface DuPontBreakdown {
@@ -127,24 +165,29 @@ export function describeDuPontBreakdown(d: DuPontBreakdown | null): string {
 
 function evalDebtToEquity(de: number | null): MetricEval | null {
   if (de == null) return null;
-  if (de <= 0.5) return { score: 90, positive: "Baixo endividamento em relação ao patrimônio" };
-  if (de <= 1.5) return { score: 65 };
-  return { score: 40, risk: "Endividamento elevado em relação ao patrimônio" };
+  const score = interpolate(de, [[0.2, 93], [0.5, 87], [1.5, 62], [3, 38], [5, 25]]);
+  if (de <= 0.5) return { score, positive: "Baixo endividamento em relação ao patrimônio" };
+  if (de <= 1.5) return { score };
+  return { score, risk: "Endividamento elevado em relação ao patrimônio" };
 }
 
 function evalMargin(margin: number | null): MetricEval | null {
   if (margin == null) return null;
-  if (margin < 0) return { score: 25, risk: "Margem líquida negativa no período" };
-  if (margin >= 0.15) return { score: 85, positive: "Margens líquidas saudáveis" };
-  if (margin >= 0.05) return { score: 60 };
-  return { score: 35, risk: "Margens líquidas reduzidas" };
+  const score = interpolate(margin, [[-0.1, 18], [0, 35], [0.05, 55], [0.15, 82], [0.3, 93], [0.45, 96]]);
+  if (margin < 0) return { score, risk: "Margem líquida negativa no período" };
+  if (margin >= 0.15) return { score, positive: "Margens líquidas saudáveis" };
+  if (margin >= 0.05) return { score };
+  return { score, risk: "Margens líquidas reduzidas" };
 }
 
+// Yield muito alto costuma ser preço caindo, não distribuição generosa — por isso a
+// curva para de subir em 10% em vez de continuar premiando. Não vira penalidade
+// porque, sozinho, o yield não distingue os dois casos; quem faz isso é o payout.
 export function evalDividendYield(dy: number | null): MetricEval | null {
   if (dy == null) return null;
-  if (dy >= 0.06) return { score: 85, positive: "Dividend yield acima da média do mercado" };
-  if (dy >= 0.03) return { score: 60 };
-  return { score: 45 };
+  const score = interpolate(dy, [[0, 42], [0.03, 58], [0.06, 82], [0.1, 92]]);
+  if (dy >= 0.06) return { score, positive: "Dividend yield acima da média do mercado" };
+  return { score };
 }
 
 // Payout ratio real = DPS dos últimos 12 meses (soma real de proventos pagos, ver
@@ -165,31 +208,34 @@ function evalPayoutRatio(priceEarnings: number | null, price: number, dps12m: nu
   const eps = price / priceEarnings;
   if (eps <= 0) return null;
   const payoutRatio = dps12m / eps;
-  if (payoutRatio <= 0.6) return { score: 85, positive: "Distribuição bem coberta pelo lucro (payout ratio saudável)" };
-  if (payoutRatio <= 1.0) return { score: 55 };
-  return { score: 20, risk: "Distribuição acima do lucro do período (payout ratio acima de 100%) — sustentabilidade em risco" };
+  const score = interpolate(payoutRatio, [[0.1, 88], [0.6, 80], [1, 52], [1.5, 22], [2, 15]]);
+  if (payoutRatio <= 0.6) return { score, positive: "Distribuição bem coberta pelo lucro (payout ratio saudável)" };
+  if (payoutRatio <= 1.0) return { score };
+  return { score, risk: "Distribuição acima do lucro do período (payout ratio acima de 100%) — sustentabilidade em risco" };
 }
 
 export function evalRevenueGrowth(growth: number | null): MetricEval | null {
   if (growth == null) return null;
-  if (growth >= 0.05) return { score: 80, positive: "Crescimento de receita consistente" };
-  if (growth >= -0.05) return { score: 55 };
-  return { score: 30, risk: "Queda de receita no período" };
+  const score = interpolate(growth, [[-0.25, 18], [-0.05, 50], [0.05, 75], [0.2, 90], [0.4, 95]]);
+  if (growth >= 0.05) return { score, positive: "Crescimento de receita consistente" };
+  if (growth >= -0.05) return { score };
+  return { score, risk: "Queda de receita no período" };
 }
 
 function evalTrend(change52w: number | null): MetricEval | null {
   if (change52w == null) return null;
-  if (change52w >= 0.2) return { score: 90, positive: "Forte valorização nos últimos 12 meses" };
-  if (change52w >= 0) return { score: 65 };
-  if (change52w >= -0.15) return { score: 45 };
-  return { score: 25, risk: "Forte desvalorização nos últimos 12 meses" };
+  const score = interpolate(change52w, [[-0.4, 18], [-0.15, 42], [0, 62], [0.2, 85], [0.5, 95]]);
+  if (change52w >= 0.2) return { score, positive: "Forte valorização nos últimos 12 meses" };
+  if (change52w >= -0.15) return { score };
+  return { score, risk: "Forte desvalorização nos últimos 12 meses" };
 }
 
 export function evalVolatility(beta: number | null): MetricEval | null {
   if (beta == null) return null;
-  if (beta <= 0.7) return { score: 85, positive: "Baixa volatilidade frente ao mercado (beta baixo)" };
-  if (beta <= 1.2) return { score: 65 };
-  return { score: 40, risk: "Alta volatilidade frente ao mercado (beta elevado)" };
+  const score = interpolate(beta, [[0.4, 92], [0.7, 84], [1.2, 62], [1.8, 38], [2.5, 25]]);
+  if (beta <= 0.7) return { score, positive: "Baixa volatilidade frente ao mercado (beta baixo)" };
+  if (beta <= 1.2) return { score };
+  return { score, risk: "Alta volatilidade frente ao mercado (beta elevado)" };
 }
 
 function scoreClassification(score: number): ScoreClassification {
@@ -374,8 +420,9 @@ export function noFundamentalsAnalysis(): AnalysisResult {
  * Deterministic, rules-based analysis over real fundamentals (brapi.dev) — no AI/LLM
  * involved. Weights mirror the "Score do Radar" formula from the product spec:
  * Fundamentos 40%, Notícias 20%, Macro 20%, Tendência histórica 10%, Volatilidade 10%.
- * Notícias/Macro don't have a real data source yet (Fase 3), so they score neutral (60)
- * instead of being faked — Tendência (variação 12m) and Volatilidade (beta) are real.
+ * Notícias/Macro don't have a real data source yet (Fase 3), so they are left OUT of
+ * the average and the remaining weights are renormalized — ver o comentário no corpo
+ * da função sobre por que o "60 neutro" que havia antes não era neutro.
  *
  * Called from routes/analysis.ts via computeAnalysis(), fed by market-data.ts's
  * getFundamentals() (brapi.dev — ver o comentário lá sobre como ROE/dívida-patrimônio/
@@ -409,16 +456,20 @@ export function analyzeFundamentals(
 
   const trend = evalTrend(f.fiftyTwoWeekChange);
   const volatility = evalVolatility(f.beta);
-  const trendScore = trend?.score ?? 60;
-  const volatilityScore = volatility?.score ?? 60;
 
-  // Notícias e cenário macro ainda não têm fonte de dados real (Fase 3) — neutro.
-  const newsScore = 60;
-  const macroScore = 60;
-
-  const score = Math.round(
-    fundamentosScore * 0.4 + newsScore * 0.2 + macroScore * 0.2 + trendScore * 0.1 + volatilityScore * 0.1
-  );
+  // Notícias (20%) e macro (20%) não têm fonte de dados real ainda, então ficam FORA
+  // da média em vez de entrar valendo um "60 neutro". Entrar valendo 60 não era
+  // neutro coisa nenhuma: era 40% do peso total puxando todo mundo para o mesmo
+  // ponto, e foi a maior causa de o universo inteiro caber entre 43 e 74. Excluir o
+  // que não se sabe e renormalizar o resto é o mesmo critério que os fundamentos já
+  // usavam (indicador ausente não entra na média) — agora aplicado um nível acima.
+  const components = [
+    { score: fundamentosScore, weight: 0.4 },
+    ...(trend ? [{ score: trend.score, weight: 0.1 }] : []),
+    ...(volatility ? [{ score: volatility.score, weight: 0.1 }] : []),
+  ];
+  const totalWeight = components.reduce((sum, c) => sum + c.weight, 0);
+  const score = Math.round(components.reduce((sum, c) => sum + c.score * c.weight, 0) / totalWeight);
 
   const allMetrics = [...fundamentalMetrics, trend, volatility].filter((m): m is MetricEval => m != null);
   const positives = allMetrics.filter((m) => m.positive).map((m) => m.positive!);
