@@ -1,10 +1,17 @@
 name: Limpa análises da escala antiga (one-off)
 
-# Workflow temporário, criado só para a subida do PR #44. As linhas gravadas em
-# `analyses` e `opportunities` guardam o score da escala antiga (que ia de 43 a 74);
-# convivendo com as novas na mesma tela, um 71 velho apareceria ao lado de um 84 novo
-# medindo coisas diferentes. As duas tabelas são cache: `analyses` se recompõe na
-# próxima leitura de /analysis/assets e `opportunities` é regenerada inteira pelo job.
+# Workflow temporário, criado só para a subida do PR #44.
+#
+# Etapa 1 (já executada): apagar `analyses` e `opportunities`, que guardavam scores da
+# escala antiga — convivendo com as novas na mesma tela, um 71 velho apareceria ao lado
+# de um 84 novo medindo coisas diferentes.
+#
+# Etapa 2 (esta): zerar o registro de execução do job `regenerate-opportunities` em
+# `job_runs`. Apagar a tabela `opportunities` sozinha deixou a tela de Sugestões vazia
+# até o próximo ciclo — o scheduler consulta `job_runs.lastRunAt` e o gap é de uma
+# semana, então ele acharia que já rodou e não repovoaria nada por dias. Sem o
+# lastRunAt, a próxima checagem horária (ou o próximo restart) regenera.
+#
 # APAGAR este arquivo depois de rodar.
 
 on:
@@ -14,7 +21,7 @@ jobs:
   reset:
     runs-on: ubuntu-latest
     steps:
-      - name: Apaga o cache de análises na escala antiga
+      - name: Destrava a regeneração de oportunidades
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -24,9 +31,9 @@ jobs:
             exit 1
           fi
           echo "== antes =="
-          psql "$DATABASE_URL" -c "select 'analyses' as tabela, count(*) from analyses union all select 'opportunities', count(*) from opportunities;"
-          psql "$DATABASE_URL" -c "delete from analyses;"
-          psql "$DATABASE_URL" -c "delete from opportunities;"
+          psql "$DATABASE_URL" -c "select job_name, last_run_at, last_status from job_runs;"
+          psql "$DATABASE_URL" -c "select count(*) as opportunities from opportunities;"
+          psql "$DATABASE_URL" -c "delete from job_runs where job_name = 'regenerate-opportunities';"
           echo "== depois =="
-          psql "$DATABASE_URL" -c "select 'analyses' as tabela, count(*) from analyses union all select 'opportunities', count(*) from opportunities;"
-          echo "Feito. As duas tabelas se repovoam sozinhas: analyses na próxima leitura, opportunities no próximo ciclo do job."
+          psql "$DATABASE_URL" -c "select job_name, last_run_at, last_status from job_runs;"
+          echo "Feito. O scheduler regenera as oportunidades na próxima checagem horária ou no próximo restart."
