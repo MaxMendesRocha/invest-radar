@@ -1,6 +1,7 @@
 import { db, opportunitiesTable, sectorBenchmarksTable, type InsertOpportunity, type InsertSectorBenchmark } from "@workspace/db";
 import { getFundamentals, getDividendEvents, getFiiProfiles, sumLast12Months, classifyDividendFrequency, type Fundamentals, type FiiProfile } from "./market-data";
-import { analyzeFundamentals, evalVolatility } from "./analysis-engine";
+import { analyzeFundamentals, analyzeFii } from "./analysis-engine";
+import { getMacroSnapshot } from "./macro-data";
 import { computeFinancialHealth } from "./financial-health-engine";
 import { classifySustainabilityOf } from "./dividend-value-engine";
 import { fetchTickerUniverse, type UniverseEntry } from "./ticker-universe";
@@ -9,17 +10,24 @@ import { benchmarkGroupFor } from "./fii-engine";
 import { logger } from "./logger";
 import type { JobDefinition } from "./scheduler";
 
-// Fundamentos ruins não entram na lista de "sugestões" — mesmo limiar informal do
-// "Estavel" pra cima na classificação do Radar (analysis-engine.ts).
-const MIN_OPPORTUNITY_SCORE = 60;
+// Fundamentos ruins não entram na lista de "sugestões" — continua sendo "do Estavel
+// pra cima" na classificação do Radar, mas o piso do Estavel passou de 60 para 65 na
+// recalibragem das faixas (ver scoreClassification em analysis-engine.ts). Sem mover
+// isso junto, o corte teria passado a pegar também a faixa Atenção.
+const MIN_OPPORTUNITY_SCORE = 65;
 
-// Nível de risco determinístico a partir do beta real (mesmos buckets de
-// evalVolatility) — a IA nunca decide esse enum, só escreve o texto em volta.
+// Nível de risco determinístico a partir do beta real — comparando o BETA, não a nota
+// que evalVolatility deriva dele. Antes isto lia `volatility.score >= 85`, o que
+// funcionava por acidente enquanto as notas eram degraus fixos; com a curva
+// interpolada a mesma comparação passaria a significar beta 0,66 em vez do 0,7
+// documentado. Ler o beta direto mantém o limiar dizendo o que diz.
+const LOW_BETA_CEILING = 0.7;
+const MEDIUM_BETA_CEILING = 1.2;
+
 function riskLevelFor(f: Fundamentals): "Baixo" | "Medio" | "Alto" {
-  const volatility = evalVolatility(f.beta);
-  if (!volatility) return "Medio"; // sem beta disponível (comum em FII/ETF/BDR): neutro, não chutado pra baixo/alto
-  if (volatility.score >= 85) return "Baixo";
-  if (volatility.score >= 65) return "Medio";
+  if (f.beta == null) return "Medio"; // sem beta disponível (comum em FII/ETF/BDR): neutro, não chutado pra baixo/alto
+  if (f.beta <= LOW_BETA_CEILING) return "Baixo";
+  if (f.beta <= MEDIUM_BETA_CEILING) return "Medio";
   return "Alto";
 }
 
@@ -121,12 +129,14 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
   // dividendEvents em paralelo com fundamentals — o payout ratio avaliado dentro de
   // analyzeFundamentals precisa do DPS real dos últimos 12 meses, mesma fonte já usada
   // pra dividendTrend no Parecer de Ativo e em POST /analysis/generate.
-  const [fundamentalsByTicker, dividendEventsByTicker, fiiProfileByTicker] = await Promise.all([
+  const [fundamentalsByTicker, dividendEventsByTicker, fiiProfileByTicker, macro] = await Promise.all([
     getFundamentals(universe.map((u) => u.ticker)),
     getDividendEvents(universe.map((u) => ({ ticker: u.ticker, category: u.category }))),
     // Em lote (?symbols=A,B,C), uma chamada só — o segmento é o que permite comparar
     // FII contra os pares certos em vez de contra todos os FIIs juntos.
     getFiiProfiles(universe.filter((u) => u.category === "fiis").map((u) => u.ticker)),
+    // Selic: referência contra a qual o rendimento de FII é lido (ver analyzeFii).
+    getMacroSnapshot(),
   ]);
   const now = Date.now();
 
@@ -135,8 +145,19 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
   const candidates = universe.map((entry) => {
     const fundamentals = fundamentalsByTicker.get(entry.ticker);
     if (!fundamentals) return null;
-    const dps12m = sumLast12Months(dividendEventsByTicker.get(entry.ticker) ?? [], now);
-    const analysis = analyzeFundamentals(fundamentals, dps12m);
+    const dividendEvents = dividendEventsByTicker.get(entry.ticker) ?? [];
+    const dps12m = sumLast12Months(dividendEvents, now);
+    // FII tem régua própria — a de ação trata P/VP e dividend yield de FII como se
+    // fossem de empresa e devolve 90+ para todo mundo (ver analysis-engine.ts).
+    const analysis =
+      entry.category === "fiis"
+        ? analyzeFii({
+            profile: fiiProfileByTicker.get(entry.ticker) ?? null,
+            dividendEvents,
+            price: fundamentals.price,
+            selicPercent: macro.selic,
+          }, 0, undefined, now)
+        : analyzeFundamentals(fundamentals, dps12m);
     if (!analysis.available || analysis.score < MIN_OPPORTUNITY_SCORE) return null;
     return { entry, fundamentals, analysis };
   }).filter((c): c is { entry: UniverseEntry; fundamentals: Fundamentals; analysis: ReturnType<typeof analyzeFundamentals> } => c != null);
