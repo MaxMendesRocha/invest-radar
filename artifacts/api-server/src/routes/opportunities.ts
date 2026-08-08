@@ -28,9 +28,15 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
   // foi ordenada, senão a ordem muda sem explicação quando o objetivo do perfil muda.
   const items10 = top10.map((item) => {
     const value = valueByTicker.get(item.ticker) ?? null;
+    const quoted = prices.get(item.ticker.toUpperCase());
     return {
     ...item,
-    currentPrice: prices.get(item.ticker.toUpperCase())?.price ?? null,
+    currentPrice: quoted?.price ?? null,
+    // Mesma regra do Dashboard e da Carteira: quando o preço é o último conhecido em
+    // vez da cotação de agora, a data vai junto. Faltava só aqui, e a exceção não se
+    // sustentava — durante uma queda do provedor esta tela mostraria preço datado com
+    // a mesma cara de preço ao vivo enquanto as outras duas avisavam.
+    priceAsOf: quoted?.asOf?.toISOString() ?? null,
     dividendFrequency: classifyDividendFrequency(dividendEventsByTicker.get(item.ticker.toUpperCase()) ?? [], now)?.label ?? null,
     dividendPremiumPP: value?.premiumOverSectorPP ?? null,
     sectorMedianYield: value?.sectorMedianYield ?? null,

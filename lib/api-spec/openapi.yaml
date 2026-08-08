@@ -1429,6 +1429,13 @@ components:
           type: string
         currentPrice:
           type: ["number", "null"]
+        priceAsOf:
+          type: ["string", "null"]
+          format: date-time
+          description: >-
+            Preenchido só quando currentPrice é o último preço conhecido em vez da
+            cotação de agora (provedor indisponível) — é a data dessa última cotação.
+            Null quando o preço é ao vivo. Mesmo campo e mesma semântica de Asset.priceAsOf.
         dividendFrequency:
           type: ["string", "null"]
           enum: [Mensal, Trimestral, Semestral, Anual, Irregular, null]
