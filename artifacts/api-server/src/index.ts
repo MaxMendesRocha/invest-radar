@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startScheduler } from "./lib/scheduler";
 import { OPPORTUNITIES_JOB } from "./lib/opportunities-engine";
+import { TREASURY_JOB } from "./lib/treasury-data";
 
 const rawPort = process.env["PORT"];
 
@@ -26,4 +27,4 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
 });
 
-startScheduler([OPPORTUNITIES_JOB]);
+startScheduler([OPPORTUNITIES_JOB, TREASURY_JOB]);
