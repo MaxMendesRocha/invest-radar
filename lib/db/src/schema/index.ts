@@ -2,6 +2,7 @@ export * from "./users";
 export * from "./assets";
 export * from "./investor-profile";
 export * from "./income-goals";
+export * from "./allocation-policies";
 export * from "./session";
 export * from "./alerts";
 export * from "./opportunities";

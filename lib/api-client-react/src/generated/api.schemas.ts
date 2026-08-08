@@ -983,6 +983,115 @@ export interface MacroSnapshot {
   updatedAt: string;
 }
 
+export type AllocationTargetCategory = typeof AllocationTargetCategory[keyof typeof AllocationTargetCategory];
+
+
+export const AllocationTargetCategory = {
+  renda_fixa: 'renda_fixa',
+  acoes: 'acoes',
+  fiis: 'fiis',
+  etfs: 'etfs',
+  bdrs: 'bdrs',
+  fundos: 'fundos',
+} as const;
+
+export interface AllocationTarget {
+  category: AllocationTargetCategory;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  targetPercent: number;
+}
+
+/**
+ * Os alvos precisam somar 100%.
+ */
+export interface AllocationInput {
+  targets: AllocationTarget[];
+}
+
+export interface AllocationItem {
+  category: string;
+  targetPercent: number;
+  currentPercent: number;
+  currentValue: number;
+  /** Positivo = classe abaixo do alvo; negativo = acima. */
+  deviationPp: number;
+  /** Quanto falta (positivo) ou sobra (negativo) em reais para bater o alvo hoje. */
+  deviationValue: number;
+}
+
+/**
+ * De onde vem a política em uso. "personalizado" = salva pelo usuário; "perfil" = padrão derivado do perfil de investidor; "generico" = padrão usado por falta de perfil preenchido, não calculado a partir das respostas.
+ */
+export type AllocationOverviewSource = typeof AllocationOverviewSource[keyof typeof AllocationOverviewSource];
+
+
+export const AllocationOverviewSource = {
+  personalizado: 'personalizado',
+  perfil: 'perfil',
+  generico: 'generico',
+} as const;
+
+export interface AllocationOverview {
+  /** De onde vem a política em uso. "personalizado" = salva pelo usuário; "perfil" = padrão derivado do perfil de investidor; "generico" = padrão usado por falta de perfil preenchido, não calculado a partir das respostas. */
+  source: AllocationOverviewSource;
+  totalPatrimony: number;
+  items: AllocationItem[];
+}
+
+export interface AllocationPlanSuggestion {
+  ticker: string;
+  name: string;
+  score: number;
+  reason: string;
+}
+
+/**
+ * Por que a lista de sugestões está vazia, quando está. "sem_ticker_de_bolsa" = renda fixa e fundos, que não são ranqueáveis por ticker. "sem_candidato" = classe negociada em bolsa que não tem nenhum ativo aprovado na varredura — hoje é o caso dos ETFs, que não têm fundamento individual (P/L, ROE, margem) e por isso não passam pela triagem por fundamentos.
+ */
+export type AllocationPlanItemSuggestionsStatus = typeof AllocationPlanItemSuggestionsStatus[keyof typeof AllocationPlanItemSuggestionsStatus];
+
+
+export const AllocationPlanItemSuggestionsStatus = {
+  ok: 'ok',
+  sem_ticker_de_bolsa: 'sem_ticker_de_bolsa',
+  sem_candidato: 'sem_candidato',
+} as const;
+
+export interface AllocationPlanItem {
+  category: string;
+  amount: number;
+  /** Fatia deste aporte, não o alvo da classe na carteira. */
+  sharePercent: number;
+  /** Por que a lista de sugestões está vazia, quando está. "sem_ticker_de_bolsa" = renda fixa e fundos, que não são ranqueáveis por ticker. "sem_candidato" = classe negociada em bolsa que não tem nenhum ativo aprovado na varredura — hoje é o caso dos ETFs, que não têm fundamento individual (P/L, ROE, margem) e por isso não passam pela triagem por fundamentos. */
+  suggestionsStatus: AllocationPlanItemSuggestionsStatus;
+  /** Ativos da classe, na mesma ordem da tela de Oportunidades. */
+  suggestions: AllocationPlanSuggestion[];
+}
+
+export type AllocationPlanSource = typeof AllocationPlanSource[keyof typeof AllocationPlanSource];
+
+
+export const AllocationPlanSource = {
+  personalizado: 'personalizado',
+  perfil: 'perfil',
+  generico: 'generico',
+} as const;
+
+export interface AllocationPlan {
+  amount: number;
+  source: AllocationPlanSource;
+  /** Critério de ordenação das sugestões, o mesmo de /opportunities. */
+  orderedBy: string;
+  items: AllocationPlanItem[];
+  /** Soma dos desvios absolutos (pp) antes do aporte. */
+  deviationBefore?: number;
+  /** Soma dos desvios absolutos (pp) depois do aporte sugerido. */
+  deviationAfter?: number;
+}
+
 export interface IncomeGoalInput {
   /** @minimum 1 */
   targetMonthlyIncome: number;
@@ -1019,4 +1128,11 @@ export interface PortfolioReport {
   topAlerts: Alert[];
   opportunities: Opportunity[];
 }
+
+export type GetAllocationPlanParams = {
+/**
+ * @minimum 0.01
+ */
+amount: number;
+};
 

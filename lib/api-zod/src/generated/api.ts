@@ -429,6 +429,84 @@ export const GetPortfolioHealthResponse = zod.object({
 
 
 /**
+ * @summary Alocação-alvo por classe e desvio da carteira real em relação a ela
+ */
+export const GetAllocationResponse = zod.object({
+  "source": zod.enum(['personalizado', 'perfil', 'generico']).describe('De onde vem a política em uso. \"personalizado\" = salva pelo usuário; \"perfil\" = padrão derivado do perfil de investidor; \"generico\" = padrão usado por falta de perfil preenchido, não calculado a partir das respostas.'),
+  "totalPatrimony": zod.number(),
+  "items": zod.array(zod.object({
+  "category": zod.string(),
+  "targetPercent": zod.number(),
+  "currentPercent": zod.number(),
+  "currentValue": zod.number(),
+  "deviationPp": zod.number().describe('Positivo = classe abaixo do alvo; negativo = acima.'),
+  "deviationValue": zod.number().describe('Quanto falta (positivo) ou sobra (negativo) em reais para bater o alvo hoje.')
+}))
+})
+
+
+/**
+ * @summary Define a alocação-alvo do usuário, substituindo o padrão do perfil
+ */
+export const upsertAllocationBodyTargetsItemTargetPercentMin = 0;
+export const upsertAllocationBodyTargetsItemTargetPercentMax = 100;
+
+
+
+export const UpsertAllocationBody = zod.object({
+  "targets": zod.array(zod.object({
+  "category": zod.enum(['renda_fixa', 'acoes', 'fiis', 'etfs', 'bdrs', 'fundos']),
+  "targetPercent": zod.number().min(upsertAllocationBodyTargetsItemTargetPercentMin).max(upsertAllocationBodyTargetsItemTargetPercentMax)
+}))
+}).describe('Os alvos precisam somar 100%.')
+
+export const UpsertAllocationResponse = zod.object({
+  "source": zod.enum(['personalizado', 'perfil', 'generico']).describe('De onde vem a política em uso. \"personalizado\" = salva pelo usuário; \"perfil\" = padrão derivado do perfil de investidor; \"generico\" = padrão usado por falta de perfil preenchido, não calculado a partir das respostas.'),
+  "totalPatrimony": zod.number(),
+  "items": zod.array(zod.object({
+  "category": zod.string(),
+  "targetPercent": zod.number(),
+  "currentPercent": zod.number(),
+  "currentValue": zod.number(),
+  "deviationPp": zod.number().describe('Positivo = classe abaixo do alvo; negativo = acima.'),
+  "deviationValue": zod.number().describe('Quanto falta (positivo) ou sobra (negativo) em reais para bater o alvo hoje.')
+}))
+})
+
+
+/**
+ * @summary Onde aportar um valor novo para se aproximar da alocação-alvo
+ */
+export const getAllocationPlanQueryAmountMin = 0.01;
+
+
+
+export const GetAllocationPlanQueryParams = zod.object({
+  "amount": zod.coerce.number().min(getAllocationPlanQueryAmountMin)
+})
+
+export const GetAllocationPlanResponse = zod.object({
+  "amount": zod.number(),
+  "source": zod.enum(['personalizado', 'perfil', 'generico']),
+  "orderedBy": zod.string().describe('Critério de ordenação das sugestões, o mesmo de \/opportunities.'),
+  "items": zod.array(zod.object({
+  "category": zod.string(),
+  "amount": zod.number(),
+  "sharePercent": zod.number().describe('Fatia deste aporte, não o alvo da classe na carteira.'),
+  "suggestionsStatus": zod.enum(['ok', 'sem_ticker_de_bolsa', 'sem_candidato']).describe('Por que a lista de sugestões está vazia, quando está. \"sem_ticker_de_bolsa\" = renda fixa e fundos, que não são ranqueáveis por ticker. \"sem_candidato\" = classe negociada em bolsa que não tem nenhum ativo aprovado na varredura — hoje é o caso dos ETFs, que não têm fundamento individual (P\/L, ROE, margem) e por isso não passam pela triagem por fundamentos.'),
+  "suggestions": zod.array(zod.object({
+  "ticker": zod.string(),
+  "name": zod.string(),
+  "score": zod.number(),
+  "reason": zod.string()
+})).describe('Ativos da classe, na mesma ordem da tela de Oportunidades.')
+})),
+  "deviationBefore": zod.number().optional().describe('Soma dos desvios absolutos (pp) antes do aporte.'),
+  "deviationAfter": zod.number().optional().describe('Soma dos desvios absolutos (pp) depois do aporte sugerido.')
+})
+
+
+/**
  * @summary Meta de renda passiva e progresso rumo a ela
  */
 export const GetIncomeGoalResponse = zod.object({

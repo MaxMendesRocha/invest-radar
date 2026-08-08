@@ -21,6 +21,9 @@ import type {
 
 import type {
   Alert,
+  AllocationInput,
+  AllocationOverview,
+  AllocationPlan,
   Asset,
   AssetAnalysis,
   AssetInput,
@@ -30,6 +33,7 @@ import type {
   BenchmarkComparison,
   ErrorResponse,
   EvolutionPoint,
+  GetAllocationPlanParams,
   HealthStatus,
   IncomeGoalInput,
   IncomeGoalProgress,
@@ -1487,6 +1491,238 @@ export function useGetPortfolioHealth<TData = Awaited<ReturnType<typeof getPortf
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPortfolioHealthQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAllocationUrl = () => {
+
+
+
+
+  return `/api/portfolio/allocation`
+}
+
+/**
+ * @summary Alocação-alvo por classe e desvio da carteira real em relação a ela
+ */
+export const getAllocation = async ( options?: RequestInit): Promise<AllocationOverview> => {
+
+  return customFetch<AllocationOverview>(getGetAllocationUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAllocationQueryKey = () => {
+    return [
+    `/api/portfolio/allocation`
+    ] as const;
+    }
+
+
+export const getGetAllocationQueryOptions = <TData = Awaited<ReturnType<typeof getAllocation>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAllocation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAllocationQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAllocation>>> = ({ signal }) => getAllocation({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAllocation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAllocationQueryResult = NonNullable<Awaited<ReturnType<typeof getAllocation>>>
+export type GetAllocationQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Alocação-alvo por classe e desvio da carteira real em relação a ela
+ */
+
+export function useGetAllocation<TData = Awaited<ReturnType<typeof getAllocation>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAllocation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAllocationQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpsertAllocationUrl = () => {
+
+
+
+
+  return `/api/portfolio/allocation`
+}
+
+/**
+ * @summary Define a alocação-alvo do usuário, substituindo o padrão do perfil
+ */
+export const upsertAllocation = async (allocationInput: AllocationInput, options?: RequestInit): Promise<AllocationOverview> => {
+
+  return customFetch<AllocationOverview>(getUpsertAllocationUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(allocationInput)
+  }
+);}
+
+
+
+
+
+export const getUpsertAllocationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertAllocation>>, TError,{data: BodyType<AllocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertAllocation>>, TError,{data: BodyType<AllocationInput>}, TContext> => {
+
+const mutationKey = ['upsertAllocation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertAllocation>>, {data: BodyType<AllocationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertAllocation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertAllocationMutationResult = NonNullable<Awaited<ReturnType<typeof upsertAllocation>>>
+    export type UpsertAllocationMutationBody = BodyType<AllocationInput>
+    export type UpsertAllocationMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Define a alocação-alvo do usuário, substituindo o padrão do perfil
+ */
+export const useUpsertAllocation = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertAllocation>>, TError,{data: BodyType<AllocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertAllocation>>,
+        TError,
+        {data: BodyType<AllocationInput>},
+        TContext
+      > => {
+      return useMutation(getUpsertAllocationMutationOptions(options));
+    }
+
+export const getGetAllocationPlanUrl = (params: GetAllocationPlanParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/portfolio/allocation/plan?${stringifiedParams}` : `/api/portfolio/allocation/plan`
+}
+
+/**
+ * @summary Onde aportar um valor novo para se aproximar da alocação-alvo
+ */
+export const getAllocationPlan = async (params: GetAllocationPlanParams, options?: RequestInit): Promise<AllocationPlan> => {
+
+  return customFetch<AllocationPlan>(getGetAllocationPlanUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAllocationPlanQueryKey = (params?: GetAllocationPlanParams,) => {
+    return [
+    `/api/portfolio/allocation/plan`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAllocationPlanQueryOptions = <TData = Awaited<ReturnType<typeof getAllocationPlan>>, TError = ErrorType<ErrorResponse>>(params: GetAllocationPlanParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAllocationPlan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAllocationPlanQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAllocationPlan>>> = ({ signal }) => getAllocationPlan(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAllocationPlan>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAllocationPlanQueryResult = NonNullable<Awaited<ReturnType<typeof getAllocationPlan>>>
+export type GetAllocationPlanQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Onde aportar um valor novo para se aproximar da alocação-alvo
+ */
+
+export function useGetAllocationPlan<TData = Awaited<ReturnType<typeof getAllocationPlan>>, TError = ErrorType<ErrorResponse>>(
+ params: GetAllocationPlanParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAllocationPlan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAllocationPlanQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -406,6 +406,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortfolioHealth"
 
+  /portfolio/allocation:
+    get:
+      operationId: getAllocation
+      tags: [portfolio]
+      summary: Alocação-alvo por classe e desvio da carteira real em relação a ela
+      responses:
+        "200":
+          description: Política, composição atual e desvio por classe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllocationOverview"
+    put:
+      operationId: upsertAllocation
+      tags: [portfolio]
+      summary: Define a alocação-alvo do usuário, substituindo o padrão do perfil
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AllocationInput"
+      responses:
+        "200":
+          description: Política salva, com desvio recalculado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllocationOverview"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /portfolio/allocation/plan:
+    get:
+      operationId: getAllocationPlan
+      tags: [portfolio]
+      summary: Onde aportar um valor novo para se aproximar da alocação-alvo
+      parameters:
+        - name: amount
+          in: query
+          required: true
+          schema:
+            type: number
+            minimum: 0.01
+      responses:
+        "200":
+          description: Distribuição sugerida do aporte, por classe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllocationPlan"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /portfolio/income-goal:
     get:
       operationId: getIncomeGoal
@@ -1621,6 +1683,127 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    AllocationTarget:
+      type: object
+      required: [category, targetPercent]
+      properties:
+        category:
+          type: string
+          enum: [renda_fixa, acoes, fiis, etfs, bdrs, fundos]
+        targetPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+
+    AllocationInput:
+      type: object
+      required: [targets]
+      description: Os alvos precisam somar 100%.
+      properties:
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/AllocationTarget"
+
+    AllocationItem:
+      type: object
+      required: [category, targetPercent, currentPercent, currentValue, deviationPp, deviationValue]
+      properties:
+        category:
+          type: string
+        targetPercent:
+          type: number
+        currentPercent:
+          type: number
+        currentValue:
+          type: number
+        deviationPp:
+          type: number
+          description: Positivo = classe abaixo do alvo; negativo = acima.
+        deviationValue:
+          type: number
+          description: Quanto falta (positivo) ou sobra (negativo) em reais para bater o alvo hoje.
+
+    AllocationOverview:
+      type: object
+      required: [source, totalPatrimony, items]
+      properties:
+        source:
+          type: string
+          enum: [personalizado, perfil, generico]
+          description: >-
+            De onde vem a política em uso. "personalizado" = salva pelo usuário;
+            "perfil" = padrão derivado do perfil de investidor; "generico" = padrão
+            usado por falta de perfil preenchido, não calculado a partir das respostas.
+        totalPatrimony:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AllocationItem"
+
+    AllocationPlanSuggestion:
+      type: object
+      required: [ticker, name, score, reason]
+      properties:
+        ticker:
+          type: string
+        name:
+          type: string
+        score:
+          type: number
+        reason:
+          type: string
+
+    AllocationPlanItem:
+      type: object
+      required: [category, amount, sharePercent, suggestions, suggestionsStatus]
+      properties:
+        category:
+          type: string
+        amount:
+          type: number
+        sharePercent:
+          type: number
+          description: Fatia deste aporte, não o alvo da classe na carteira.
+        suggestionsStatus:
+          type: string
+          enum: [ok, sem_ticker_de_bolsa, sem_candidato]
+          description: >-
+            Por que a lista de sugestões está vazia, quando está. "sem_ticker_de_bolsa"
+            = renda fixa e fundos, que não são ranqueáveis por ticker. "sem_candidato"
+            = classe negociada em bolsa que não tem nenhum ativo aprovado na varredura
+            — hoje é o caso dos ETFs, que não têm fundamento individual (P/L, ROE,
+            margem) e por isso não passam pela triagem por fundamentos.
+        suggestions:
+          type: array
+          description: Ativos da classe, na mesma ordem da tela de Oportunidades.
+          items:
+            $ref: "#/components/schemas/AllocationPlanSuggestion"
+
+    AllocationPlan:
+      type: object
+      required: [amount, source, orderedBy, items]
+      properties:
+        amount:
+          type: number
+        source:
+          type: string
+          enum: [personalizado, perfil, generico]
+        orderedBy:
+          type: string
+          description: Critério de ordenação das sugestões, o mesmo de /opportunities.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AllocationPlanItem"
+        deviationBefore:
+          type: number
+          description: Soma dos desvios absolutos (pp) antes do aporte.
+        deviationAfter:
+          type: number
+          description: Soma dos desvios absolutos (pp) depois do aporte sugerido.
 
     IncomeGoalInput:
       type: object

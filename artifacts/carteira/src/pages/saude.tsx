@@ -7,6 +7,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Activity, ShieldCheck, HeartPulse } from "lucide-react";
+import { AllocationCard } from "@/components/allocation-card";
 
 export default function Saude() {
   const { data: health, isLoading } = useGetPortfolioHealth({ query: { queryKey: getGetPortfolioHealthQueryKey() } });
@@ -140,6 +141,8 @@ export default function Saude() {
               </CardContent>
             </Card>
           </div>
+
+          <AllocationCard />
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable } from "@workspace/db";
+import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable } from "@workspace/db";
 import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months } from "../lib/market-data";
@@ -9,7 +9,18 @@ import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/ana
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { computeIncomeGoalProgress } from "../lib/income-goal-engine";
-import { UpsertIncomeGoalBody } from "@workspace/api-zod";
+import { UpsertIncomeGoalBody, UpsertAllocationBody, GetAllocationPlanQueryParams } from "@workspace/api-zod";
+import {
+  ALLOCATION_CATEGORIES,
+  defaultPolicyFor,
+  computeAllocation,
+  planContribution,
+  type AllocationCategory,
+  type PolicySource,
+  type PolicyTargets,
+} from "../lib/allocation-engine";
+import { rankOpportunitiesFor } from "../lib/opportunity-ranking";
+import type { ProfileClassification } from "../lib/investor-profile-engine";
 
 const router: IRouter = Router();
 
@@ -477,6 +488,148 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     cdiTotal: Math.round((cdiAcc - 100) * 100) / 100,
     ibovTotal: Math.round((ibovAcc - 100) * 100) / 100,
     ifixTotal: Math.round((ifixAcc - 100) * 100) / 100,
+  });
+});
+
+/**
+ * Valor de mercado por classe de ativo — base do desvio e do plano de aporte.
+ * Posição sem cotação entra pelo preço médio, igual ao resto do app.
+ */
+async function valueByCategoryFor(userId: number): Promise<Map<string, number>> {
+  const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, userId));
+  const prices = await getPricesFor(assets);
+  const byCategory = new Map<string, number>();
+  for (const a of assets) {
+    const qty = parseFloat(a.quantity);
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
+    byCategory.set(a.category, (byCategory.get(a.category) ?? 0) + qty * price);
+  }
+  return byCategory;
+}
+
+/**
+ * Política em uso e de onde ela veio. A tabela só tem linha quando o usuário salvou
+ * algo — ausência significa "nunca personalizou", não alvo zero, e aí vale o padrão
+ * derivado do perfil. Sem perfil preenchido o padrão ainda existe, mas se identifica
+ * como "generico" para a tela não apresentar um palpite como se fosse cálculo.
+ */
+async function policyFor(userId: number): Promise<{ targets: PolicyTargets; source: PolicySource }> {
+  const rows = await db.select().from(allocationPoliciesTable).where(eq(allocationPoliciesTable.userId, userId));
+  if (rows.length > 0) {
+    const targets = { ...defaultPolicyFor(null) };
+    for (const key of ALLOCATION_CATEGORIES) targets[key] = 0;
+    for (const row of rows) {
+      if ((ALLOCATION_CATEGORIES as readonly string[]).includes(row.category)) {
+        targets[row.category as AllocationCategory] = parseFloat(row.targetPercent);
+      }
+    }
+    return { targets, source: "personalizado" };
+  }
+
+  const [profile] = await db.select().from(investorProfilesTable).where(eq(investorProfilesTable.userId, userId));
+  const classification = (profile?.classification ?? null) as ProfileClassification | null;
+  return { targets: defaultPolicyFor(classification), source: classification ? "perfil" : "generico" };
+}
+
+async function allocationOverview(userId: number) {
+  const [{ targets, source }, valueByCategory] = await Promise.all([policyFor(userId), valueByCategoryFor(userId)]);
+  const { total, items } = computeAllocation(valueByCategory, targets);
+  return { source, totalPatrimony: total, items };
+}
+
+router.get("/portfolio/allocation", requireAuth, async (req, res): Promise<void> => {
+  res.json(await allocationOverview(req.session.userId!));
+});
+
+router.put("/portfolio/allocation", requireAuth, async (req, res): Promise<void> => {
+  const parsed = UpsertAllocationBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  // Alvo que não soma 100% não é política, é engano de digitação: qualquer desvio
+  // calculado sobre ele estaria errado por construção, e silenciosamente. A folga de
+  // 0,01 existe só para não brigar com arredondamento de casa decimal.
+  const totalTarget = parsed.data.targets.reduce((sum, t) => sum + t.targetPercent, 0);
+  if (Math.abs(totalTarget - 100) > 0.01) {
+    res.status(400).json({ error: `Os alvos precisam somar 100% — a soma enviada foi ${totalTarget.toFixed(2)}%.` });
+    return;
+  }
+
+  const byCategory = new Map(parsed.data.targets.map((t) => [t.category, t.targetPercent]));
+  await db.transaction(async (tx) => {
+    await tx.delete(allocationPoliciesTable).where(eq(allocationPoliciesTable.userId, req.session.userId!));
+    await tx.insert(allocationPoliciesTable).values(
+      ALLOCATION_CATEGORIES.map((category) => ({
+        userId: req.session.userId!,
+        category,
+        // Classe omitida no corpo vira alvo zero explícito, e não herda o padrão do
+        // perfil: depois de personalizar, a política é inteiramente do usuário — meia
+        // política dele e meia nossa seria impossível de explicar na tela.
+        targetPercent: String(byCategory.get(category) ?? 0),
+      })),
+    );
+  });
+
+  res.json(await allocationOverview(req.session.userId!));
+});
+
+router.get("/portfolio/allocation/plan", requireAuth, async (req, res): Promise<void> => {
+  const parsed = GetAllocationPlanQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const amount = parsed.data.amount;
+
+  const [{ targets, source }, valueByCategory] = await Promise.all([
+    policyFor(req.session.userId!),
+    valueByCategoryFor(req.session.userId!),
+  ]);
+
+  const slices = planContribution(amount, valueByCategory, targets);
+
+  // Quanto o aporte sugerido de fato aproxima a carteira do alvo — o número que
+  // justifica a sugestão. Sem ele a tela mandaria o usuário mover dinheiro sem dizer
+  // o que ele ganha com isso.
+  const before = computeAllocation(valueByCategory, targets);
+  const projected = new Map(valueByCategory);
+  for (const slice of slices) projected.set(slice.category, (projected.get(slice.category) ?? 0) + slice.amount);
+  const after = computeAllocation(projected, targets);
+  const sumAbsDeviation = (items: { deviationPp: number }[]) => items.reduce((sum, i) => sum + Math.abs(i.deviationPp), 0);
+
+  // Sugestões de ativo vêm do MESMO ranking da tela de Oportunidades, só filtrado por
+  // classe — ver lib/opportunity-ranking.ts. Renda fixa e fundos não têm ticker de
+  // bolsa, então saem com lista vazia em vez de uma sugestão inventada.
+  const ranking = await rankOpportunitiesFor(req.session.userId!);
+  const items = slices.map((slice) => {
+    const suggestions = ranking.items
+      .filter((item) => item.category === slice.category)
+      .slice(0, 3)
+      .map((item) => ({ ticker: item.ticker, name: item.name, score: item.score, reason: item.reason }));
+
+    // Lista vazia tem duas causas muito diferentes, e a tela precisa saber qual:
+    // renda fixa/fundos não têm ticker para ranquear (estrutural), enquanto uma classe
+    // de bolsa sem candidato é uma lacuna da varredura — hoje os ETFs, que não têm
+    // fundamento individual e por isso nunca passam pela triagem. Deixar as duas como
+    // "vazio" faria a tela dar a mesma explicação para situações diferentes.
+    const suggestionsStatus = suggestions.length > 0
+      ? "ok"
+      : QUOTED_CATEGORIES.has(slice.category)
+        ? "sem_candidato"
+        : "sem_ticker_de_bolsa";
+
+    return { category: slice.category, amount: slice.amount, sharePercent: slice.sharePercent, suggestionsStatus, suggestions };
+  });
+
+  res.json({
+    amount,
+    source,
+    orderedBy: ranking.orderedBy,
+    items,
+    deviationBefore: sumAbsDeviation(before.items),
+    deviationAfter: sumAbsDeviation(after.items),
   });
 });
 
