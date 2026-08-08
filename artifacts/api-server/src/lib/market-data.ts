@@ -961,6 +961,52 @@ export function computeDividendTrend(events: DividendEvent[], now: number): Divi
   };
 }
 
+const SIX_MONTHS_MS = ONE_YEAR_MS / 2;
+
+export interface DistributionMomentum {
+  last6mTotal: number; // R$ por cota, soma dos 6 meses mais recentes
+  prior6mTotal: number; // R$ por cota, soma dos 6 meses anteriores a esses
+  ratio: number; // last6 / prior6 — 1.0 = distribuição estável
+}
+
+/**
+ * Compara os proventos dos últimos 6 meses com os 6 meses anteriores.
+ *
+ * Existe em paralelo a computeDividendTrend (12m vs 12m anteriores) por uma razão
+ * medida, não por gosto: o provider cobre ~12 meses de histórico para FII, então a
+ * janela dos "12 meses anteriores" existe para apenas 5 dos 45 FIIs do universo —
+ * computeDividendTrend devolveria null para os outros 40. Com a janela de 6 meses,
+ * os 45 têm resposta. Para FII, que distribui todo mês, 6 meses já são 6 pagamentos
+ * reais: é amostra suficiente para dizer se a distribuição está caindo, e é
+ * exatamente o sinal que separa um yield alto sustentável de um yield alto que é só
+ * o preço despencando.
+ *
+ * Devolve null quando falta evento real em qualquer das duas janelas — sem base de
+ * comparação não se inventa tendência.
+ */
+export function computeDistributionMomentum(events: DividendEvent[], now: number): DistributionMomentum | null {
+  let last6mTotal = 0;
+  let prior6mTotal = 0;
+  let hasLast = false;
+  let hasPrior = false;
+
+  for (const event of events) {
+    const paidAt = new Date(event.paymentDate).getTime();
+    if (paidAt > now) continue;
+    const ageMs = now - paidAt;
+    if (ageMs <= SIX_MONTHS_MS) {
+      last6mTotal += event.rate;
+      hasLast = true;
+    } else if (ageMs <= ONE_YEAR_MS) {
+      prior6mTotal += event.rate;
+      hasPrior = true;
+    }
+  }
+
+  if (!hasLast || !hasPrior || prior6mTotal === 0) return null;
+  return { last6mTotal, prior6mTotal, ratio: last6mTotal / prior6mTotal };
+}
+
 export interface PriceHistory {
   price: number;
   fiftyTwoWeekHigh: number | null;

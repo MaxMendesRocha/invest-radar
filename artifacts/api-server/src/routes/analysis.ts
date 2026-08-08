@@ -21,8 +21,9 @@ import {
   type Fundamentals,
   type DividendFrequencyLabel,
   type FiiProfile,
+  type DividendEvent,
 } from "../lib/market-data";
-import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, computeDuPontBreakdown, computeTrimSuggestion, resolveStatusReason, type AnalysisResult, concentrationLimitsFor, type ConcentrationLimits } from "../lib/analysis-engine";
+import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, analyzeFii, computeDuPontBreakdown, computeTrimSuggestion, resolveStatusReason, type AnalysisResult, concentrationLimitsFor, type ConcentrationLimits } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { getCdiTrailingAnnual } from "../lib/benchmark-data";
@@ -185,12 +186,30 @@ function computeAnalysis(
   dps12mByTicker: Map<string, number | null>,
   positionPercentByTicker: Map<string, number>,
   limits: ConcentrationLimits,
+  fiiContext: FiiContext = EMPTY_FII_CONTEXT,
 ): AnalysisResult {
   if (!QUOTED_CATEGORIES.has(category)) return analysisForUnquotedAsset();
   const upper = ticker.toUpperCase();
   const fundamentals = fundamentalsByTicker.get(upper);
+  const positionPercent = positionPercentByTicker.get(upper) ?? 0;
+
+  // FII tem régua própria — ver o bloco de comentário em analysis-engine.ts sobre por
+  // que a de ação distorce (P/VP e dividend yield significam outra coisa aqui).
+  if (category === "fiis") {
+    return analyzeFii(
+      {
+        profile: fiiContext.profileByTicker.get(upper) ?? null,
+        dividendEvents: fiiContext.eventsByTicker.get(upper) ?? [],
+        price: fundamentals?.price ?? null,
+        selicPercent: fiiContext.selicPercent,
+      },
+      positionPercent,
+      limits,
+    );
+  }
+
   return fundamentals
-    ? analyzeFundamentals(fundamentals, dps12mByTicker.get(upper) ?? null, positionPercentByTicker.get(upper) ?? 0, limits)
+    ? analyzeFundamentals(fundamentals, dps12mByTicker.get(upper) ?? null, positionPercent, limits)
     : pendingAnalysis();
 }
 
@@ -246,6 +265,8 @@ async function buildPositionContext(
 interface DividendDerivedMaps {
   dps12mByTicker: Map<string, number | null>;
   dividendFrequencyByTicker: Map<string, DividendFrequencyLabel | null>;
+  /** Histórico cru, que a análise de FII consome inteiro (regularidade e direção da distribuição). */
+  eventsByTicker: Map<string, DividendEvent[]>;
 }
 
 // Reaproveitado pelos 3 pontos que chamam computeAnalysis — busca o histórico real de
@@ -264,8 +285,36 @@ async function buildDividendDerivedMaps(
     dps12mByTicker.set(ticker, sumLast12Months(events, now));
     dividendFrequencyByTicker.set(ticker, classifyDividendFrequency(events, now)?.label ?? null);
   }
-  return { dps12mByTicker, dividendFrequencyByTicker };
+  return { dps12mByTicker, dividendFrequencyByTicker, eventsByTicker };
 }
+
+/**
+ * Insumos que só a análise de FII usa: perfil do endpoint dedicado (segmento e P/VP)
+ * e a Selic, que é a referência contra a qual o rendimento é lido.
+ *
+ * Só vai à rede quando há FII na lista — carteira sem FII não paga o custo. A Selic
+ * vem de getMacroSnapshot, que já é cacheado; sem ela o rendimento simplesmente não
+ * entra na média (ver analyzeFii), em vez de ser comparado com uma referência chutada.
+ */
+async function buildFiiContext(
+  items: { ticker: string; category: string }[],
+  eventsByTicker: Map<string, DividendEvent[]>,
+): Promise<FiiContext> {
+  const fiiTickers = items.filter((i) => i.category === "fiis").map((i) => i.ticker);
+  if (fiiTickers.length === 0) {
+    return { profileByTicker: new Map(), eventsByTicker, selicPercent: null };
+  }
+  const [profileByTicker, macro] = await Promise.all([getFiiProfiles(fiiTickers), getMacroSnapshot()]);
+  return { profileByTicker, eventsByTicker, selicPercent: macro.selic };
+}
+
+interface FiiContext {
+  profileByTicker: Map<string, FiiProfile>;
+  eventsByTicker: Map<string, DividendEvent[]>;
+  selicPercent: number | null;
+}
+
+const EMPTY_FII_CONTEXT: FiiContext = { profileByTicker: new Map(), eventsByTicker: new Map(), selicPercent: null };
 
 function formatHeadline(item: NewsHeadline): string {
   return item.impact ? `[${item.impact}] ${item.title}` : item.title;
@@ -413,13 +462,14 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
   // dividendFrequency não é persistido (sempre recalculado ao vivo, ver serializePersisted),
   // então busca pra TODOS os ativos (não só os pendentes) — o dps12mByTicker resultante
   // cobre os pendentes de qualquer forma, então não precisa de uma segunda busca.
-  const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker }, positionContext, concentrationLimits] = await Promise.all([
+  const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker, eventsByTicker }, positionContext, concentrationLimits] = await Promise.all([
     getFundamentals(pendingAssets.map((a) => a.ticker)),
     buildDividendDerivedMaps(assets.map((a) => ({ ticker: a.ticker, category: a.category }))),
     buildPositionContext(assets),
     concentrationLimitsForUser(req.session.userId!),
   ]);
   const positionPercentByTicker = positionContext.percents;
+  const fiiContext = await buildFiiContext(assets.map((a) => ({ ticker: a.ticker, category: a.category })), eventsByTicker);
 
   const result = await Promise.all(
     assets.map(async (asset) => {
@@ -427,7 +477,7 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
       const existing = analysisMap.get(asset.ticker);
       if (existing) return serializePersisted(existing, dividendFrequency, { asset, context: positionContext, limits: concentrationLimits });
       const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-      const analysisResult = computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits);
+      const analysisResult = computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits, fiiContext);
       return toApiShape(asset.ticker, analysisResult, newsItems, dividendFrequency, buildTrim(analysisResult, asset.ticker, asset, positionContext, concentrationLimits));
     })
   );
@@ -475,14 +525,15 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
   }
 
   const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-  const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker }] = QUOTED_CATEGORIES.has(asset.category)
+  const [fundamentalsByTicker, { dps12mByTicker, dividendFrequencyByTicker, eventsByTicker }] = QUOTED_CATEGORIES.has(asset.category)
     ? await Promise.all([
         getFundamentals([asset.ticker]),
         buildDividendDerivedMaps([{ ticker: asset.ticker, category: asset.category }]),
       ])
-    : [new Map<string, Fundamentals>(), { dps12mByTicker: new Map<string, number | null>(), dividendFrequencyByTicker: new Map<string, DividendFrequencyLabel | null>() }];
+    : [new Map<string, Fundamentals>(), { dps12mByTicker: new Map<string, number | null>(), dividendFrequencyByTicker: new Map<string, DividendFrequencyLabel | null>(), eventsByTicker: new Map<string, DividendEvent[]>() }];
   const dividendFrequency = dividendFrequencyByTicker.get(asset.ticker.toUpperCase()) ?? null;
-  const analysisResult = computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits);
+  const fiiContext = await buildFiiContext([{ ticker: asset.ticker, category: asset.category }], eventsByTicker);
+  const analysisResult = computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits, fiiContext);
   res.json(toApiShape(asset.ticker, analysisResult, newsItems, dividendFrequency, buildTrim(analysisResult, asset.ticker, asset, positionContext, concentrationLimits)));
 });
 
@@ -653,8 +704,13 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   const positionPercentByTicker = positionContext.percents;
   const concentrationLimits = await concentrationLimitsForUser(req.session.userId!);
 
+  const fiiContext = await buildFiiContext(
+    assets.map((a) => ({ ticker: a.ticker, category: a.category })),
+    dividendEventsByTicker,
+  );
+
   const analyses = assets.map((a) => {
-    const result = computeAnalysis(a.ticker, a.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits);
+    const result = computeAnalysis(a.ticker, a.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits, fiiContext);
     return {
       ticker: a.ticker.toUpperCase(),
       ...result,
