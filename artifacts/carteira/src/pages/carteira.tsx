@@ -8,6 +8,8 @@ import {
   useListAssetAnalyses,
   useListTreasuryBonds,
   getListTreasuryBondsQueryKey,
+  useGetTreasuryPriceOnDate,
+  getGetTreasuryPriceOnDateQueryKey,
   getListAssetsQueryKey,
   getListAssetAnalysesQueryKey,
   getListSalesQueryKey,
@@ -17,15 +19,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { analysisStatusConfig } from "@/lib/analysis-status";
 import { formatCurrency, formatPercent, formatShortDateTime, formatShortDate } from "@/lib/utils";
 
-/**
- * Título público carrega DATA-BASE (um dia), cotação de bolsa carrega um INSTANTE.
- * Formatar os dois com hora fazia o PU do Tesouro aparecer como "07/08 às 00h00" —
- * meia-noite não é quando o Tesouro publicou nada, é só o começo do dia virando hora.
- */
-function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: string | null }): string {
-  if (!asset.priceAsOf) return "";
-  return asset.treasuryBondType ? formatShortDate(asset.priceAsOf.slice(0, 10)) : formatShortDateTime(asset.priceAsOf);
-}
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +33,17 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Edit2, Trash2, Banknote } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+/**
+ * Título público carrega DATA-BASE (um dia), cotação de bolsa carrega um INSTANTE.
+ * Formatar os dois com hora fazia o PU do Tesouro aparecer como "07/08 às 00h00" —
+ * meia-noite não é quando o Tesouro publicou nada, é só o começo do dia virando hora.
+ */
+function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: string | null }): string {
+  if (!asset.priceAsOf) return "";
+  return asset.treasuryBondType ? formatShortDate(asset.priceAsOf.slice(0, 10)) : formatShortDateTime(asset.priceAsOf);
+}
+
 
 const CATEGORY_MAP: Record<string, string> = {
   acoes: "Ações",
@@ -80,6 +84,31 @@ export default function Carteira() {
   // não faz sentido carregar a lista do Tesouro para quem cadastra uma ação.
   const { data: treasuryBonds } = useListTreasuryBonds({ query: { queryKey: getListTreasuryBondsQueryKey(), enabled: category === "renda_fixa" } });
   const selectedBond = treasuryBonds?.find((b) => `${b.bondType}|${b.maturityDate}` === treasuryKey) ?? null;
+  /** Data da compra e valor investido — só existem no caminho de título público. */
+  const [purchaseDate, setPurchaseDate] = useState("");
+  const [investedAmount, setInvestedAmount] = useState("");
+
+  /**
+   * PU real do título na data da compra, buscado no histórico do Tesouro. É o que
+   * dispensa o usuário de descobrir esse número em outro lugar — e o que permite não
+   * pré-preencher com o PU de hoje, que gravaria um preço médio errado.
+   */
+  const priceQuery = useGetTreasuryPriceOnDate(
+    { bondType: selectedBond?.bondType ?? "", maturityDate: selectedBond?.maturityDate ?? "", date: purchaseDate },
+    { query: {
+      queryKey: getGetTreasuryPriceOnDateQueryKey({ bondType: selectedBond?.bondType ?? "", maturityDate: selectedBond?.maturityDate ?? "", date: purchaseDate }),
+      enabled: !!selectedBond && !!purchaseDate,
+      retry: false,
+    } },
+  );
+  const historicalPrice = priceQuery.data ?? null;
+
+  // PU efetivo: o histórico manda; sem ele (data não informada ainda, ou título sem
+  // publicação até ali), o campo continua sendo digitado à mão.
+  const effectiveUnitPrice = historicalPrice?.buyUnitPrice ?? (Number(averagePrice) || 0);
+  const derivedQuantity = selectedBond && Number(investedAmount) > 0 && effectiveUnitPrice > 0
+    ? Number(investedAmount) / effectiveUnitPrice
+    : null;
 
   // Sell Form State
   const [salePrice, setSalePrice] = useState("");
@@ -100,6 +129,8 @@ export default function Carteira() {
     setAveragePrice("");
     setCategory("acoes");
     setTreasuryKey("");
+    setPurchaseDate("");
+    setInvestedAmount("");
     setEditingId(null);
   };
 
@@ -107,6 +138,15 @@ export default function Carteira() {
     e.preventDefault();
     if (category === "renda_fixa" && !treasuryKey) {
       toast({ title: "Escolha o título, ou \"Outro\" para renda fixa privada.", variant: "destructive" });
+      return;
+    }
+    if (selectedBond && !(derivedQuantity && derivedQuantity > 0)) {
+      toast({
+        title: priceQuery.isError
+          ? "Sem PU publicado para esse título até a data escolhida — confira a data da compra."
+          : "Informe a data da compra e o valor investido.",
+        variant: "destructive",
+      });
       return;
     }
     const enteredQuantity = Number(quantity);
@@ -122,8 +162,12 @@ export default function Carteira() {
         // Ignorado pelo servidor quando o par vai preenchido, mas o campo é obrigatório
         // no contrato — o rótulo do título serve de valor honesto.
         ticker: selectedBond ? selectedBond.label : ticker,
-        quantity: enteredQuantity,
-        averagePrice: Number(averagePrice),
+        // No caminho de título público a quantidade é DERIVADA (valor investido ÷ PU do
+        // dia da compra) em vez de digitada: ninguém sabe de cabeça que comprou 0,2083
+        // títulos, mas todo mundo sabe quanto investiu.
+        quantity: selectedBond ? (derivedQuantity ?? enteredQuantity) : enteredQuantity,
+        averagePrice: selectedBond ? effectiveUnitPrice : Number(averagePrice),
+        purchaseDate: selectedBond && purchaseDate ? purchaseDate : undefined,
         category: category as any,
         treasuryBondType: selectedBond?.bondType ?? null,
         treasuryMaturityDate: selectedBond?.maturityDate ?? null,
@@ -314,7 +358,7 @@ export default function Carteira() {
                   )}
                   {selectedBond && (
                     <p className="text-xs text-muted-foreground text-pretty">
-                      PU de compra em {formatShortDate(selectedBond.baseDate)}: {formatCurrency(selectedBond.buyUnitPrice)} ·
+                      PU hoje ({formatShortDate(selectedBond.baseDate)}): {formatCurrency(selectedBond.buyUnitPrice)} ·
                       a posição será marcada a mercado pelo PU de recompra.
                     </p>
                   )}
@@ -331,16 +375,84 @@ export default function Carteira() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Quantidade</Label>
-                  <Input type="number" step="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+              {selectedBond ? (
+                <>
+                  {/* Data e valor investido são o que a pessoa realmente sabe. O PU pago
+                      e a quantidade saem daí: o PU vem do histórico publicado naquele
+                      dia, a quantidade é uma divisão. Nenhum dos dois é digitado, e
+                      nenhum dos dois é chutado. */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="purchase-date">Data da compra</Label>
+                      <Input
+                        id="purchase-date"
+                        type="date"
+                        value={purchaseDate}
+                        max={new Date().toISOString().slice(0, 10)}
+                        onChange={(e) => setPurchaseDate(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="invested">Valor investido</Label>
+                      <Input
+                        id="invested"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        placeholder="500,00"
+                        value={investedAmount}
+                        onChange={(e) => setInvestedAmount(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border border-border/60 p-3 text-sm space-y-1">
+                    {priceQuery.isFetching ? (
+                      <p className="text-muted-foreground">Buscando o PU dessa data…</p>
+                    ) : priceQuery.isError ? (
+                      <p className="text-destructive text-pretty">
+                        Sem PU publicado para esse título até {purchaseDate ? formatShortDate(purchaseDate) : "essa data"}.
+                        Confira a data — pode ser anterior à emissão do título.
+                      </p>
+                    ) : historicalPrice ? (
+                      <>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">PU pago</span>
+                          <span className="font-mono font-medium">{formatCurrency(historicalPrice.buyUnitPrice)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">Quantidade</span>
+                          <span className="font-mono font-medium">
+                            {derivedQuantity ? derivedQuantity.toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : "—"}
+                          </span>
+                        </div>
+                        {/* Compra em fim de semana ou feriado não tem publicação no dia:
+                            o PU usado é o do pregão anterior, e isso precisa aparecer. */}
+                        {historicalPrice.baseDate !== purchaseDate && (
+                          <p className="text-xs text-muted-foreground text-pretty pt-1">
+                            Não houve publicação em {formatShortDate(purchaseDate)} — usando o PU de {formatShortDate(historicalPrice.baseDate)}.
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-muted-foreground">Informe a data da compra para buscar o PU daquele dia.</p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Quantidade</Label>
+                    <Input type="number" step="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Preço Médio</Label>
+                    <Input type="number" step="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>{selectedBond ? "PU pago" : "Preço Médio"}</Label>
-                  <Input type="number" step="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
-                </div>
-              </div>
+              )}
               <DialogFooter>
                 <Button type="submit" disabled={createAsset.isPending}>
                   {createAsset.isPending ? "Salvando..." : "Salvar"}
