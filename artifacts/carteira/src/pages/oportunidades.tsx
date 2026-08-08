@@ -5,7 +5,7 @@ import {
   getGetInvestorProfileQueryKey,
   useGetOpportunitiesNextRefresh,
 } from "@workspace/api-client-react";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatShortDateTime } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Lightbulb, TrendingUp, ShieldAlert, ArrowRight, Target, RefreshCw, AlertTriangle } from "lucide-react";
@@ -103,10 +103,15 @@ export default function Oportunidades() {
               <CardContent className="flex-1 space-y-4">
                 <div className="grid grid-cols-3 gap-2 p-3 bg-muted/30 rounded-lg border border-border/50">
                   <div>
-                    <p className="text-[10px] uppercase text-muted-foreground tracking-wider mb-1">Cotação</p>
+                    <p className="text-[10px] uppercase text-muted-foreground tracking-wider mb-1">
+                      {opp.priceAsOf ? 'Última cotação' : 'Cotação'}
+                    </p>
                     <p className="font-bold font-mono">
                       {opp.currentPrice != null ? formatCurrency(opp.currentPrice) : '-'}
                     </p>
+                    {opp.priceAsOf && (
+                      <p className="text-[10px] text-amber-700 dark:text-amber-500">{formatShortDateTime(opp.priceAsOf)}</p>
+                    )}
                   </div>
                   <div>
                     <p className="text-[10px] uppercase text-muted-foreground tracking-wider mb-1 flex items-center gap-1">

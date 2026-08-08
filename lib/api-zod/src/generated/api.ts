@@ -687,6 +687,7 @@ export const ListOpportunitiesResponse = zod.object({
   "dividendSustainability": zod.string().nullish(),
   "horizon": zod.string(),
   "currentPrice": zod.number().nullish(),
+  "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo. Mesmo campo e mesma semântica de Asset.priceAsOf.'),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.')
 }))
 })
@@ -982,6 +983,7 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "dividendSustainability": zod.string().nullish(),
   "horizon": zod.string(),
   "currentPrice": zod.number().nullish(),
+  "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo. Mesmo campo e mesma semântica de Asset.priceAsOf.'),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.')
 }))
 })

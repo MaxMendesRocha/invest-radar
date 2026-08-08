@@ -671,6 +671,11 @@ export interface Opportunity {
   /** @nullable */
   currentPrice?: number | null;
   /**
+     * Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo. Mesmo campo e mesma semântica de Asset.priceAsOf.
+     * @nullable
+     */
+  priceAsOf?: string | null;
+  /**
      * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
      * @nullable
      */
