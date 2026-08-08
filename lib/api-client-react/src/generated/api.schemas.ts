@@ -814,6 +814,27 @@ export interface TechnicalIndicators {
   crossSignal: TechnicalIndicatorsCrossSignal;
 }
 
+export interface TaxEstimate {
+  grossGain: number;
+  taxRate: number;
+  taxOwed: number;
+  netGain: number;
+  /** True quando dentro da isenção de ações (venda ≤ R$ 20.000 no mês). */
+  exempt: boolean;
+}
+
+export interface TrimSuggestion {
+  /** Valor a reduzir, em reais. */
+  value: number;
+  /** Quantidade correspondente, ao preço atual. */
+  quantity: number;
+  percentOfPosition: number;
+  /** Faixa de concentração para onde a posição volta depois da redução. */
+  targetPercent: number;
+  /** IR estimado sobre a FATIA vendida, não sobre a posição inteira — a isenção mensal de R$ 20 mil em ações é sobre o valor da venda, então estimar pelo total exageraria o imposto justamente quando a venda parcial o evita. */
+  taxEstimate?: null | TaxEstimate;
+}
+
 export type AssetAnalysisStatus = typeof AssetAnalysisStatus[keyof typeof AssetAnalysisStatus];
 
 
@@ -821,6 +842,19 @@ export const AssetAnalysisStatus = {
   COMPRAR: 'COMPRAR',
   MANTER: 'MANTER',
   VENDER: 'VENDER',
+} as const;
+
+/**
+ * Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: "fundamentos" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), "concentracao" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).
+ * @nullable
+ */
+export type AssetAnalysisStatusReason = typeof AssetAnalysisStatusReason[keyof typeof AssetAnalysisStatusReason] | null;
+
+
+export const AssetAnalysisStatusReason = {
+  fundamentos: 'fundamentos',
+  concentracao: 'concentracao',
+  fundamentos_e_concentracao: 'fundamentos_e_concentracao',
 } as const;
 
 export type AssetAnalysisScoreClassification = typeof AssetAnalysisScoreClassification[keyof typeof AssetAnalysisScoreClassification];
@@ -833,18 +867,6 @@ export const AssetAnalysisScoreClassification = {
   Atencao: 'Atencao',
   Critico: 'Critico',
 } as const;
-
-/**
- * Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível.
- * @nullable
- */
-export type AssetAnalysisTaxEstimate = {
-  grossGain: number;
-  taxRate: number;
-  taxOwed: number;
-  netGain: number;
-  exempt: boolean;
-} | null;
 
 /**
  * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
@@ -866,6 +888,13 @@ export interface AssetAnalysis {
   /** False when a full fundamentalist analysis isn't available yet (pending a data source) — score/status are placeholders and should not be shown. */
   available: boolean;
   status: AssetAnalysisStatus;
+  /**
+     * Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: "fundamentos" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), "concentracao" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).
+     * @nullable
+     */
+  statusReason?: AssetAnalysisStatusReason;
+  /** Quanto vender para a posição voltar ao limite saudável do perfil. Presente só quando a concentração é causa do VENDER, porque só nesse caso "quanto vender" é conta e não opinião. Assume que o valor é realocado dentro da carteira — se o dinheiro sair, seria preciso vender mais. */
+  trimSuggestion?: null | TrimSuggestion;
   score: number;
   scoreClassification: AssetAnalysisScoreClassification;
   positives: string[];
@@ -873,11 +902,8 @@ export interface AssetAnalysis {
   newsItems: string[];
   alerts: string[];
   monitoringRecommendation: string;
-  /**
-     * Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível.
-     * @nullable
-     */
-  taxEstimate?: AssetAnalysisTaxEstimate;
+  /** Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível. */
+  taxEstimate?: null | TaxEstimate;
   technical: TechnicalIndicators | null;
   /**
      * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.

@@ -8,14 +8,23 @@
 import type { AssetAnalysisDividendFrequency } from './assetAnalysisDividendFrequency';
 import type { AssetAnalysisScoreClassification } from './assetAnalysisScoreClassification';
 import type { AssetAnalysisStatus } from './assetAnalysisStatus';
-import type { AssetAnalysisTaxEstimate } from './assetAnalysisTaxEstimate';
+import type { AssetAnalysisStatusReason } from './assetAnalysisStatusReason';
+import type { TaxEstimate } from './taxEstimate';
 import type { TechnicalIndicators } from './technicalIndicators';
+import type { TrimSuggestion } from './trimSuggestion';
 
 export interface AssetAnalysis {
   ticker: string;
   /** False when a full fundamentalist analysis isn't available yet (pending a data source) — score/status are placeholders and should not be shown. */
   available: boolean;
   status: AssetAnalysisStatus;
+  /**
+     * Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: "fundamentos" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), "concentracao" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).
+     * @nullable
+     */
+  statusReason?: AssetAnalysisStatusReason;
+  /** Quanto vender para a posição voltar ao limite saudável do perfil. Presente só quando a concentração é causa do VENDER, porque só nesse caso "quanto vender" é conta e não opinião. Assume que o valor é realocado dentro da carteira — se o dinheiro sair, seria preciso vender mais. */
+  trimSuggestion?: null | TrimSuggestion;
   score: number;
   scoreClassification: AssetAnalysisScoreClassification;
   positives: string[];
@@ -23,11 +32,8 @@ export interface AssetAnalysis {
   newsItems: string[];
   alerts: string[];
   monitoringRecommendation: string;
-  /**
-     * Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível.
-     * @nullable
-     */
-  taxEstimate?: AssetAnalysisTaxEstimate;
+  /** Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível. */
+  taxEstimate?: null | TaxEstimate;
   technical: TechnicalIndicators | null;
   /**
      * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.

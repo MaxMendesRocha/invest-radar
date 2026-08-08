@@ -16,7 +16,7 @@ import {
   type Asset,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { analysisStatusConfig } from "@/lib/analysis-status";
+import { analysisStatusConfigFor } from "@/lib/analysis-status";
 import { formatCurrency, formatPercent, formatShortDateTime, formatShortDate } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
@@ -532,8 +532,8 @@ export default function Carteira() {
                         {analysis?.available === false ? (
                           <Badge variant="outline">Em breve</Badge>
                         ) : analysis?.status ? (
-                          <Badge variant="outline" className={analysisStatusConfig(analysis.status).className}>
-                            {analysisStatusConfig(analysis.status).label}
+                          <Badge variant="outline" className={analysisStatusConfigFor(analysis.status, analysis.statusReason).className}>
+                            {analysisStatusConfigFor(analysis.status, analysis.statusReason).label}
                           </Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">-</span>
@@ -587,7 +587,7 @@ export default function Carteira() {
                       {analysis?.available === false ? (
                         <Badge variant="outline">Em breve</Badge>
                       ) : analysis?.status ? (
-                        <Badge variant="outline" className={analysisStatusConfig(analysis.status).className}>{analysisStatusConfig(analysis.status).label}</Badge>
+                        <Badge variant="outline" className={analysisStatusConfigFor(analysis.status, analysis.statusReason).className}>{analysisStatusConfigFor(analysis.status, analysis.statusReason).label}</Badge>
                       ) : null}
                       <Button variant="ghost" size="icon" onClick={() => handleSellOpen(asset)} title="Vender" className="text-muted-foreground hover:text-foreground">
                         <Banknote className="w-4 h-4" />

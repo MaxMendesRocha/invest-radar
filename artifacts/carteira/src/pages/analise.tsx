@@ -4,6 +4,7 @@ import {
   useGeneratePortfolioAnalysis,
   getListAssetAnalysesQueryKey,
   type AssetAnalysis,
+  type TrimSuggestion,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -12,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity, Clock, Receipt, LineChart, CalendarClock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { analysisStatusConfig } from "@/lib/analysis-status";
+import { analysisStatusConfigFor } from "@/lib/analysis-status";
 import { formatCurrency } from "@/lib/utils";
 
 function TaxBadge({ tax }: { tax: AssetAnalysis["taxEstimate"] }) {
@@ -85,6 +86,60 @@ function DividendFrequencyBadge({ dividendFrequency }: { dividendFrequency: Asse
       <CalendarClock className="w-3.5 h-3.5 shrink-0" />
       <span className="font-medium text-foreground">Paga {dividendFrequency.toLowerCase()}</span>
       <span className="text-[10px] opacity-70 sm:ml-auto">a partir do histórico real dos últimos 12 meses</span>
+    </div>
+  );
+}
+
+/**
+ * Responde "vendo tudo ou parte?" — a pergunta que o badge sozinho deixava em aberto.
+ *
+ * Aparece só quando a concentração é causa do VENDER, porque só aí existe uma
+ * quantidade calculável. Quando o VENDER vem de fundamento fraco, o card explica que
+ * não há número e por quê, em vez de inventar um.
+ */
+function TrimCallout({ analysis }: { analysis: { status: string; statusReason?: string | null; trimSuggestion?: TrimSuggestion | null } }) {
+  if (analysis.status !== "VENDER") return null;
+
+  const trim = analysis.trimSuggestion;
+  const bothCauses = analysis.statusReason === "fundamentos_e_concentracao";
+
+  if (!trim) {
+    return (
+      <div className="rounded-md border border-red-500/20 bg-red-500/5 p-4 text-sm space-y-1">
+        <p className="font-medium">Quanto vender: não há número calculável aqui.</p>
+        <p className="text-muted-foreground text-pretty">
+          O alerta é sobre os fundamentos do ativo, não sobre o tamanho da posição — quanto reduzir
+          depende da sua convicção na tese, do seu prazo e do imposto. Um número aqui seria palpite
+          com cara de cálculo.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-orange-500/20 bg-orange-500/5 p-4 text-sm space-y-2">
+      <p className="font-medium">
+        Vender <span className="font-mono">{formatCurrency(trim.value)}</span> — cerca de{" "}
+        {trim.percentOfPosition.toFixed(0)}% da posição, não o total.
+      </p>
+      <p className="text-muted-foreground text-pretty">
+        Isso traz a posição de volta para {trim.targetPercent.toFixed(0)}% do patrimônio, a faixa do seu
+        perfil. Assume que o valor seja realocado dentro da carteira; se o dinheiro sair, seria preciso
+        vender um pouco mais.
+      </p>
+      {trim.taxEstimate && (
+        <p className="text-muted-foreground text-pretty">
+          {trim.taxEstimate.exempt
+            ? "IR estimado sobre essa venda: isento (dentro da faixa de R$ 20 mil no mês em ações)."
+            : `IR estimado sobre essa venda: ${formatCurrency(trim.taxEstimate.taxOwed)} — calculado só sobre a fatia vendida, não sobre a posição inteira.`}
+        </p>
+      )}
+      {bothCauses && (
+        <p className="text-muted-foreground text-pretty">
+          Atenção: os fundamentos também estão fracos. Reduzir resolve a concentração, mas não a tese —
+          vale reavaliar se a posição deveria continuar existindo.
+        </p>
+      )}
     </div>
   );
 }
@@ -172,7 +227,7 @@ export default function Analise() {
             }
 
             const isExpanded = expandedId === analysis.ticker;
-            const statusConfig = analysisStatusConfig(analysis.status);
+            const statusConfig = analysisStatusConfigFor(analysis.status, analysis.statusReason);
 
             return (
               <Card 
@@ -245,6 +300,7 @@ export default function Analise() {
                           <h4 className="flex items-center gap-2 font-semibold mb-3 text-sm uppercase tracking-wider text-muted-foreground">
                             <Activity className="w-4 h-4" /> Recomendação Tática
                           </h4>
+                          <TrimCallout analysis={analysis} />
                           <TaxBadge tax={analysis.taxEstimate} />
                           <TechnicalBadge technical={analysis.technical} />
                           <DividendFrequencyBadge dividendFrequency={analysis.dividendFrequency} />
