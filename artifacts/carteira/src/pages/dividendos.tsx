@@ -27,6 +27,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Toolti
 import { Plus, Trash2, Coins, ArrowUpRight, CalendarClock, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { IncomeGoalCard } from "@/components/income-goal-card";
+import { categoryLabel } from "@/lib/categories";
 
 const TYPE_MAP: Record<string, string> = {
   dividendo: "Dividendo",
@@ -35,12 +36,6 @@ const TYPE_MAP: Record<string, string> = {
   amortizacao: "Amortização"
 };
 
-const CATEGORY_MAP: Record<string, string> = {
-  acoes: "Ações",
-  fiis: "FIIs",
-  etfs: "ETFs",
-  bdrs: "BDRs",
-};
 
 function formatProjectionMonth(month: string): string {
   const [y, m] = month.split("-");
@@ -246,7 +241,7 @@ export default function Dividendos() {
                       {projection.byAsset.map((a) => (
                         <TableRow key={a.ticker}>
                           <TableCell className="font-bold">{a.ticker}</TableCell>
-                          <TableCell>{CATEGORY_MAP[a.category] || a.category}</TableCell>
+                          <TableCell>{categoryLabel(a.category)}</TableCell>
                           <TableCell className="text-right font-mono">
                             {a.dps12m == null ? <span className="text-xs text-muted-foreground">Sem histórico</span> : formatCurrency(a.dps12m)}
                           </TableCell>
@@ -268,7 +263,7 @@ export default function Dividendos() {
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <div className="font-bold">{a.ticker}</div>
-                            <div className="text-xs text-muted-foreground">{CATEGORY_MAP[a.category] || a.category}</div>
+                            <div className="text-xs text-muted-foreground">{categoryLabel(a.category)}</div>
                           </div>
                           <div className="font-mono font-medium text-right">
                             {a.projectedAnnualIncome == null ? "—" : formatCurrency(a.projectedAnnualIncome)}

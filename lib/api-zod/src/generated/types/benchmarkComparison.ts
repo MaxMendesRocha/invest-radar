@@ -9,8 +9,15 @@ import type { BenchmarkPoint } from './benchmarkPoint';
 
 export interface BenchmarkComparison {
   points: BenchmarkPoint[];
-  portfolioTotal: number;
-  cdiTotal: number;
-  ibovTotal: number;
-  ifixTotal: number;
+  windowMonths: number;
+  /** @nullable */
+  windowNote: string | null;
+  /** @nullable */
+  portfolioTotal: number | null;
+  /** @nullable */
+  cdiTotal: number | null;
+  /** @nullable */
+  ibovTotal: number | null;
+  /** @nullable */
+  ifixTotal: number | null;
 }

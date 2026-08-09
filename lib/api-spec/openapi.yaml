@@ -1387,25 +1387,36 @@ components:
           type: number
         ibov:
           type: number
+        # Null quando o IFIX não cobre a janela inteira. Ele não tem histórico
+        # gratuito disponível, então só acumula do momento em que o app começou a
+        # sincronizar — nunca é preenchido com estimativa.
         ifix:
-          type: number
+          type: ["number", "null"]
 
     BenchmarkComparison:
       type: object
-      required: [points, portfolioTotal, cdiTotal, ibovTotal, ifixTotal]
+      required: [points, windowMonths, windowNote, portfolioTotal, cdiTotal, ibovTotal, ifixTotal]
       properties:
         points:
           type: array
           items:
             $ref: "#/components/schemas/BenchmarkPoint"
+        # Quantos meses o comparativo cobre. Retorno acumulado só é comparável entre
+        # séries medidas no mesmo intervalo, então a janela é o trecho contíguo em que
+        # todas têm dado real — pode ser menor que 12, e `points` fica vazio quando não
+        # há sequer dois meses comparáveis.
+        windowMonths:
+          type: integer
+        windowNote:
+          type: ["string", "null"]
         portfolioTotal:
-          type: number
+          type: ["number", "null"]
         cdiTotal:
-          type: number
+          type: ["number", "null"]
         ibovTotal:
-          type: number
+          type: ["number", "null"]
         ifixTotal:
-          type: number
+          type: ["number", "null"]
 
     # ─── ALERTS SCHEMAS ───────────────────────────────────────────────────────
     Alert:

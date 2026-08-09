@@ -11,5 +11,6 @@ export interface BenchmarkPoint {
   portfolio: number;
   cdi: number;
   ibov: number;
-  ifix: number;
+  /** @nullable */
+  ifix: number | null;
 }
