@@ -195,9 +195,16 @@ export default function Dashboard() {
           }
           valueClassName={receivedDividends > 0 ? "text-primary" : ""}
         >
+          {/* Acumulado e projetado convivem. Antes o cartão trocava de "Renda
+              Projetada" para "Dividendos Acumulados" assim que o primeiro provento era
+              registrado — bastava um lançamento de R$ 5 para a projeção sumir, ou
+              seja, o número mais informativo desaparecia justo quando a pessoa
+              começava a usar o app direito. */}
           <p className="mt-1 text-xs text-muted-foreground text-pretty">
             {receivedDividends > 0
-              ? "Rendimento histórico"
+              ? projectedMonthly > 0
+                ? `Rendimento histórico · ${formatCurrency(projectedMonthly)}/mês pelo que seus ativos distribuíram nos últimos 12 meses`
+                : "Rendimento histórico"
               : showProjectedIncome
                 ? "Por mês, pelo que seus ativos distribuíram nos últimos 12 meses. Nada recebido foi registrado ainda."
                 : hasAssets

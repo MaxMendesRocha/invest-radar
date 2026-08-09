@@ -23,6 +23,7 @@ import { rankOpportunitiesFor } from "../lib/opportunity-ranking";
 import { suggestTreasuryBonds } from "../lib/treasury-engine";
 import { listTreasuryBondOptions, latestTreasuryBonds, priceOnDate } from "../lib/treasury-identity";
 import type { ProfileClassification } from "../lib/investor-profile-engine";
+import { isoDate } from "../lib/local-date";
 
 const router: IRouter = Router();
 
@@ -355,6 +356,134 @@ router.get("/portfolio/dividends/upcoming", requireAuth, async (req, res): Promi
 
   upcoming.sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime());
   res.json(upcoming);
+});
+
+const PENDING_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * Quantos dias antes do pagamento a compra precisa ter ocorrido para o direito ao
+ * provento ser inequívoco.
+ *
+ * O provider NÃO entrega data-com (ex-date) — o DividendEvent tem paymentDate, rate,
+ * label e approvedOn, e só. Sem ela não há como afirmar que a posição existia na data
+ * que dá direito. O que dá para usar é a data de compra do ativo, que é uma checagem
+ * mais grosseira: comprou depois do pagamento, certamente não recebeu; comprou muito
+ * antes, certamente recebeu; no meio, é ambíguo.
+ *
+ * 45 dias cobre com folga a distância usual entre data-com e pagamento nos dois
+ * regimes: ação costuma pagar semanas depois da aprovação em ata, e FII tem data-com
+ * no último pregão do mês com pagamento por volta da metade do mês seguinte.
+ */
+const EX_DATE_UNCERTAINTY_MS = 45 * 24 * 60 * 60 * 1000;
+
+/**
+ * Proventos que JÁ FORAM PAGOS e ainda não têm lançamento correspondente.
+ *
+ * Existe porque nada no app registra provento automaticamente — o único insert em
+ * `transactions` é o POST manual. Na prática isso fazia "Dividendos Acumulados" e o
+ * histórico de recebimentos ficarem parados em zero para quem não digita cada
+ * pagamento à mão, enquanto a projeção (que vem do histórico real do provider) andava
+ * sozinha. Aqui o app mostra o que ele já sabe que foi pago e oferece o lançamento
+ * pronto; quem confirma é o usuário, porque é registro financeiro dele e entra no
+ * cálculo de IR.
+ */
+router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promise<void> => {
+  const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
+  const [dividendEventsByTicker, existingTransactions] = await Promise.all([
+    getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category }))),
+    db.select().from(transactionsTable).where(eq(transactionsTable.userId, req.session.userId!)),
+  ]);
+
+  // Correspondência por ticker + data, CONTANDO em vez de marcar presença. Dois
+  // motivos, os dois encontrados testando:
+  //
+  //  1. A data precisa ser comparada como "YYYY-MM-DD" nos dois lados. O evento vem do
+  //     provider como instante ISO completo ("2026-03-20T03:00:00.000Z") e a coluna
+  //     guarda só a data — comparar as strings cruas nunca casava, então nada saía da
+  //     lista de pendentes depois de registrado.
+  //  2. Um mesmo ticker pode pagar mais de uma vez no mesmo dia (PETR4 pagou DIVIDENDO
+  //     e JCP em 20/03). Com um Set, registrar um dos dois esconderia o outro. O
+  //     contador consome um evento por lançamento existente e mantém o excedente.
+  //
+  // O valor continua fora da chave de propósito: um lançamento corrigido à mão
+  // (quantidade diferente na data, imposto retido) não deve fazer o provento
+  // reaparecer como pendente para sempre.
+  const registeredCount = new Map<string, number>();
+  for (const t of existingTransactions) {
+    const key = `${t.ticker.toUpperCase()}|${isoDate(t.date)}`;
+    registeredCount.set(key, (registeredCount.get(key) ?? 0) + 1);
+  }
+
+  const now = Date.now();
+  const pending: {
+    ticker: string;
+    paymentDate: string;
+    label: string;
+    rate: number;
+    quantity: number;
+    suggestedAmount: number;
+    certainty: "confirmado" | "incerto";
+    // Separa os dois tipos porque eles pedem apresentações diferentes: "sem data de
+    // compra" é uma propriedade do ATIVO e se repetiria idêntica em todas as linhas
+    // dele (na conta de teste, a mesma frase 20 vezes); "compra próxima" é do EVENTO e
+    // muda de linha para linha.
+    uncertaintyKind: "sem_data_compra" | "compra_proxima" | null;
+    uncertaintyReason: string | null;
+  }[] = [];
+
+  for (const a of assets) {
+    if (!QUOTED_CATEGORIES.has(a.category)) continue;
+    const ticker = a.ticker.toUpperCase();
+    const qty = parseFloat(a.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const purchasedAt = a.purchaseDate ? new Date(a.purchaseDate).getTime() : null;
+
+    for (const event of dividendEventsByTicker.get(ticker) ?? []) {
+      const paidAt = new Date(event.paymentDate).getTime();
+      if (paidAt > now) continue; // ainda não pago — isso é /upcoming
+      if (now - paidAt > PENDING_WINDOW_MS) continue;
+      const key = `${ticker}|${isoDate(event.paymentDate)}`;
+      const alreadyRegistered = registeredCount.get(key) ?? 0;
+      if (alreadyRegistered > 0) {
+        registeredCount.set(key, alreadyRegistered - 1);
+        continue;
+      }
+      // Comprou depois do pagamento: não havia posição, não há o que registrar. Este é
+      // o único caso descartado — nos demais o usuário decide, porque esconder um
+      // provento legítimo custa mais que mostrar um duvidoso sinalizado.
+      if (purchasedAt != null && purchasedAt > paidAt) continue;
+
+      let certainty: "confirmado" | "incerto" = "confirmado";
+      let uncertaintyKind: "sem_data_compra" | "compra_proxima" | null = null;
+      let uncertaintyReason: string | null = null;
+      if (purchasedAt == null) {
+        certainty = "incerto";
+        uncertaintyKind = "sem_data_compra";
+        uncertaintyReason = null; // agregado por ticker na tela, não repetido por linha
+      } else if (paidAt - purchasedAt < EX_DATE_UNCERTAINTY_MS) {
+        const days = Math.max(0, Math.round((paidAt - purchasedAt) / (24 * 60 * 60 * 1000)));
+        certainty = "incerto";
+        uncertaintyKind = "compra_proxima";
+        uncertaintyReason = `Comprado ${days} ${days === 1 ? "dia" : "dias"} antes do pagamento — confira se tinha direito na data-com.`;
+      }
+
+      pending.push({
+        ticker: a.ticker,
+        paymentDate: event.paymentDate,
+        label: event.label,
+        rate: event.rate,
+        quantity: qty,
+        suggestedAmount: Math.round(event.rate * qty * 100) / 100,
+        certainty,
+        uncertaintyKind,
+        uncertaintyReason,
+      });
+    }
+  }
+
+  // Mais recentes primeiro: é o que o usuário provavelmente acabou de receber.
+  pending.sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
+  res.json(pending);
 });
 
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;

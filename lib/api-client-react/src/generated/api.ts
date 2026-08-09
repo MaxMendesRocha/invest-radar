@@ -44,6 +44,7 @@ import type {
   MonthlyCategoryTax,
   OpportunitiesNextRefresh,
   OpportunityList,
+  PendingDividend,
   PortfolioDistribution,
   PortfolioDividendsProjection,
   PortfolioHealth,
@@ -2189,6 +2190,83 @@ export function useGetPortfolioDividendsUpcoming<TData = Awaited<ReturnType<type
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPortfolioDividendsUpcomingQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPortfolioDividendsPendingUrl = () => {
+
+
+
+
+  return `/api/portfolio/dividends/pending`
+}
+
+/**
+ * @summary Proventos já pagos pelos ativos em carteira que ainda não têm lançamento registrado
+ */
+export const getPortfolioDividendsPending = async ( options?: RequestInit): Promise<PendingDividend[]> => {
+
+  return customFetch<PendingDividend[]>(getGetPortfolioDividendsPendingUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPortfolioDividendsPendingQueryKey = () => {
+    return [
+    `/api/portfolio/dividends/pending`
+    ] as const;
+    }
+
+
+export const getGetPortfolioDividendsPendingQueryOptions = <TData = Awaited<ReturnType<typeof getPortfolioDividendsPending>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolioDividendsPending>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPortfolioDividendsPendingQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPortfolioDividendsPending>>> = ({ signal }) => getPortfolioDividendsPending({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPortfolioDividendsPending>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPortfolioDividendsPendingQueryResult = NonNullable<Awaited<ReturnType<typeof getPortfolioDividendsPending>>>
+export type GetPortfolioDividendsPendingQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Proventos já pagos pelos ativos em carteira que ainda não têm lançamento registrado
+ */
+
+export function useGetPortfolioDividendsPending<TData = Awaited<ReturnType<typeof getPortfolioDividendsPending>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolioDividendsPending>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPortfolioDividendsPendingQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
