@@ -643,6 +643,8 @@ export interface PendingDividend {
   paymentDate: string;
   label: string;
   rate: number;
+  /** @nullable */
+  exDate: string | null;
   quantity: number;
   suggestedAmount: number;
   certainty: PendingDividendCertainty;

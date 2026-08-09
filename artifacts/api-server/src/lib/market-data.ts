@@ -543,6 +543,19 @@ export interface DividendEvent {
   rate: number; // valor por cota/ação, em R$
   label: string; // "DIVIDENDO" | "JCP" | "RENDIMENTO" etc., como vem da brapi.dev
   approvedOn: string | null; // ISO da aprovação em ata; null = ainda não formalizado (ou fora do que a brapi rastreia, caso dos FIIs)
+  /**
+   * DATA-COM: último pregão em que o ativo negocia COM direito ao provento. Quem
+   * comprou até esta data recebe; quem comprou depois, não.
+   *
+   * Vem da brapi como `lastDatePrior`, nos dois endpoints (ações e FII), com cobertura
+   * de 100% na amostra medida — 1.100 eventos de PETR4/VALE3/ITUB4/TAEE11/BBAS3 e os
+   * 12 de HGLG11. O campo existia desde sempre e este mapeamento simplesmente o
+   * descartava, o que levou a documentar por engano que "o provider não entrega
+   * data-com" e a inferir o direito ao provento pela data de compra com uma folga
+   * fixa de 45 dias. A folga era errada: PETR4 paga até 112 dias depois da data-com,
+   * então quem comprasse no meio do caminho era marcado como tendo direito sem ter.
+   */
+  lastDatePrior: string | null;
 }
 
 const DIVIDEND_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // anúncio de provento não muda de hora em hora
@@ -662,7 +675,7 @@ const dividendCache = new Map<string, { events: DividendEvent[]; fetchedAt: numb
 
 interface BrapiStockDividendsResult {
   symbol: string;
-  data?: { cashDividends?: { paymentDate: string; rate: number; label: string; approvedOn: string | null }[] };
+  data?: { cashDividends?: { paymentDate: string; rate: number; label: string; approvedOn: string | null; lastDatePrior: string | null }[] };
 }
 
 async function fetchStockDividendsBatch(tickers: string[]): Promise<Map<string, DividendEvent[]>> {
@@ -683,6 +696,7 @@ async function fetchStockDividendsBatch(tickers: string[]): Promise<Map<string, 
   for (const item of body.results ?? []) {
     const events = (item.data?.cashDividends ?? []).map((d) => ({
       paymentDate: d.paymentDate, rate: d.rate, label: d.label, approvedOn: d.approvedOn ?? null,
+      lastDatePrior: d.lastDatePrior ?? null,
     }));
     result.set(item.symbol.toUpperCase(), events);
   }
@@ -703,11 +717,14 @@ async function fetchFiiDividends(ticker: string): Promise<DividendEvent[]> {
   const response = await fetch(url, { headers });
   if (!response.ok) return [];
 
-  const body = (await response.json()) as { dividends?: { paymentDate: string; rate: number; label: string; approvedOn: string | null }[] };
+  const body = (await response.json()) as { dividends?: { paymentDate: string; rate: number; label: string; approvedOn: string | null; lastDatePrior: string | null }[] };
   // approvedOn vem sempre null nesse endpoint (dado importado de CSV, ver comentário
   // acima) — mesmo pra pagamentos já ocorridos no passado, então não serve pra
   // distinguir "confirmado" de "previsto" em FIIs como serve pra ações.
-  return (body.dividends ?? []).map((d) => ({ paymentDate: d.paymentDate, rate: d.rate, label: d.label, approvedOn: d.approvedOn ?? null }));
+  return (body.dividends ?? []).map((d) => ({
+    paymentDate: d.paymentDate, rate: d.rate, label: d.label,
+    approvedOn: d.approvedOn ?? null, lastDatePrior: d.lastDatePrior ?? null,
+  }));
 }
 
 /**
