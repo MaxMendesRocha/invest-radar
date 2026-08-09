@@ -355,7 +355,7 @@ comparação numérica direta. A IA escreve o texto *em volta* dele, mas nunca o
 | Tela | A pergunta | O que mostra |
 |---|---|---|
 | **Dashboard** | Como estou, no geral? | Patrimônio, rentabilidade, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks |
-| **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático |
+| **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático e a data da compra, opcional em qualquer classe, editável depois |
 | **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
 | **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Análise completa de qualquer ticker, sem exigir posição. Range de 52 semanas, tendência de proventos, comparação setorial |
@@ -405,7 +405,8 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   (`lastDatePrior` da brapi, presente nos dois endpoints com cobertura de 100% na amostra
   medida): comprou até a data-com, recebeu; comprou depois, não, e o item nem aparece. Sobra
   incerteza só para ativo sem data de compra cadastrada, e aí o item é mostrado marcado em vez
-  de escondido.
+  de escondido — a data é opcional em qualquer classe e pode ser preenchida depois, na edição
+  do ativo, para quem cadastrou a posição antes de existir o campo.
 - **Os gráficos de histórico só plotam o que foi medido.** A evolução patrimonial devolve
   um ponto por mês com snapshot real, mais o mês corrente (que é medição: posições de hoje
   pelas cotações de hoje). Meses anteriores ao primeiro acesso não são estimados — a tela
