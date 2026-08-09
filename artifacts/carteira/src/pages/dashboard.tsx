@@ -365,7 +365,7 @@ export default function Dashboard() {
             <CardDescription className="text-pretty">
               {!benchmarks || benchmarks.points.length < 2
                 ? "Rentabilidade acumulada da carteira contra CDI e IBOV."
-                : `${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}Todas as séries partem de 0% no início da janela, que é o que torna o acumulado comparável entre elas. CDI vem do Banco Central e IBOV do fechamento real do índice.`}
+                : `${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}Todas as séries partem de 0% no início da janela, que é o que torna o acumulado comparável entre elas. Por isso a linha Carteira mede o rendimento DENTRO da janela e não coincide com o KPI Rentabilidade, que é o total desde a compra. CDI vem do Banco Central e IBOV do fechamento real do índice.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -394,8 +394,10 @@ export default function Dashboard() {
                       stroke="hsl(var(--muted-foreground))"
                       tickFormatter={(val) => `${val.toFixed(0)}%`}
                     />
-                    <RechartsTooltip 
-                      formatter={(value: number) => [`${value.toFixed(2)}%`, "Rentabilidade"]}
+                    {/* "Rentabilidade" era a mesma palavra do KPI ao lado, que mede outra
+                        coisa (total desde a compra, não acumulado na janela). */}
+                    <RechartsTooltip
+                      formatter={(value: number) => [`${value.toFixed(2)}%`, "Acumulado na janela"]}
                       contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '6px' }}
                     />
                     <Legend />

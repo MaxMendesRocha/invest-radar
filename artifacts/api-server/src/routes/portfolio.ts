@@ -580,7 +580,10 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     totalCost += qty * avgPrice;
     totalValue += qty * price;
   }
-  const portfolioReturn = totalCost > 0 ? Math.round(((totalValue - totalCost) / totalCost) * 10000) / 100 : 0;
+  // Razão valor÷custo, não percentual. É o mesmo formato em que CDI e IBOV entram
+  // (fator multiplicativo), e é o que permite rebasear a carteira compondo em vez de
+  // subtraindo — ver o cálculo de `points` mais abaixo.
+  const portfolioRatio = totalCost > 0 ? totalValue / totalCost : null;
   const snapshots = await getSnapshotsForUser(req.session.userId!);
 
   // Nada aqui é preenchido quando falta dado. Antes, mês sem fechamento de índice
@@ -613,7 +616,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     cdiReturn: number | null; // % do mês
     ibovFactor: number | null; // fechamento do mês ÷ fechamento do mês anterior
     ifixFactor: number | null;
-    portfolioReturn: number | null; // retorno sobre custo no fim do mês
+    portfolioRatio: number | null; // valor ÷ custo no fim do mês
   }
 
   const slots: MonthSlot[] = [];
@@ -631,9 +634,12 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     if (snapshot) {
       const snapCost = parseFloat(snapshot.totalCost);
       const snapValue = parseFloat(snapshot.totalValue);
-      portfolioForMonth = snapCost > 0 ? Math.round(((snapValue - snapCost) / snapCost) * 10000) / 100 : 0;
+      // Custo zero é carteira vazia, não retorno zero. Tratá-lo como 0% deixava um mês
+      // anterior ao primeiro aporte entrar na janela e virar o mês-base — ancorando a
+      // comparação inteira num ponto em que não havia carteira para render.
+      portfolioForMonth = snapCost > 0 ? snapValue / snapCost : null;
     } else if (i === 0 && assets.length > 0) {
-      portfolioForMonth = portfolioReturn;
+      portfolioForMonth = portfolioRatio;
     }
 
     slots.push({
@@ -641,7 +647,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
       cdiReturn: cdiReturns.get(key) ?? null,
       ibovFactor: factorBetween(ibovCloses, key, prevKey),
       ifixFactor: factorBetween(ifixCloses, key, prevKey),
-      portfolioReturn: portfolioForMonth,
+      portfolioRatio: portfolioForMonth,
     });
   }
 
@@ -649,7 +655,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   // O IFIX fica fora desta decisão: ele não tem histórico gratuito e exigi-lo zeraria
   // a janela para todo mundo. Ele é reportado só quando cobre a janela inteira.
   const REQUIRED_FOR_WINDOW = (s: MonthSlot) =>
-    s.cdiReturn != null && s.ibovFactor != null && s.portfolioReturn != null;
+    s.cdiReturn != null && s.ibovFactor != null && s.portfolioRatio != null;
 
   let firstIdx = slots.length;
   for (let i = slots.length - 1; i >= 0; i--) {
@@ -658,14 +664,14 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   }
   // O mês-base não precisa dos fatores (ele vale 0% por definição), só do retorno da
   // carteira, que é a referência contra a qual os meses seguintes são medidos.
-  if (firstIdx > 0 && slots[firstIdx - 1].portfolioReturn != null) firstIdx -= 1;
+  if (firstIdx > 0 && slots[firstIdx - 1].portfolioRatio != null) firstIdx -= 1;
 
   const windowSlots = slots.slice(firstIdx);
 
   if (windowSlots.length < 2) {
     const blocker = slots[slots.length - 1];
     const missing = [
-      blocker?.portfolioReturn == null ? "histórico da carteira" : null,
+      blocker?.portfolioRatio == null ? "histórico da carteira" : null,
       blocker?.cdiReturn == null ? "CDI" : null,
       blocker?.ibovFactor == null ? "IBOV" : null,
     ].filter((m): m is string => m != null);
@@ -700,7 +706,12 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     const pct = (acc: number) => Math.round((acc - 1) * 10000) / 100;
     return {
       label: s.label,
-      portfolio: Math.round((s.portfolioReturn! - base.portfolioReturn!) * 100) / 100,
+      // Composto, não subtraído. Antes era `retorno_do_mês − retorno_do_mês_base`, uma
+      // subtração de percentuais posta no mesmo eixo de duas séries que compõem
+      // (`cdiAcc *=`, `ibovAcc *=`) — comparação errada por construção mesmo com dado
+      // 100% real. Dividir as razões dá "quanto rendeu R$1 desde o início da janela",
+      // que é exatamente o que CDI e IBOV medem ao lado.
+      portfolio: Math.round((s.portfolioRatio! / base.portfolioRatio! - 1) * 10000) / 100,
       cdi: pct(cdiAcc),
       ibov: pct(ibovAcc),
       ifix: ifixAcc != null ? pct(ifixAcc) : null,
