@@ -668,6 +668,15 @@ export const GetPortfolioDividendsProjectionResponse = zod.object({
   "dps12m": zod.number().nullable().describe('Dividendos\/JCP reais por unidade pagos nos últimos 12 meses. Null quando não há histórico suficiente (nunca estimado).'),
   "projectedAnnualIncome": zod.number().nullable().describe('dps12m × quantidade atual. Null quando dps12m é null.'),
   "dyOnPrice": zod.number().nullable().describe('dps12m \/ preço atual, em % (ex. 6.5 = 6.5%).'),
+  "quality": zod.union([zod.object({
+  "cadence": zod.enum(['Mensal', 'Trimestral', 'Semestral', 'Anual', 'Irregular']),
+  "paymentsLast12m": zod.number(),
+  "expectedPayments": zod.number().nullable(),
+  "regularity": zod.number().nullable().describe('Observado ÷ esperado, com teto 1.'),
+  "trendPercent": zod.number().nullable().describe('Variação % da distribuição entre duas janelas iguais.'),
+  "trendWindow": zod.union([zod.literal('6m'),zod.literal('12m'),zod.literal(null)]).nullable(),
+  "classification": zod.enum(['Consistente', 'Atencao', 'Irregular', 'SemHistorico'])
+}),zod.null()]),
   "dyOnCost": zod.number().nullable().describe('dps12m \/ preço médio de compra, em %.')
 })),
   "byMonth": zod.array(zod.object({

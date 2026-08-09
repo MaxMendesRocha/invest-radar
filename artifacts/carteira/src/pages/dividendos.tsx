@@ -44,6 +44,30 @@ function formatProjectionMonth(month: string): string {
   return `${m}/${y.slice(2)}`;
 }
 
+
+/**
+ * Rótulo e cor do veredito de qualidade da distribuição. A classificação vem pronta do
+ * servidor (distribution-quality-engine) — aqui só se decide como mostrar, para a tela
+ * não reconstruir a regra e as duas versões divergirem com o tempo.
+ */
+const QUALITY_PRESENTATION: Record<string, { label: string; className: string }> = {
+  Consistente: { label: "Consistente", className: "border-emerald-600/60 text-emerald-700 dark:text-emerald-500" },
+  Atencao: { label: "Atenção", className: "border-amber-500/60 text-amber-700 dark:text-amber-500" },
+  Irregular: { label: "Irregular", className: "border-destructive/60 text-destructive" },
+  SemHistorico: { label: "Sem histórico", className: "text-muted-foreground" },
+};
+
+function QualityBadge({ quality }: { quality: { classification: string; cadence: string } | null }) {
+  if (!quality) return <span className="text-xs text-muted-foreground">—</span>;
+  const p = QUALITY_PRESENTATION[quality.classification] ?? QUALITY_PRESENTATION.SemHistorico;
+  return (
+    <span className="inline-flex flex-col items-start gap-0.5">
+      <Badge variant="outline" className={`${p.className} shrink-0`}>{p.label}</Badge>
+      <span className="text-[10px] text-muted-foreground">{quality.cadence}</span>
+    </span>
+  );
+}
+
 export default function Dividendos() {
   const { data: summary } = useGetPortfolioSummary({ query: { queryKey: getGetPortfolioSummaryQueryKey() } });
   const { data: transactions, isLoading } = useListTransactions({ query: { queryKey: getListTransactionsQueryKey() } });
@@ -277,6 +301,7 @@ export default function Dividendos() {
                       <TableRow>
                         <TableHead>Ativo</TableHead>
                         <TableHead>Categoria</TableHead>
+                        <TableHead>Distribuição</TableHead>
                         <TableHead className="text-right">DPS 12m</TableHead>
                         <TableHead className="text-right">DY no Preço</TableHead>
                         <TableHead className="text-right">DY no Custo</TableHead>
@@ -288,6 +313,7 @@ export default function Dividendos() {
                         <TableRow key={a.ticker}>
                           <TableCell className="font-bold">{a.ticker}</TableCell>
                           <TableCell>{categoryLabel(a.category)}</TableCell>
+                          <TableCell><QualityBadge quality={a.quality} /></TableCell>
                           <TableCell className="text-right font-mono">
                             {a.dps12m == null ? <span className="text-xs text-muted-foreground">Sem histórico</span> : formatCurrency(a.dps12m)}
                           </TableCell>
@@ -307,9 +333,10 @@ export default function Dividendos() {
                     <Card key={a.ticker}>
                       <CardContent className="p-4 space-y-3">
                         <div className="flex items-start justify-between gap-2">
-                          <div>
+                          <div className="space-y-1">
                             <div className="font-bold">{a.ticker}</div>
                             <div className="text-xs text-muted-foreground">{categoryLabel(a.category)}</div>
+                            <QualityBadge quality={a.quality} />
                           </div>
                           <div className="font-mono font-medium text-right">
                             {a.projectedAnnualIncome == null ? "—" : formatCurrency(a.projectedAnnualIncome)}

@@ -526,6 +526,58 @@ export const DividendProjectionAssetCategory = {
   bdrs: 'bdrs',
 } as const;
 
+export type DistributionQualityCadence = typeof DistributionQualityCadence[keyof typeof DistributionQualityCadence];
+
+
+export const DistributionQualityCadence = {
+  Mensal: 'Mensal',
+  Trimestral: 'Trimestral',
+  Semestral: 'Semestral',
+  Anual: 'Anual',
+  Irregular: 'Irregular',
+} as const;
+
+/**
+ * @nullable
+ */
+export type DistributionQualityTrendWindow = typeof DistributionQualityTrendWindow[keyof typeof DistributionQualityTrendWindow] | null;
+
+
+export const DistributionQualityTrendWindow = {
+  '6m': '6m',
+  '12m': '12m',
+} as const;
+
+export type DistributionQualityClassification = typeof DistributionQualityClassification[keyof typeof DistributionQualityClassification];
+
+
+export const DistributionQualityClassification = {
+  Consistente: 'Consistente',
+  Atencao: 'Atencao',
+  Irregular: 'Irregular',
+  SemHistorico: 'SemHistorico',
+} as const;
+
+export interface DistributionQuality {
+  cadence: DistributionQualityCadence;
+  paymentsLast12m: number;
+  /** @nullable */
+  expectedPayments: number | null;
+  /**
+     * Observado ÷ esperado, com teto 1.
+     * @nullable
+     */
+  regularity: number | null;
+  /**
+     * Variação % da distribuição entre duas janelas iguais.
+     * @nullable
+     */
+  trendPercent: number | null;
+  /** @nullable */
+  trendWindow: DistributionQualityTrendWindow;
+  classification: DistributionQualityClassification;
+}
+
 export interface DividendProjectionAsset {
   ticker: string;
   category: DividendProjectionAssetCategory;
@@ -545,6 +597,7 @@ export interface DividendProjectionAsset {
      * @nullable
      */
   dyOnPrice: number | null;
+  quality: DistributionQuality | null;
   /**
      * dps12m / preço médio de compra, em %.
      * @nullable
