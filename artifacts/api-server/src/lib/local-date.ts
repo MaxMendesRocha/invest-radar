@@ -23,3 +23,25 @@ const DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
 export function todayInAppTimezone(): string {
   return DATE_FORMATTER.format(new Date());
 }
+
+/**
+ * Normaliza para "YYYY-MM-DD" o valor de data vindo do corpo validado pelo zod.
+ *
+ * O zod gerado a partir de `format: date`/`date-time` no OpenAPI entrega **Date**
+ * (`z.coerce.date()`), enquanto as colunas de data usam `mode: "string"`. Quem testa
+ * `typeof value === "string"` para decidir o que gravar recebe sempre `false` depois
+ * da coerção — e cai num `String(date)`, que produz `Tue Jul 14 2026 00:00:00 GMT+0000`
+ * e o Postgres rejeita.
+ *
+ * Esse bug já apareceu duas vezes por estar copiado dentro de uma rota em vez de
+ * compartilhado: primeiro em assets.ts (toda data de compra era descartada em
+ * silêncio), depois em transactions.ts (todo POST de provento devolvia 500, ou seja,
+ * registrar dividendo nunca funcionou). Por isso mora aqui agora.
+ *
+ * O corte é feito sobre o ISO em UTC de propósito: o valor já chega como instante
+ * absoluto do provedor ou do formulário, e reinterpretá-lo em fuso local deslocaria
+ * a data em pagamentos gravados à meia-noite.
+ */
+export function isoDate(value: string | Date): string {
+  return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
+}

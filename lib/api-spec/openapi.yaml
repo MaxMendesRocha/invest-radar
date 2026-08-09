@@ -595,6 +595,21 @@ paths:
                 items:
                   $ref: "#/components/schemas/UpcomingDividend"
 
+  /portfolio/dividends/pending:
+    get:
+      operationId: getPortfolioDividendsPending
+      tags: [portfolio]
+      summary: Proventos já pagos pelos ativos em carteira que ainda não têm lançamento registrado
+      responses:
+        "200":
+          description: Pending dividend registrations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PendingDividend"
+
   /portfolio/dividends/projection:
     get:
       operationId: getPortfolioDividendsProjection
@@ -1374,6 +1389,36 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DividendProjectionMonth"
+
+    PendingDividend:
+      type: object
+      required: [ticker, paymentDate, label, rate, quantity, suggestedAmount, certainty, uncertaintyKind, uncertaintyReason]
+      properties:
+        ticker:
+          type: string
+        paymentDate:
+          type: string
+        label:
+          type: string
+        rate:
+          type: number
+        quantity:
+          type: number
+        suggestedAmount:
+          type: number
+        # O provider não entrega data-com, então o direito ao provento é inferido da
+        # data de compra do ativo. "incerto" não significa errado — significa que o
+        # app não consegue afirmar, e quem decide é o usuário.
+        certainty:
+          type: string
+          enum: [confirmado, incerto]
+        # "sem_data_compra" é propriedade do ativo e se repetiria igual em toda linha
+        # dele; a tela agrega numa nota só. "compra_proxima" varia por evento.
+        uncertaintyKind:
+          type: ["string", "null"]
+          enum: [sem_data_compra, compra_proxima, null]
+        uncertaintyReason:
+          type: ["string", "null"]
 
     BenchmarkPoint:
       type: object

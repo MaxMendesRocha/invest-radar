@@ -3,6 +3,7 @@ import { db, transactionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { CreateTransactionBody, DeleteTransactionParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
+import { isoDate } from "../lib/local-date";
 
 const router: IRouter = Router();
 
@@ -35,7 +36,10 @@ router.post("/transactions", requireAuth, async (req, res): Promise<void> => {
     ticker: ticker.toUpperCase(),
     amount: String(amount),
     type,
-    date: typeof date === "string" ? date : String(date),
+    // isoDate, não String(date): o zod coage para Date, e String(Date) produz
+    // "Tue Jul 14 2026 00:00:00 GMT+0000", que o Postgres recusa numa coluna date —
+    // era isso que fazia TODO registro de provento devolver 500.
+    date: isoDate(date),
     notes: notes ?? null,
   }).returning();
   res.status(201).json({

@@ -397,6 +397,12 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   rompimento disparado por cotação parada seria pior que alerta nenhum.
 - **Falha de um ticker não contamina os outros.** A busca é em lote com tratamento por item.
 - **Renda fixa nunca entra no aviso de cotação indisponível**, porque não tem cotação de bolsa.
+- **Provento pago não vira lançamento sozinho.** O app sabe quais proventos os seus ativos
+  pagaram (histórico real do provedor) e lista os que ainda não têm lançamento em "Proventos a
+  registrar", com valor e data prontos — mas quem confirma é você, porque é registro financeiro
+  seu e entra no cálculo de IR. O provedor **não entrega data-com**, então o direito é inferido
+  da data de compra do ativo: compra posterior ao pagamento exclui o item; compra próxima demais,
+  ou ativo sem data cadastrada, aparece marcado como "confira" em vez de ser escondido.
 - **Os gráficos de histórico só plotam o que foi medido.** A evolução patrimonial devolve
   um ponto por mês com snapshot real, mais o mês corrente (que é medição: posições de hoje
   pelas cotações de hoje). Meses anteriores ao primeiro acesso não são estimados — a tela

@@ -639,6 +639,23 @@ export const GetPortfolioDividendsUpcomingResponse = zod.array(GetPortfolioDivid
 
 
 /**
+ * @summary Proventos já pagos pelos ativos em carteira que ainda não têm lançamento registrado
+ */
+export const GetPortfolioDividendsPendingResponseItem = zod.object({
+  "ticker": zod.string(),
+  "paymentDate": zod.string(),
+  "label": zod.string(),
+  "rate": zod.number(),
+  "quantity": zod.number(),
+  "suggestedAmount": zod.number(),
+  "certainty": zod.enum(['confirmado', 'incerto']),
+  "uncertaintyKind": zod.union([zod.literal('sem_data_compra'),zod.literal('compra_proxima'),zod.literal(null)]).nullable(),
+  "uncertaintyReason": zod.string().nullable()
+})
+export const GetPortfolioDividendsPendingResponse = zod.array(GetPortfolioDividendsPendingResponseItem)
+
+
+/**
  * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price per asset and monthly distribution
  */
 export const GetPortfolioDividendsProjectionResponse = zod.object({

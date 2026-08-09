@@ -6,12 +6,14 @@ import {
   useGetPortfolioSummary,
   useGetPortfolioDividendsUpcoming,
   useGetPortfolioDividendsProjection,
+  useGetPortfolioDividendsPending,
+  getGetPortfolioDividendsPendingQueryKey,
   getListTransactionsQueryKey,
   getGetPortfolioSummaryQueryKey
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatPercent } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
-import { Plus, Trash2, Coins, ArrowUpRight, CalendarClock, TrendingUp } from "lucide-react";
+import { Plus, Trash2, Coins, ArrowUpRight, CalendarClock, TrendingUp, Inbox } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { IncomeGoalCard } from "@/components/income-goal-card";
 import { categoryLabel } from "@/lib/categories";
@@ -47,6 +49,19 @@ export default function Dividendos() {
   const { data: transactions, isLoading } = useListTransactions({ query: { queryKey: getListTransactionsQueryKey() } });
   const { data: upcomingDividends, isLoading: isLoadingUpcoming } = useGetPortfolioDividendsUpcoming();
   const { data: projection, isLoading: isLoadingProjection } = useGetPortfolioDividendsProjection();
+  const { data: pendingDividends, isLoading: isLoadingPending } = useGetPortfolioDividendsPending();
+  // Qual linha está sendo gravada, para desabilitar só o botão dela e não a lista toda.
+  const [registeringKey, setRegisteringKey] = useState<string | null>(null);
+
+  // Tickers sem data de compra cadastrada. A ressalva é do ATIVO, não do pagamento —
+  // repeti-la em cada linha enchia o card com a mesma frase dezenas de vezes.
+  const tickersSemDataCompra = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of pendingDividends ?? []) {
+      if (d.uncertaintyKind === "sem_data_compra") set.add(d.ticker);
+    }
+    return Array.from(set).sort();
+  }, [pendingDividends]);
   
   const [isOpen, setIsOpen] = useState(false);
   const [ticker, setTicker] = useState("");
@@ -65,6 +80,37 @@ export default function Dividendos() {
     setAmount("");
     setType("dividendo");
     setDate("");
+  };
+
+  /**
+   * Registra um provento que o app já sabe que foi pago. O valor sugerido é
+   * `rate * quantidade ATUAL` — se a posição mudou desde o pagamento, ou se houve
+   * retenção, o usuário corrige pelo formulário manual, que continua existindo.
+   */
+  const handleRegisterPending = async (item: {
+    ticker: string; paymentDate: string; label: string; suggestedAmount: number;
+  }) => {
+    const key = `${item.ticker}-${item.paymentDate}`;
+    setRegisteringKey(key);
+    try {
+      await createTx.mutateAsync({
+        data: {
+          ticker: item.ticker,
+          amount: item.suggestedAmount,
+          type: "dividendo",
+          date: new Date(item.paymentDate).toISOString(),
+        },
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getListTransactionsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getGetPortfolioDividendsPendingQueryKey() }),
+      ]);
+      toast({ title: "Provento registrado", description: `${item.ticker} · ${formatCurrency(item.suggestedAmount)}` });
+    } catch {
+      toast({ title: "Não foi possível registrar", description: "Tente de novo em instantes.", variant: "destructive" });
+    } finally {
+      setRegisteringKey(null);
+    }
   };
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
@@ -296,6 +342,80 @@ export default function Dividendos() {
           )}
         </CardContent>
       </Card>
+
+      {/* Vem ANTES de "Próximos Pagamentos" de propósito: o que já foi pago e não está
+          lançado é acionável agora; o que vem depois é só informação. */}
+      {!isLoadingPending && pendingDividends && pendingDividends.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Inbox className="w-4 h-4 text-muted-foreground" />
+              Proventos a registrar
+            </CardTitle>
+            <CardDescription className="text-pretty">
+              Estes proventos já foram pagos pelos seus ativos e ainda não têm lançamento.
+              Registrar é o que faz o total acumulado e o histórico saírem do zero — o app
+              não lança nada sozinho porque isso entra no seu cálculo de IR.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {pendingDividends.map((d) => {
+                const key = `${d.ticker}-${d.paymentDate}`;
+                return (
+                  <div
+                    key={key}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/50 px-3 py-2 text-sm"
+                  >
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="shrink-0 font-bold">{d.ticker}</span>
+                      <span className="shrink-0 text-muted-foreground">{d.label}</span>
+                      <span className="shrink-0 text-muted-foreground">
+                        {new Date(d.paymentDate).toLocaleDateString("pt-BR")}
+                      </span>
+                      {d.certainty === "incerto" && (
+                        <Badge variant="outline" className="shrink-0 border-amber-500/60 text-amber-700 dark:text-amber-500">
+                          Confira
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <span className="font-mono font-medium text-primary">
+                        {formatCurrency(d.suggestedAmount)}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={registeringKey === key}
+                        onClick={() => handleRegisterPending(d)}
+                      >
+                        {registeringKey === key ? "Registrando..." : "Registrar"}
+                      </Button>
+                    </div>
+                    {d.uncertaintyKind === "compra_proxima" && d.uncertaintyReason && (
+                      <p className="w-full text-[11px] text-amber-700 text-pretty dark:text-amber-500">
+                        {d.uncertaintyReason}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+              {tickersSemDataCompra.length > 0 && (
+                <p className="pt-1 text-[11px] text-amber-700 text-pretty dark:text-amber-500">
+                  {tickersSemDataCompra.join(", ")} {tickersSemDataCompra.length === 1 ? "está" : "estão"} sem
+                  data de compra cadastrada, então o app não consegue confirmar se você já tinha a
+                  posição nesses pagamentos. Preencher a data na Minha Carteira resolve para todos
+                  de uma vez.
+                </p>
+              )}
+              <p className="pt-1 text-[10px] text-muted-foreground text-pretty">
+                Valor sugerido = provento por cota × sua quantidade atual. Se a posição mudou
+                desde o pagamento, ou se houve retenção, ajuste pelo lançamento manual.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

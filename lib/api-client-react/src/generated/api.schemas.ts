@@ -566,6 +566,39 @@ export interface PortfolioDividendsProjection {
   byMonth: DividendProjectionMonth[];
 }
 
+export type PendingDividendCertainty = typeof PendingDividendCertainty[keyof typeof PendingDividendCertainty];
+
+
+export const PendingDividendCertainty = {
+  confirmado: 'confirmado',
+  incerto: 'incerto',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PendingDividendUncertaintyKind = typeof PendingDividendUncertaintyKind[keyof typeof PendingDividendUncertaintyKind] | null;
+
+
+export const PendingDividendUncertaintyKind = {
+  sem_data_compra: 'sem_data_compra',
+  compra_proxima: 'compra_proxima',
+} as const;
+
+export interface PendingDividend {
+  ticker: string;
+  paymentDate: string;
+  label: string;
+  rate: number;
+  quantity: number;
+  suggestedAmount: number;
+  certainty: PendingDividendCertainty;
+  /** @nullable */
+  uncertaintyKind: PendingDividendUncertaintyKind;
+  /** @nullable */
+  uncertaintyReason: string | null;
+}
+
 export interface BenchmarkPoint {
   label: string;
   portfolio: number;

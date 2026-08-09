@@ -7,6 +7,7 @@ import { getPricesFor, getDividendEvents, getDividendEventsForTicker, classifyDi
 import { canonicalTickerFor, findTreasuryBond } from "../lib/treasury-identity";
 import { estimateCapitalGainsTax } from "../lib/tax-engine";
 import { computeMonthlyTaxSummary } from "../lib/monthly-tax-engine";
+import { isoDate } from "../lib/local-date";
 
 const router: IRouter = Router();
 
@@ -51,19 +52,6 @@ function enrichAsset(asset: {
   };
 }
 
-/**
- * O zod gerado a partir de `format: date` no OpenAPI entrega Date, não string
- * (`zod.coerce.date()`), enquanto as colunas de data usam `mode: "string"`.
- *
- * Isso já causava um bug silencioso: a rota testava `typeof purchaseDate === "string"`
- * e, como o valor sempre chegava como Date depois da coerção, gravava null — TODA data
- * de compra enviada era descartada sem erro nenhum. Só apareceu quando o formulário
- * passou a mandar o campo. Aqui a normalização é ainda mais crítica: o vencimento é
- * metade da chave que liga a posição à tabela de preços.
- */
-function isoDate(value: string | Date): string {
-  return typeof value === "string" ? value : value.toISOString().slice(0, 10);
-}
 
 // Usado pelas rotas de mutação/leitura de um único ativo (criar/editar/buscar), onde
 // não vale a pena buscar o histórico em lote — só um ticker por vez.
