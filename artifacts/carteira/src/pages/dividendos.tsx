@@ -30,6 +30,7 @@ import { Plus, Trash2, Coins, ArrowUpRight, CalendarClock, TrendingUp, Inbox, Ch
 import { useToast } from "@/hooks/use-toast";
 import { IncomeGoalCard } from "@/components/income-goal-card";
 import { categoryLabel } from "@/lib/categories";
+import { Link } from "wouter";
 
 const TYPE_MAP: Record<string, string> = {
   dividendo: "Dividendo",
@@ -509,8 +510,13 @@ export default function Dividendos() {
                 <p className="pt-1 text-[11px] text-amber-700 text-pretty dark:text-amber-500">
                   {tickersSemDataCompra.join(", ")} {tickersSemDataCompra.length === 1 ? "está" : "estão"} sem
                   data de compra cadastrada, então o app não consegue confirmar se você já tinha a
-                  posição nesses pagamentos. Preencher a data na Minha Carteira resolve para todos
-                  de uma vez.
+                  posição nesses pagamentos.{" "}
+                  {/* Link, e não instrução: a ação fica a um clique em vez de exigir que a
+                      pessoa lembre onde é e volte depois. */}
+                  <Link href="/carteira" className="underline underline-offset-2 hover:no-underline">
+                    Preencher em Minha Carteira
+                  </Link>{" "}
+                  resolve para todos de uma vez.
                 </p>
               )}
               <p className="pt-1 text-[10px] text-muted-foreground text-pretty">
