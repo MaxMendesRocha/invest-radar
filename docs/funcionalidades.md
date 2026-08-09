@@ -1,0 +1,479 @@
+# InvestRadar — documentação funcional
+
+O que a aplicação faz, com que dado, e por que ela acredita no que diz.
+
+Este documento cobre a **superfície funcional inteira**: cada motor determinístico, onde a IA
+entra, as dez telas e os limites conhecidos. Para os **prompts exatos** de cada ponto de IA,
+ver [`analises-ia.md`](./analises-ia.md), que é o complemento deste. Para decisões de
+arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../replit.md`](../replit.md).
+
+> **Este arquivo precisa ser atualizado junto com o comportamento que ele descreve.** Mudou um
+> limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
+> este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
+
+**Superfície atual:** 44 endpoints · 14 motores determinísticos · 5 pontos de IA · 10 telas · 4 fontes externas.
+
+---
+
+## Os três princípios
+
+Praticamente toda decisão de arquitetura sai de uma destas três regras. Elas não são
+aspiracionais — cada uma tem consequência concreta no código.
+
+**1. Dado que não existe não vira número.** Quando a fonte não tem a informação, a resposta é
+`null` e a tela diz "indisponível". Nunca uma estimativa disfarçada de medição.
+
+**2. A IA escreve o texto; ela nunca decide um número.** Score, status, nível de risco e
+classificação são todos determinísticos. A IA recebe os valores já calculados e redige a leitura
+em cima deles.
+
+**3. Antes de calibrar, medir.** Mudar um limiar exige congelar os fundamentos do universo em
+disco e rodar o motor velho e o novo sobre a mesma entrada.
+
+O terceiro princípio nasceu de um erro real. A escala de score original ia de 0 a 100 no papel,
+mas o universo inteiro cabia entre **43 e 74**, com 29% dos ativos empatados no mesmo número. Os
+status `COMPRAR` e `VENDER`-por-fundamento **nunca dispararam** na vida do aplicativo. Ninguém
+tinha percebido porque ninguém tinha medido.
+
+---
+
+## Como o dado atravessa a aplicação
+
+```mermaid
+flowchart LR
+  subgraph F["FONTES"]
+    F1["brapi.dev<br/>cotação · fundamentos · FII"]
+    F2["api.bcb.gov.br<br/>Selic · IPCA · IGP-M · CDI"]
+    F3["tesourotransparente<br/>PU diário dos títulos"]
+    F4["InfoMoney RSS<br/>manchetes por ativo"]
+  end
+
+  subgraph M["MOTORES — 100% determinístico"]
+    M1["Score · régua de FII<br/>Concentração · trim<br/>Alocação · aporte<br/>Perfil revelado<br/>Imposto · Tesouro<br/>Técnico · risco · DuPont<br/>Saúde financeira"]
+  end
+
+  subgraph I["IA — claude-haiku-4.5"]
+    I1["Parecer de ativo<br/>Diagnóstico da carteira<br/>Texto das oportunidades<br/>Impacto de notícia"]
+  end
+
+  subgraph T["TELAS"]
+    T1["Dashboard · Carteira · Radar<br/>Análise · Parecer<br/>Dividendos · Saúde<br/>Oportunidades"]
+  end
+
+  F --> M
+  M -- "números" --> I
+  I -- "só texto" --> T
+  M -- "números vão direto também" --> T
+```
+
+A seta que importa é a terceira: a IA recebe números prontos e devolve apenas prosa. Ela **não tem
+caminho de volta** para os motores.
+
+Se a chamada de IA falhar, expirar ou a chave não estiver configurada, a seta de baixo continua
+funcionando: as telas recebem os números e um texto determinístico de reserva. **Nenhuma tela
+depende da IA para existir.**
+
+---
+
+## De onde vem cada dado
+
+| Fonte | O que traz | Detalhe que importa |
+|---|---|---|
+| `brapi.dev` | Cotação, fundamentos, balanço e DRE, proventos, indicadores de FII, universo de tickers | O módulo pago `financialData` não expõe tudo; ROE, dívida/patrimônio e crescimento são **calculados** a partir do balanço e da DRE reais (padrão CVM) via os endpoints v2, não lidos prontos |
+| `api.bcb.gov.br` | Selic, IPCA, IGP-M, CDI, dólar | Séries oficiais do Banco Central. A Selic é a referência contra a qual o rendimento de FII é lido, e o CDI é a taxa livre de risco do Sharpe |
+| `tesourotransparente` | PU diário de todos os títulos do Tesouro Direto | Descoberto via CKAN — o endpoint JSON amplamente citado em tutoriais responde `410 Gone`. Ingestão incremental e de memória constante |
+| InfoMoney RSS | Manchetes recentes por ativo | Só título e link. A classificação de impacto é o único ponto em que a IA toca notícia |
+
+---
+
+## O Score do Radar
+
+A nota de 0–100 de cada ativo. Para ações sai de até oito indicadores fundamentalistas, mais
+tendência de 12 meses e volatilidade. A nota final é a média ponderada **apenas do que existe de
+verdade** para aquele ativo.
+
+| Indicador | Origem | Faixa boa |
+|---|---|---|
+| P/L | `defaultKeyStatistics` | ≤ 15 |
+| P/VP | `defaultKeyStatistics` | ≤ 1,0 |
+| ROE | calculado: lucro ÷ patrimônio | ≥ 15% |
+| Dívida / patrimônio | calculado: empréstimos ÷ patrimônio | ≤ 0,5 |
+| Margem líquida | `defaultKeyStatistics` | ≥ 15% |
+| Dividend yield | `defaultKeyStatistics` | ≥ 6% |
+| Crescimento de receita | calculado: DRE ano a ano | ≥ 5% |
+| Payout ratio | calculado: proventos 12m ÷ LPA | ≤ 60% |
+| Tendência 12 meses | variação de 52 semanas | ≥ +20% |
+| Volatilidade | beta | ≤ 0,7 |
+
+### Duas correções que mudaram tudo
+
+**Interpolação em vez de degraus.** As faixas antigas eram discretas — "P/L até 15 vale 90, de 15
+a 25 vale 65". Isso dava a mesma nota para um P/L de 8 e um de 15, e derrubava 25 pontos por um
+centavo de diferença. Hoje cada indicador interpola linearmente entre pontos de ancoragem que
+*mantêm* as notas antigas nos mesmos limites: a mudança deu resolução entre eles, sem redefinir o
+que é bom ou ruim.
+
+**O "neutro" que não era neutro.** Notícias e macro valem 20% cada na fórmula original, mas não
+têm fonte de dados. Entravam na média valendo um "60 neutro" — e 60 sobre 40% do peso total não é
+neutralidade, é um ímã puxando todo mundo para o mesmo ponto. Foi a maior causa da escala
+comprimida. Hoje ficam **fora** da média e os pesos restantes são renormalizados, mesmo critério
+que os fundamentos já usavam para indicador ausente.
+
+### Faixas de classificação
+
+Calibradas sobre a distribuição real, não sobre números redondos escolhidos no papel.
+
+| Faixa | Score | Ações do universo |
+|---|---|---|
+| Excelente | ≥ 88 | 6% |
+| Forte | 82 – 87 | 12% |
+| Estável | 65 – 81 | 67% |
+| Atenção | 45 – 64 | 12% |
+| Crítico | < 45 | 2% |
+
+### O piso de evidência
+
+Um ativo só recebe veredito com **pelo menos três indicadores reais**. A razão é concreta: os BDRs
+chegam apenas com P/L, e o P/L que o provedor devolve para eles vem corrompido pela razão de
+conversão do recibo — TSMC34 com P/L de 149.050, MSCD34 com 954, LILY34 com 2,6. Sem o piso, isso
+produzia "Excelente / Comprar" e "Crítico / Vender" a partir de um número que não descreve a
+empresa. Abaixo do piso a resposta é "dados insuficientes", que é a verdade.
+
+O piso exclui os 25 BDRs e 7 ações de cobertura mínima. **Não toca nenhuma das 74 ações com
+cobertura real**, que têm em média 6,9 indicadores cada.
+
+---
+
+## A régua de FII, que é outra régua
+
+Fundo imobiliário não pode ser medido pela régua de ação, e isso foi **medido, não suposto**. A
+curva de ação trata dividend yield ≥ 6% como "acima da média do mercado" — quando a **mediana** dos
+45 FIIs do universo é 12%. E trata P/VP ≤ 1 como desconto, quando a mediana do FII é 0,88.
+
+O efeito era todos os FIIs espremidos entre 90 e 92, com apenas três valores distintos — e o
+HCTR11, um fundo de papel cotado a 0,16 do valor patrimonial e com distribuição em queda, empatado
+no topo com o HGLG11.
+
+### As quatro dimensões — três delas sobre a distribuição
+
+| Dimensão | Peso | Por que assim |
+|---|---|---|
+| Rendimento contra a **Selic líquida de IR** | 35% | Rendimento de FII é isento para PF; renda fixa não é. Comparar com a Selic cheia compararia líquido com bruto. Com a Selic a 14%, a referência justa é 11,9% |
+| P/VP com curva de FII | 25% | Sobe até o desconto saudável (0,85–0,95) e cai *dos dois lados*. Em FII o valor patrimonial é laudo reavaliado — cota a uma fração dele é o mercado discordando do laudo, não pechincha |
+| Regularidade dos pagamentos | 20% | Em quantos dos últimos 12 meses o fundo efetivamente distribuiu |
+| Direção da distribuição | 20% | Últimos 6 meses contra os 6 anteriores. A janela de 12 meses não serve: o provedor cobre ~12 meses de histórico de FII, então uma comparação ano a ano responderia `null` para 40 dos 45 fundos |
+
+### O guard de armadilha de yield
+
+Quando a cota está muito descontada **e** a distribuição está encolhendo, o yield alto não é
+mérito — é aritmética de preço caindo mais rápido que o rendimento. Uma média ponderada pura não
+sabe expressar isso: ela somaria a nota alta do yield junto com a nota baixa do P/VP e o fundo
+problemático sairia no meio da tabela. O motor detecta a combinação, tira o yield da conta de
+méritos e diz o risco com todas as letras.
+
+### O efeito, nos casos que motivaram a régua
+
+| Fundo | Perfil | Antes | Depois | Leitura |
+|---|---|---|---|---|
+| MCRE11 | híbrido | 71 | 84 | Forte |
+| MXRF11 | papel | 66 | 76 | Estável |
+| HGLG11 | tijolo | 71 | 69 | Estável — rende 9,0%, abaixo da Selic líquida |
+| HCTR11 | papel | 71 | 57 | Atenção — armadilha de yield detectada |
+| TGAR11 | híbrido | 71 | 57 | Atenção — distribuição −28% no semestre |
+| CPOF11 | híbrido | 66 | 42 | Crítico — pagou em 8 dos 12 meses |
+
+A queda do HGLG11 é honesta e vale explicar: não é um fundo ruim, é que com a Selic a 14% a renda
+fixa paga mais que os 9,0% dele. A aplicação passou a dizer isso em vez de esconder atrás de uma
+nota alta.
+
+---
+
+## Status: dois "Vender" que pedem coisas opostas
+
+O badge de cada ativo cruza a nota com **quanto do patrimônio já está nele**. Score alto não é
+sinal de compra: um ativo ótimo que já é metade da carteira não deve receber "Comprar" —
+reforçá-lo aumenta o risco em vez de reduzir.
+
+**VENDER por fundamento** (`score < 45`) — o argumento é sobre o **ativo**. Não existe quantidade
+certa a vender: quanto reduzir de um papel cuja tese piorou depende de convicção, prazo e imposto,
+que a aplicação não tem como decidir por ninguém.
+
+**REDUZIR por concentração** (posição acima do limite crítico do perfil) — o argumento é sobre o
+**tamanho**, e o ativo pode ser ótimo. Aqui existe resposta aritmética: a aplicação calcula quanto
+vender em reais e em cotas para voltar à faixa saudável, e estima o imposto sobre essa fatia.
+
+| Perfil | Atenção | Crítico |
+|---|---|---|
+| Conservador | 15% | 25% |
+| Moderado | 25% | 40% |
+| Arrojado | 30% | 50% |
+
+Quando as duas condições disparam juntas, as duas são ditas: reduzir a posição não conserta
+fundamento ruim, e reavaliar a tese não conserta concentração.
+
+---
+
+## Política de alocação e aporte direcionado
+
+Você define — ou herda do perfil — uma política de percentuais por classe. A aplicação compara com
+a carteira real e responde onde colocar o **próximo aporte**.
+
+| Perfil | Renda fixa | Ações | FIIs | ETFs |
+|---|---|---|---|---|
+| Conservador | 80% | 10% | 6% | 4% |
+| Moderado | 60% | 20% | 12% | 8% |
+| Arrojado | 30% | 35% | 21% | 14% |
+
+O percentual de renda fixa segue praxe consagrada. A divisão da parte variável (50/30/20) **não
+é** — não existe consenso comparável — e o código diz isso explicitamente, para que ninguém
+confunda convenção com lei.
+
+O algoritmo é *water-filling*: dado um valor de aporte, calcula o déficit de cada classe frente ao
+alvo e preenche primeiro as mais defasadas, até nivelar. A consequência prática é que a sugestão
+**nunca manda vender** para rebalancear — ela só direciona dinheiro novo, que é a forma de
+rebalancear sem gerar imposto nem custo de corretagem.
+
+Fatias abaixo de um piso são absorvidas pelas demais: sugerir aplicar oito reais em uma classe
+seria ruído, não orientação. O piso é R$ 50 — ou 10% do aporte, quando o aporte é pequeno demais
+para que R$ 50 faça sentido como fatia mínima.
+
+---
+
+## Perfil declarado contra perfil revelado
+
+O questionário mede o que você *diz*. A aplicação tem algo que nenhum questionário entrega: a sua
+alocação de fato. As duas leituras convivem, e a divergência entre elas é o dado mais interessante.
+
+**Declarado** — separa **capacidade** (horizonte 35%, reserva de emergência 25%, necessidade de
+liquidez 20%) de **tolerância** (reação a perda, objetivo, experiência), como a literatura de
+suitability trata. A régua anterior somava cinco respostas de peso igual, o que permitia que
+restrições absolutas fossem diluídas: quem respondia horizonte curto, tolerância baixa e precisa de
+liquidez, mas também "crescimento" e "avançado", saía como Moderado — três sinais de Conservador
+anulados por dois que não medem risco.
+
+**Revelado** — calculado sobre a alocação de verdade: peso em renda variável, concentração no maior
+ativo, beta médio ponderado. Quem se declara Moderado mas tem 44% do patrimônio em um único ativo
+cíclico **está operando como Arrojado**. Se faltar preço ou beta para um ativo, o fator sai da
+conta em vez de ser estimado.
+
+---
+
+## As camadas de leitura por ativo
+
+Além do score, cada ativo carrega seis análises independentes. **Nenhuma delas entra na nota** —
+são leituras paralelas, para não contar o mesmo fundamento duas vezes.
+
+| Camada | Fonte | O que entrega | Quando falta dado |
+|---|---|---|---|
+| **Análise técnica** | séries diárias reais | SMA 20/50/200, RSI 14, MACD com sinal e histograma, Bandas de Bollinger com posição do preço. Detecta cruzamento dourado e da morte | SMA 200 exige 200 candles; ticker novo devolve `null`, nunca média estimada |
+| **Risco ajustado** | retornos diários · CDI real | Retorno anualizado, volatilidade, desvio de downside, Sharpe, Sortino e Treynor. A taxa livre de risco é o CDI acumulado do mesmo período, não uma constante | Sortino `null` sem retorno negativo; Treynor `null` sem beta |
+| **Decomposição DuPont** | balanço + DRE, 6 insumos | Abre o ROE em carga tributária, carga de juros, margem EBIT, giro de ativos e alavancagem, e aponta qual domina | Só calcula com os seis insumos presentes; nunca parcial |
+| **Saúde financeira** | módulo `financialData` | Cobertura do dividendo pelo caixa livre, conversão de lucro em caixa, liquidez corrente, margem EBITDA, dívida líquida/EBITDA | Para bancos e seguradoras o balanço é estruturalmente diferente; o motor sinaliza isso no texto para a IA não ler como empresa comum |
+| **Prêmio de dividendo** | yield × mediana do grupo | Ordena ativos entre si para "onde vai o próximo aporte". Yield puro premiaria armadilha; Gordon não se sustenta com 12 meses de histórico | — |
+| **Benchmark setorial** | mediana do setor, amostra ≥ 3 | Compara P/L, P/VP, ROE, yield e margem contra a **mediana** — não a média. Com amostra pequena um extremo distorce | Setor com menos de 3 ativos fica fora da tabela |
+
+---
+
+## Imposto de renda sobre ganho de capital
+
+Implementa a Lei 11.033/2004 e a IN RFB 1.585/2015. É lei tributária real, não heurística da
+aplicação — e o código marca isso, para que uma mudança da Receita seja tratada como atualização
+normativa e não como ajuste de fórmula.
+
+| Classe | Alíquota | Isenção |
+|---|---|---|
+| Ações (operação comum) | 15% | Isento se o total vendido no mês ficar em até R$ 20.000 |
+| FIIs | 20% | Sem isenção sobre ganho de capital |
+| ETFs | 15% | Sem isenção |
+| BDRs | 15% | Sem isenção |
+
+Duas contas diferentes: uma **estimativa por venda**, que aparece junto da sugestão de redução para
+você saber o custo antes de decidir; e uma **consolidação mensal**, que aplica compensação de
+prejuízo — e essa precisa respeitar a ordem cronológica, porque prejuízo só compensa para frente.
+
+---
+
+## Tesouro Direto marcado a mercado
+
+Títulos públicos não são cadastrados como texto livre. A aplicação identifica o título pelo par
+**tipo + vencimento**, deriva um ticker canônico e marca a posição a mercado com o PU diário
+oficial.
+
+- **PU de venda, não de compra.** A marcação usa o preço de resgate, que é o que você receberia
+  hoje. A diferença não é acadêmica: no IPCA+ 2050 o spread chegou a 2,66%.
+- **Preenchimento automático.** Informando data da compra e valor investido, a aplicação busca o PU
+  daquele dia e calcula a quantidade — inclusive fracionária.
+- **Sugestão por objetivo.** Quem precisa de liquidez ou não tem reserva de emergência recebe
+  Tesouro Selic, porque é o único cujo resgate antecipado não sofre marcação a mercado.
+
+---
+
+## Meta de renda passiva
+
+Você define quanto quer receber por mês. A aplicação calcula quanto falta de capital e qual aporte
+mensal chega lá — tudo em cima de dado real: a renda projetada vem dos proventos *efetivamente
+pagos* nos últimos 12 meses, e o yield usado para dimensionar o capital faltante é o da sua própria
+carteira, não uma taxa de referência.
+
+O cálculo é feito **sem** reinvestimento dos proventos. Reinvestir acelera bastante o percurso, mas
+projetar isso exigiria assumir que o yield atual se mantém por todo o período — e o erro cairia do
+lado otimista, dizendo que basta menos do que de fato basta. A escolha é errar para o lado seguro.
+
+---
+
+## Onde a IA entra — e o que ela não decide
+
+Cinco pontos, todos em `claude-haiku-4-5-20251001`. Os prompts exatos estão em
+[`analises-ia.md`](./analises-ia.md).
+
+| Ponto | Recebe | Devolve | Decide |
+|---|---|---|---|
+| **Parecer de ativo** | Score, positivos, riscos, notícias, macro, imposto, concentração, técnico, DuPont, saúde financeira | 2–6 frases de leitura cruzada | **nada** |
+| **Parecer pré-compra** | O mesmo conjunto, sem posição | 2–6 frases | **nada** |
+| **Diagnóstico da carteira** | Score de saúde e as 5 dimensões, composição, macro | 3–6 frases interpretando sem repetir os números | **nada** |
+| **Texto das oportunidades** | Score, fundamentos, segmento do FII | Motivo, positivos, riscos, horizonte | **nada** |
+| **Impacto de notícia** | A manchete | Positivo / neutro / negativo | só o rótulo |
+
+### As três defesas
+
+1. **O prompt proíbe explicitamente** inventar dado fora da lista recebida e propor score
+   diferente do calculado.
+2. **A saída estruturada é validada antes de ser usada.** No texto das oportunidades, o JSON passa
+   por checagem de tipo campo a campo — qualquer falha cai no texto determinístico do motor, sem
+   quebrar o processamento.
+3. **Sem chave de API, nada quebra.** Todas as funções retornam `null` e as telas usam o texto
+   determinístico. A ausência da IA degrada a prosa, não a função.
+
+O enum de nível de risco é o exemplo mais claro da separação: é derivado do beta real por
+comparação numérica direta. A IA escreve o texto *em volta* dele, mas nunca o escolhe.
+
+---
+
+## As dez telas, e a pergunta que cada uma responde
+
+| Tela | A pergunta | O que mostra |
+|---|---|---|
+| **Dashboard** | Como estou, no geral? | Patrimônio, rentabilidade, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks |
+| **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático |
+| **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
+| **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
+| **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Análise completa de qualquer ticker, sem exigir posição. Range de 52 semanas, tendência de proventos, comparação setorial |
+| **Oportunidades** | O que existe lá fora? | Universo varrido semanalmente, reordenado pelo nível de risco compatível com o perfil |
+| **Dividendos** | Quanto recebo, e caminho para a meta? | Total acumulado, yield on cost, histórico de 12 meses, proventos anunciados, progresso da meta |
+| **Operações Encerradas** | Quanto ganhei, e quanto devo? | Vendas com resultado realizado e consolidação mensal de IR com compensação de prejuízo |
+| **Saúde do Portfólio** | A estrutura está boa? | Score em cinco pilares — diversificação 25%, concentração 25%, risco 20%, dividendos 15%, crescimento 15% — mais diagnóstico da IA |
+| **Configurações** | Quem sou eu como investidor? | Questionário de perfil, leitura do perfil revelado, política de alocação |
+
+---
+
+## O que acontece sozinho
+
+Dois trabalhos rodam sem intervenção, agendados por um scheduler dentro do próprio processo. O
+estado da última execução fica **no banco, não em memória** — é o que permite o serviço reiniciar
+sem redisparar o trabalho nem pular um ciclo.
+
+**Regeneração de oportunidades** (a cada 7 dias) — varre o universo ao vivo (top 80 ações, 50 FIIs,
+15 ETFs, 25 BDRs por valor de mercado), calcula o score com o motor apropriado e substitui a tabela
+inteira em transação, para não existir a janela em que a tela fica vazia. Universo vazio significa
+provedor fora do ar: nesse caso aborta sem tocar na tabela, mantendo a última rodada boa.
+
+**Sincronização do Tesouro** (diária) — ingere o arquivo oficial de PU. Na primeira execução carrega
+o histórico completo; depois, apenas o incremento a partir da última data conhecida.
+
+> **Ao limpar `opportunities` manualmente, zere também a linha correspondente em `job_runs`.** O
+> scheduler decide se roda consultando `last_run_at`, e com o gap de uma semana a tela fica vazia
+> por dias se o registro não for zerado junto.
+
+---
+
+## O que acontece quando o dado falta
+
+O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso virou requisito.
+
+- **Última cotação conhecida.** Cada ticker tem a última cotação real guardada. Sem cotação ao
+  vivo, a tela usa o valor guardado e *diz de quando ele é* — nunca apresenta preço velho como se
+  fosse de agora. Acima de 30 dias, descarta.
+- **Alertas de preço não usam o histórico.** São deliberadamente só ao vivo: um alerta de
+  rompimento disparado por cotação parada seria pior que alerta nenhum.
+- **Falha de um ticker não contamina os outros.** A busca é em lote com tratamento por item.
+- **Renda fixa nunca entra no aviso de cotação indisponível**, porque não tem cotação de bolsa.
+
+---
+
+## Limites conhecidos
+
+Esta seção existe pelo mesmo motivo que o resto: uma documentação que só lista virtudes não serve
+para decidir nada.
+
+- **BDRs não recebem veredito.** O único indicador que o provedor entrega é o P/L, corrompido pela
+  razão de conversão do recibo. Melhor "dados insuficientes" que uma nota sobre número quebrado.
+- **ETFs não têm caminho de avaliação.** Um ETF não tem fundamentos próprios — tem a carteira que
+  replica. Avaliar exigiria olhar através do índice. Aparecem na carteira e na alocação, sem análise.
+- **Notícias e macro não entram no score.** Valem 20% cada na fórmula original, mas não há fonte
+  estruturada. Ficam fora da média; o peso é redistribuído entre o que existe.
+- **Correlação entre ativos não é calculada.** A diversificação é medida por dispersão entre setores
+  e tickers; duas ações do mesmo setor que andam juntas contam como diversificação. Calcular
+  correlação real é possível com as séries já em cache — próximo passo natural.
+- **Retorno potencial é heurística.** Não há fonte de preço-alvo de analista no plano atual. O
+  número combina score e yield reais, documentado como estimativa interna, não previsão.
+- **Posições antigas em Tesouro** cadastradas antes da identificação por tipo + vencimento
+  continuam sem marcação a mercado. Casar texto livre com um título real seria adivinhação.
+
+---
+
+## O estado medido
+
+Números da varredura real em produção de **08/08/2026**, não de ambiente de teste.
+
+| Classe | Aprovados | Menor | Maior | Média |
+|---|---|---|---|---|
+| Ações | 63 | 65 | 89 | 76,0 |
+| FIIs | 36 | 66 | 84 | 76,7 |
+
+- 171 tickers no universo varrido, 99 aprovados na triagem
+- 18 notas distintas entre 36 FIIs (eram **3 entre 45**)
+- 0 BDRs com veredito publicado (piso de evidência ativo)
+
+As duas réguas são independentes — indicadores diferentes, curvas diferentes, pesos diferentes — e
+ainda assim caem quase na mesma distribuição, com mediana 75 e terceiro quartil 81 nas duas. É o
+que permite dizer que um FII "Forte" e uma ação "Forte" significam aproximadamente a mesma coisa.
+
+Antes da recalibragem esta tabela teria uma única linha útil: **150 ativos, todos `MANTER`**. Hoje
+são 17 `COMPRAR`, 4 `VENDER`, 99 `MANTER` e 30 sem análise por falta de evidência — que também é
+uma resposta.
+
+---
+
+## Manutenção deste documento
+
+Este arquivo descreve comportamento, não intenção. Ele envelhece mal e em silêncio: nada quebra
+quando ele fica desatualizado, e por isso a checagem precisa ser deliberada.
+
+**Atualizar sempre que mudar:**
+
+| Mudança | Seções afetadas |
+|---|---|
+| Limiar, peso ou curva de indicador | "O Score do Radar", "A régua de FII", "O estado medido" |
+| Faixas de classificação ou de status | "Faixas de classificação", "Status" |
+| Nova fonte de dado, ou fonte que mudou de endpoint | "De onde vem cada dado", diagrama de fluxo |
+| Novo motor, ou motor removido | "Superfície atual" (contagem), seção do motor, diagrama |
+| Novo ponto de IA, ou mudança no que ele recebe/devolve | "Onde a IA entra" **e** [`analises-ia.md`](./analises-ia.md) |
+| Nova tela, ou tela que mudou de propósito | "As dez telas", "Superfície atual" |
+| Novo endpoint | "Superfície atual" (contagem) |
+| Limitação resolvida | "Limites conhecidos" — remover o item e dizer onde passou a ser tratado |
+| Nova varredura de produção com números diferentes | "O estado medido" (incluindo a data) |
+
+**Como conferir as contagens sem chutar:**
+
+```bash
+# endpoints
+grep -rhoE 'router\.(get|post|put|patch|delete)\("' artifacts/api-server/src/routes/ | wc -l
+# motores determinísticos
+ls artifacts/api-server/src/lib/*-engine.ts | wc -l
+# telas (descontar login, register e not-found)
+ls artifacts/carteira/src/pages/*.tsx | wc -l
+```
+
+**Versão publicada.** Existe uma versão em página deste documento, com o mesmo conteúdo:
+<https://claude.ai/code/artifact/8926c993-f15c-421b-81b3-11099ef826f3> — ao atualizar este arquivo,
+republicar aquela URL também, para que as duas não divirjam.

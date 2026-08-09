@@ -2,6 +2,22 @@
 
 Agente de gestão de carteira de investimentos: monitora ativos (ações, FIIs, ETFs, BDRs, fundos, renda fixa), gera score/análise por ativo, alertas do "Radar Inteligente" e oportunidades, com base no prompt em `attached_assets/Prompt_Agente_Gestao_Carteira_Investimentos_*.md`.
 
+## Documentação — MANTER ATUALIZADA
+
+Três documentos, com papéis distintos. **Alterar comportamento sem atualizar o documento
+correspondente deixa a tarefa incompleta** — nada quebra quando eles ficam desatualizados, e é
+justamente por isso que a checagem precisa ser deliberada, não oportunista.
+
+| Arquivo | Cobre | Atualizar quando |
+|---|---|---|
+| `docs/funcionalidades.md` | Superfície funcional inteira: cada motor, cada fonte, as telas, os limites conhecidos, os números medidos | Mudou limiar, peso, curva, faixa, fonte de dado, motor, tela, endpoint, ou uma limitação foi resolvida. Ele tem uma seção "Manutenção deste documento" com a tabela de gatilhos e os comandos para reconferir as contagens sem chutar |
+| `docs/analises-ia.md` | Os prompts internos exatos de cada ponto de IA | Mudou prompt, modelo, insumo enviado ou formato de saída de qualquer chamada à Anthropic |
+| `replit.md` (este) | Decisões de arquitetura, gotchas, memória operacional | Mudou algo que faria a próxima pessoa tropeçar do mesmo jeito que alguém já tropeçou |
+
+`docs/funcionalidades.md` também existe como página publicada em
+<https://claude.ai/code/artifact/8926c993-f15c-421b-81b3-11099ef826f3>. Ao editar o markdown,
+republicar aquela URL (passando-a como `url` na ferramenta Artifact) para as duas não divergirem.
+
 ## Run & Operate
 
 Local (fora do Replit):
