@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
-import { Plus, Trash2, Coins, ArrowUpRight, CalendarClock, TrendingUp, Inbox } from "lucide-react";
+import { Plus, Trash2, Coins, ArrowUpRight, CalendarClock, TrendingUp, Inbox, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { IncomeGoalCard } from "@/components/income-goal-card";
 import { categoryLabel } from "@/lib/categories";
@@ -50,6 +50,8 @@ function formatProjectionMonth(month: string): string {
  * servidor (distribution-quality-engine) — aqui só se decide como mostrar, para a tela
  * não reconstruir a regra e as duas versões divergirem com o tempo.
  */
+const AUTO_EXPAND_LIMIT = 5;
+
 const QUALITY_PRESENTATION: Record<string, { label: string; className: string }> = {
   Consistente: { label: "Consistente", className: "border-emerald-600/60 text-emerald-700 dark:text-emerald-500" },
   Atencao: { label: "Atenção", className: "border-amber-500/60 text-amber-700 dark:text-amber-500" },
@@ -79,6 +81,45 @@ export default function Dividendos() {
 
   // Tickers sem data de compra cadastrada. A ressalva é do ATIVO, não do pagamento —
   // repeti-la em cada linha enchia o card com a mesma frase dezenas de vezes.
+  /**
+   * Proventos pendentes agrupados por ativo, do mais recente para o mais antigo dentro
+   * de cada grupo, e os grupos ordenados pelo total — quem tem mais dinheiro parado
+   * aparece primeiro.
+   */
+  const pendingByTicker = useMemo(() => {
+    type PendingItem = NonNullable<typeof pendingDividends>[number];
+    const groups = new Map<string, { ticker: string; items: PendingItem[]; total: number; hasUncertain: boolean }>();
+    for (const d of pendingDividends ?? []) {
+      let g = groups.get(d.ticker);
+      if (!g) {
+        g = { ticker: d.ticker, items: [], total: 0, hasUncertain: false };
+        groups.set(d.ticker, g);
+      }
+      g.items.push(d);
+      g.total += d.suggestedAmount;
+      if (d.certainty === "incerto") g.hasUncertain = true;
+    }
+    return Array.from(groups.values()).sort((a, b) => b.total - a.total);
+  }, [pendingDividends]);
+
+  const totalPending = pendingDividends?.length ?? 0;
+  const totalPendingAmount = (pendingDividends ?? []).reduce((sum, d) => sum + d.suggestedAmount, 0);
+
+  /**
+   * Com poucos itens, colapsar só acrescenta um clique — o normal do dia a dia é ter
+   * um ou dois proventos do mês. Com um acúmulo de meses, o mesmo layout aberto vira
+   * uma rolagem sem fim. Por isso o padrão segue o tamanho da lista.
+   */
+  const [expandedTickers, setExpandedTickers] = useState<Set<string> | null>(null);
+  const effectiveExpanded = expandedTickers ??
+    (totalPending <= AUTO_EXPAND_LIMIT ? new Set(pendingByTicker.map((g) => g.ticker)) : new Set<string>());
+  const toggleTicker = (ticker: string) => {
+    const next = new Set(effectiveExpanded);
+    if (next.has(ticker)) next.delete(ticker);
+    else next.add(ticker);
+    setExpandedTickers(next);
+  };
+
   const tickersSemDataCompra = useMemo(() => {
     const set = new Set<string>();
     for (const d of pendingDividends ?? []) {
@@ -380,49 +421,78 @@ export default function Dividendos() {
               Proventos a registrar
             </CardTitle>
             <CardDescription className="text-pretty">
-              Estes proventos já foram pagos pelos seus ativos e ainda não têm lançamento.
-              Registrar é o que faz o total acumulado e o histórico saírem do zero — o app
-              não lança nada sozinho porque isso entra no seu cálculo de IR.
+              <strong className="font-mono text-foreground">{formatCurrency(totalPendingAmount)}</strong> em{" "}
+              {totalPending} {totalPending === 1 ? "provento já pago" : "proventos já pagos"} pelos seus
+              ativos, ainda sem lançamento. Registrar é o que faz o total acumulado e o histórico
+              saírem do zero — o app não lança nada sozinho porque isso entra no seu cálculo de IR.
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {/* Agrupado por ATIVO, não linha a linha. A lista cresce com meses de
+                histórico, não com número de ativos: uma carteira de 4 ativos com 12
+                meses de proventos nunca lançados vira ~23 linhas de largura inteira,
+                uma rolagem que não termina. Agrupado são 4 blocos, e o número de
+                blocos é o número de ativos — que é o que o usuário tem na cabeça. */}
             <div className="space-y-2">
-              {pendingDividends.map((d) => {
-                const key = `${d.ticker}-${d.paymentDate}`;
+              {pendingByTicker.map((group) => {
+                const isOpen = effectiveExpanded.has(group.ticker);
                 return (
-                  <div
-                    key={key}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/50 px-3 py-2 text-sm"
-                  >
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="shrink-0 font-bold">{d.ticker}</span>
-                      <span className="shrink-0 text-muted-foreground">{d.label}</span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {new Date(d.paymentDate).toLocaleDateString("pt-BR")}
+                  <div key={group.ticker} className="rounded-md border border-border/50">
+                    <button
+                      type="button"
+                      onClick={() => toggleTicker(group.ticker)}
+                      aria-expanded={isOpen}
+                      className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted/40"
+                    >
+                      <span className="flex min-w-0 flex-wrap items-center gap-2">
+                        <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                        <span className="font-bold">{group.ticker}</span>
+                        <span className="text-muted-foreground">
+                          {group.items.length} {group.items.length === 1 ? "provento" : "proventos"}
+                        </span>
+                        {group.hasUncertain && (
+                          <Badge variant="outline" className="shrink-0 border-amber-500/60 text-amber-700 dark:text-amber-500">
+                            Confira
+                          </Badge>
+                        )}
                       </span>
-                      {d.certainty === "incerto" && (
-                        <Badge variant="outline" className="shrink-0 border-amber-500/60 text-amber-700 dark:text-amber-500">
-                          Confira
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      <span className="font-mono font-medium text-primary">
-                        {formatCurrency(d.suggestedAmount)}
+                      <span className="shrink-0 font-mono font-medium text-primary">
+                        {formatCurrency(group.total)}
                       </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={registeringKey === key}
-                        onClick={() => handleRegisterPending(d)}
-                      >
-                        {registeringKey === key ? "Registrando..." : "Registrar"}
-                      </Button>
-                    </div>
-                    {d.uncertaintyKind === "compra_proxima" && d.uncertaintyReason && (
-                      <p className="w-full text-[11px] text-amber-700 text-pretty dark:text-amber-500">
-                        {d.uncertaintyReason}
-                      </p>
+                    </button>
+
+                    {isOpen && (
+                      <div className="space-y-1 border-t border-border/50 px-3 py-2">
+                        {group.items.map((d) => {
+                          const key = `${d.ticker}-${d.paymentDate}-${d.label}`;
+                          return (
+                            <div key={key} className="flex flex-wrap items-center justify-between gap-2 py-1 text-sm">
+                              <span className="flex min-w-0 flex-wrap items-center gap-2">
+                                <span className="text-muted-foreground">
+                                  {new Date(d.paymentDate).toLocaleDateString("pt-BR")}
+                                </span>
+                                <span className="text-xs text-muted-foreground">{d.label}</span>
+                              </span>
+                              <span className="flex shrink-0 items-center gap-3">
+                                <span className="font-mono">{formatCurrency(d.suggestedAmount)}</span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={registeringKey === key}
+                                  onClick={() => handleRegisterPending(d)}
+                                >
+                                  {registeringKey === key ? "..." : "Registrar"}
+                                </Button>
+                              </span>
+                              {d.uncertaintyKind === "compra_proxima" && d.uncertaintyReason && (
+                                <p className="w-full text-[11px] text-amber-700 text-pretty dark:text-amber-500">
+                                  {d.uncertaintyReason}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 );
