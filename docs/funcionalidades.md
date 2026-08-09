@@ -401,9 +401,11 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
 - **Provento pago não vira lançamento sozinho.** O app sabe quais proventos os seus ativos
   pagaram (histórico real do provedor) e lista os que ainda não têm lançamento em "Proventos a
   registrar", com valor e data prontos — mas quem confirma é você, porque é registro financeiro
-  seu e entra no cálculo de IR. O provedor **não entrega data-com**, então o direito é inferido
-  da data de compra do ativo: compra posterior ao pagamento exclui o item; compra próxima demais,
-  ou ativo sem data cadastrada, aparece marcado como "confira" em vez de ser escondido.
+  seu e entra no cálculo de IR. O direito ao provento é **determinado pela data-com**
+  (`lastDatePrior` da brapi, presente nos dois endpoints com cobertura de 100% na amostra
+  medida): comprou até a data-com, recebeu; comprou depois, não, e o item nem aparece. Sobra
+  incerteza só para ativo sem data de compra cadastrada, e aí o item é mostrado marcado em vez
+  de escondido.
 - **Os gráficos de histórico só plotam o que foi medido.** A evolução patrimonial devolve
   um ponto por mês com snapshot real, mais o mês corrente (que é medição: posições de hoje
   pelas cotações de hoje). Meses anteriores ao primeiro acesso não são estimados — a tela

@@ -472,6 +472,14 @@ export default function Dividendos() {
                                   {new Date(d.paymentDate).toLocaleDateString("pt-BR")}
                                 </span>
                                 <span className="text-xs text-muted-foreground">{d.label}</span>
+                                {/* A data-com é o que decide o direito ao provento — quem
+                                    comprou até ela recebe. Mostrar ajuda a conferir os
+                                    casos marcados, e é o dado que faltava antes. */}
+                                {d.exDate && (
+                                  <span className="text-[11px] text-muted-foreground">
+                                    data-com {new Date(d.exDate).toLocaleDateString("pt-BR")}
+                                  </span>
+                                )}
                               </span>
                               <span className="flex shrink-0 items-center gap-3">
                                 <span className="font-mono">{formatCurrency(d.suggestedAmount)}</span>

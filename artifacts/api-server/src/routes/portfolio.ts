@@ -362,18 +362,14 @@ router.get("/portfolio/dividends/upcoming", requireAuth, async (req, res): Promi
 const PENDING_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
 
 /**
- * Quantos dias antes do pagamento a compra precisa ter ocorrido para o direito ao
- * provento ser inequívoco.
+ * Folga usada SÓ quando o evento vem sem data-com — situação que não apareceu em
+ * nenhum dos 1.100 eventos medidos, mas o campo é nullable no contrato.
  *
- * O provider NÃO entrega data-com (ex-date) — o DividendEvent tem paymentDate, rate,
- * label e approvedOn, e só. Sem ela não há como afirmar que a posição existia na data
- * que dá direito. O que dá para usar é a data de compra do ativo, que é uma checagem
- * mais grosseira: comprou depois do pagamento, certamente não recebeu; comprou muito
- * antes, certamente recebeu; no meio, é ambíguo.
- *
- * 45 dias cobre com folga a distância usual entre data-com e pagamento nos dois
- * regimes: ação costuma pagar semanas depois da aprovação em ata, e FII tem data-com
- * no último pregão do mês com pagamento por volta da metade do mês seguinte.
+ * Este número já foi o critério principal, por eu ter afirmado que o provider não
+ * entregava data-com. Entrega: é o `lastDatePrior`, presente nos dois endpoints
+ * (ações e FII) com cobertura de 100% na amostra. E a folga estava errada no sentido
+ * perigoso — PETR4 paga até 112 dias depois da data-com, então quem comprasse 60 dias
+ * antes do pagamento era marcado como "confirmado" sem ter direito nenhum.
  */
 const EX_DATE_UNCERTAINTY_MS = 45 * 24 * 60 * 60 * 1000;
 
@@ -421,6 +417,8 @@ router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promis
     paymentDate: string;
     label: string;
     rate: number;
+    /** Data-com: último pregão com direito ao provento. */
+    exDate: string | null;
     quantity: number;
     suggestedAmount: number;
     certainty: "confirmado" | "incerto";
@@ -449,10 +447,15 @@ router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promis
         registeredCount.set(key, alreadyRegistered - 1);
         continue;
       }
-      // Comprou depois do pagamento: não havia posição, não há o que registrar. Este é
-      // o único caso descartado — nos demais o usuário decide, porque esconder um
-      // provento legítimo custa mais que mostrar um duvidoso sinalizado.
-      if (purchasedAt != null && purchasedAt > paidAt) continue;
+      const exDateAt = event.lastDatePrior ? new Date(event.lastDatePrior).getTime() : null;
+
+      // Com data-com e data de compra, o direito é DETERMINADO, não inferido: quem
+      // comprou até a data-com recebe, quem comprou depois não. Descartar aqui é
+      // certeza, não suposição.
+      if (purchasedAt != null && exDateAt != null && purchasedAt > exDateAt) continue;
+      // Sem data-com, sobra a checagem grosseira: comprar depois do próprio pagamento
+      // é impossível ter direito em qualquer regime.
+      if (purchasedAt != null && exDateAt == null && purchasedAt > paidAt) continue;
 
       let certainty: "confirmado" | "incerto" = "confirmado";
       let uncertaintyKind: "sem_data_compra" | "compra_proxima" | null = null;
@@ -461,11 +464,12 @@ router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promis
         certainty = "incerto";
         uncertaintyKind = "sem_data_compra";
         uncertaintyReason = null; // agregado por ticker na tela, não repetido por linha
-      } else if (paidAt - purchasedAt < EX_DATE_UNCERTAINTY_MS) {
+      } else if (exDateAt == null && paidAt - purchasedAt < EX_DATE_UNCERTAINTY_MS) {
+        // Só cai aqui evento sem data-com. Com ela, o caso acima já resolveu.
         const days = Math.max(0, Math.round((paidAt - purchasedAt) / (24 * 60 * 60 * 1000)));
         certainty = "incerto";
         uncertaintyKind = "compra_proxima";
-        uncertaintyReason = `Comprado ${days} ${days === 1 ? "dia" : "dias"} antes do pagamento — confira se tinha direito na data-com.`;
+        uncertaintyReason = `Comprado ${days} ${days === 1 ? "dia" : "dias"} antes do pagamento, e o provedor não informou a data-com deste provento.`;
       }
 
       pending.push({
@@ -473,6 +477,7 @@ router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promis
         paymentDate: event.paymentDate,
         label: event.label,
         rate: event.rate,
+        exDate: event.lastDatePrior,
         quantity: qty,
         suggestedAmount: Math.round(event.rate * qty * 100) / 100,
         certainty,

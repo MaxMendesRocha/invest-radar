@@ -646,6 +646,7 @@ export const GetPortfolioDividendsPendingResponseItem = zod.object({
   "paymentDate": zod.string(),
   "label": zod.string(),
   "rate": zod.number(),
+  "exDate": zod.string().nullable(),
   "quantity": zod.number(),
   "suggestedAmount": zod.number(),
   "certainty": zod.enum(['confirmado', 'incerto']),

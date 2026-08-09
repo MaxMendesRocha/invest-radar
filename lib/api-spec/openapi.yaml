@@ -1425,7 +1425,7 @@ components:
 
     PendingDividend:
       type: object
-      required: [ticker, paymentDate, label, rate, quantity, suggestedAmount, certainty, uncertaintyKind, uncertaintyReason]
+      required: [ticker, paymentDate, label, rate, exDate, quantity, suggestedAmount, certainty, uncertaintyKind, uncertaintyReason]
       properties:
         ticker:
           type: string
@@ -1435,13 +1435,18 @@ components:
           type: string
         rate:
           type: number
+        # Data-com (lastDatePrior da brapi): último pregão com direito ao provento.
+        # Quem comprou até aqui recebe; depois, não. Nullable porque o contrato do
+        # provider permite, embora não tenha faltado em nenhum evento medido.
+        exDate:
+          type: ["string", "null"]
         quantity:
           type: number
         suggestedAmount:
           type: number
-        # O provider não entrega data-com, então o direito ao provento é inferido da
-        # data de compra do ativo. "incerto" não significa errado — significa que o
-        # app não consegue afirmar, e quem decide é o usuário.
+        # Com data-com e data de compra, o direito é DETERMINADO. "incerto" sobra só
+        # para ativo sem data de compra cadastrada (ou, raríssimo, evento sem data-com)
+        # — e aí quem decide é o usuário, porque o app não consegue afirmar.
         certainty:
           type: string
           enum: [confirmado, incerto]
