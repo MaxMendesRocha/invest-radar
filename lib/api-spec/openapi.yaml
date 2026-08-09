@@ -1340,7 +1340,7 @@ components:
 
     DividendProjectionAsset:
       type: object
-      required: [ticker, category, quantity, dps12m, projectedAnnualIncome, dyOnPrice, dyOnCost]
+      required: [ticker, category, quantity, dps12m, projectedAnnualIncome, dyOnPrice, dyOnCost, quality]
       properties:
         ticker:
           type: string
@@ -1358,6 +1358,12 @@ components:
         dyOnPrice:
           type: ["number", "null"]
           description: dps12m / preço atual, em % (ex. 6.5 = 6.5%).
+        # Qualidade da distribuição — quão confiável é a renda, não quão alta. Null
+        # quando o ativo não pagou nada em 12 meses. Ver distribution-quality-engine.ts.
+        quality:
+          oneOf:
+            - $ref: "#/components/schemas/DistributionQuality"
+            - type: "null"
         dyOnCost:
           type: ["number", "null"]
           description: dps12m / preço médio de compra, em %.
@@ -1389,6 +1395,33 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DividendProjectionMonth"
+
+    DistributionQuality:
+      type: object
+      required: [cadence, paymentsLast12m, expectedPayments, regularity, trendPercent, trendWindow, classification]
+      properties:
+        cadence:
+          type: string
+          enum: [Mensal, Trimestral, Semestral, Anual, Irregular]
+        paymentsLast12m:
+          type: integer
+        # Quantos pagamentos a cadência do PRÓPRIO ativo prevê em 12 meses. É o que
+        # torna a métrica neutra entre classes: FII mensal 12/12 e ação trimestral 4/4
+        # valem o mesmo. Null quando a cadência é irregular e não há o que esperar.
+        expectedPayments:
+          type: ["integer", "null"]
+        regularity:
+          type: ["number", "null"]
+          description: Observado ÷ esperado, com teto 1.
+        trendPercent:
+          type: ["number", "null"]
+          description: Variação % da distribuição entre duas janelas iguais.
+        trendWindow:
+          type: ["string", "null"]
+          enum: ["6m", "12m", null]
+        classification:
+          type: string
+          enum: [Consistente, Atencao, Irregular, SemHistorico]
 
     PendingDividend:
       type: object

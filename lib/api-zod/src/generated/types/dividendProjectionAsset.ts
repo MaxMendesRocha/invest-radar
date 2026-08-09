@@ -5,6 +5,7 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { DistributionQuality } from './distributionQuality';
 import type { DividendProjectionAssetCategory } from './dividendProjectionAssetCategory';
 
 export interface DividendProjectionAsset {
@@ -26,6 +27,7 @@ export interface DividendProjectionAsset {
      * @nullable
      */
   dyOnPrice: number | null;
+  quality: DistributionQuality | null;
   /**
      * dps12m / preço médio de compra, em %.
      * @nullable

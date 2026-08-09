@@ -24,6 +24,7 @@ import { suggestTreasuryBonds } from "../lib/treasury-engine";
 import { listTreasuryBondOptions, latestTreasuryBonds, priceOnDate } from "../lib/treasury-identity";
 import type { ProfileClassification } from "../lib/investor-profile-engine";
 import { isoDate } from "../lib/local-date";
+import { computeDistributionQuality, type DistributionQuality } from "../lib/distribution-quality-engine";
 
 const router: IRouter = Router();
 
@@ -507,6 +508,7 @@ router.get("/portfolio/dividends/projection", requireAuth, async (req, res): Pro
   const byAsset: {
     ticker: string; category: string; quantity: number;
     dps12m: number | null; projectedAnnualIncome: number | null;
+    quality: DistributionQuality | null;
     dyOnPrice: number | null; dyOnCost: number | null;
   }[] = [];
   const byMonthMap = new Map<string, number>();
@@ -528,6 +530,11 @@ router.get("/portfolio/dividends/projection", requireAuth, async (req, res): Pro
       category: a.category,
       quantity: qty,
       dps12m,
+      // Qualidade da distribuição: quão CONFIÁVEL é essa renda, não quão alta. Ver
+      // distribution-quality-engine.ts sobre por que a regularidade é medida contra a
+      // cadência do próprio ativo, e não contra 12 meses absolutos — o critério
+      // absoluto é o da régua de FII e reprovaria qualquer pagador trimestral.
+      quality: computeDistributionQuality(events, now),
       projectedAnnualIncome: assetAnnualIncome != null ? Math.round(assetAnnualIncome * 100) / 100 : null,
       dyOnPrice: dps12m != null && currentPrice ? Math.round((dps12m / currentPrice) * 10000) / 100 : null,
       dyOnCost: dps12m != null && averagePrice > 0 ? Math.round((dps12m / averagePrice) * 10000) / 100 : null,
