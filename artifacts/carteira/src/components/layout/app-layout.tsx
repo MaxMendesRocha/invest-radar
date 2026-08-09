@@ -3,13 +3,17 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
   Wallet,
+  // Radar segue sendo o símbolo da MARCA (o logo "InvestRadar"). Ele saiu do item
+  // "Radar Inteligente" justamente para parar de disputar leitura com a navegação —
+  // agora aparece uma vez só, e quer dizer o produto.
   Radar,
-  Activity,
-  Search,
-  Lightbulb,
+  BellRing,
+  Gauge,
+  FileSearch,
+  Telescope,
   Coins,
-  Banknote,
-  Stethoscope,
+  Receipt,
+  ShieldCheck,
   Settings as SettingsIcon,
   LogOut,
   Menu,
@@ -20,16 +24,31 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 
+/**
+ * O ícone mostra o que a tela ENTREGA — não faz trocadilho com o nome dela. O rótulo
+ * já está escrito ao lado; o ícone precisa acrescentar informação, não repetir a
+ * palavra. E dois itens do mesmo menu não podem dividir a mesma família de metáfora,
+ * porque a 20px da barra inferior só resta a silhueta.
+ *
+ * O que isso corrigiu:
+ *  - Radar e Activity eram os dois "sinal" (arcos concêntricos e linha de pulso), e
+ *    apareciam LADO A LADO na barra do mobile. Era a única colisão visível de uma vez.
+ *  - Coins e Banknote eram os dois "dinheiro", sem nada indicando qual era qual.
+ *  - Search para Parecer descrevia como se CHEGA à tela, não o que ela produz.
+ *  - Stethoscope para Saúde e Lightbulb para Oportunidades eram trocadilho e clichê:
+ *    o primeiro ecoava a palavra "saúde", o segundo dizia "tive uma ideia" para uma
+ *    varredura com triagem.
+ */
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/carteira", label: "Minha Carteira", icon: Wallet },
-  { href: "/radar", label: "Radar Inteligente", icon: Radar },
-  { href: "/analise", label: "Análise de Ativos", icon: Activity },
-  { href: "/parecer", label: "Parecer de Ativo", icon: Search },
-  { href: "/oportunidades", label: "Oportunidades", icon: Lightbulb },
+  { href: "/radar", label: "Radar Inteligente", icon: BellRing },
+  { href: "/analise", label: "Análise de Ativos", icon: Gauge },
+  { href: "/parecer", label: "Parecer de Ativo", icon: FileSearch },
+  { href: "/oportunidades", label: "Oportunidades", icon: Telescope },
   { href: "/dividendos", label: "Dividendos", icon: Coins },
-  { href: "/vendas", label: "Operações Encerradas", icon: Banknote },
-  { href: "/saude", label: "Saúde do Portfólio", icon: Stethoscope },
+  { href: "/vendas", label: "Operações Encerradas", icon: Receipt },
+  { href: "/saude", label: "Saúde do Portfólio", icon: ShieldCheck },
 ];
 
 // Most-used sections get one-thumb access on mobile; the rest ficam no drawer,
@@ -38,8 +57,8 @@ const NAV_ITEMS = [
 const MOBILE_TAB_ITEMS = [
   { href: "/", label: "Início", icon: LayoutDashboard },
   { href: "/carteira", label: "Carteira", icon: Wallet },
-  { href: "/radar", label: "Radar", icon: Radar },
-  { href: "/analise", label: "Análise", icon: Activity },
+  { href: "/radar", label: "Radar", icon: BellRing },
+  { href: "/analise", label: "Análise", icon: Gauge },
 ];
 
 function MobileBottomNav({ onOpenMenu }: { onOpenMenu: () => void }) {
@@ -58,13 +77,23 @@ function MobileBottomNav({ onOpenMenu }: { onOpenMenu: () => void }) {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+              className={`flex-1 flex flex-col items-center justify-center gap-1 transition-colors ${
                 isActive
                   ? "text-sidebar-accent-foreground"
                   : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
               }`}
             >
-              <item.icon className="w-5 h-5" />
+              {/* Cápsula atrás do ícone ativo. Aqui ela faz mais falta que na lateral:
+                  a barra inferior não tem realce de linha, então a única marca de
+                  "você está aqui" era a cor do traço — diferença fraca a 20px e para
+                  quem enxerga cor de forma atípica. A pílula acrescenta forma. */}
+              <span
+                className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${
+                  isActive ? "bg-sidebar-accent" : "bg-transparent"
+                }`}
+              >
+                <item.icon className="w-5 h-5" />
+              </span>
               <span className="text-[10px] leading-none">{item.label}</span>
             </Link>
           );
@@ -73,13 +102,19 @@ function MobileBottomNav({ onOpenMenu }: { onOpenMenu: () => void }) {
           type="button"
           onClick={onOpenMenu}
           aria-label="Abrir menu"
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+          className={`flex-1 flex flex-col items-center justify-center gap-1 transition-colors ${
             isOnDrawerSection
               ? "text-sidebar-accent-foreground"
               : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
           }`}
         >
-          <MoreHorizontal className="w-5 h-5" />
+          <span
+            className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${
+              isOnDrawerSection ? "bg-sidebar-accent" : "bg-transparent"
+            }`}
+          >
+            <MoreHorizontal className="w-5 h-5" />
+          </span>
           <span className="text-[10px] leading-none">Mais</span>
         </button>
       </div>
@@ -135,13 +170,21 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
               key={item.href}
               href={item.href}
               onClick={onNavigate}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
+              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors ${
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                   : "hover:bg-sidebar-accent/50 text-sidebar-foreground/80 hover:text-sidebar-foreground"
               }`}
             >
-              <item.icon className="w-4 h-4" />
+              {/* Na lateral a linha inteira já acende, então a cápsula entra discreta:
+                  só dá ao ícone um plano próprio, em vez de duplicar o realce. */}
+              <span
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
+                  isActive ? "bg-sidebar-primary/15" : "bg-transparent"
+                }`}
+              >
+                <item.icon className="w-4 h-4" />
+              </span>
               <span className="text-sm">{item.label}</span>
             </Link>
           );
