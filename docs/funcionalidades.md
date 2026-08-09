@@ -397,6 +397,16 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   rompimento disparado por cotação parada seria pior que alerta nenhum.
 - **Falha de um ticker não contamina os outros.** A busca é em lote com tratamento por item.
 - **Renda fixa nunca entra no aviso de cotação indisponível**, porque não tem cotação de bolsa.
+- **Os gráficos de histórico só plotam o que foi medido.** A evolução patrimonial devolve
+  um ponto por mês com snapshot real, mais o mês corrente (que é medição: posições de hoje
+  pelas cotações de hoje). Meses anteriores ao primeiro acesso não são estimados — a tela
+  diz quantos meses existem e explica por que a curva é curta.
+- **O comparativo usa a janela comum.** Retorno acumulado só é comparável entre séries
+  medidas no mesmo intervalo, então a janela é o trecho contíguo em que carteira, CDI e
+  IBOV têm dado real, com todas rebaseadas a 0% no início dela. Na prática o limitante é o
+  IBOV, cujo plano gratuito cobre poucos meses. Sem dois meses comparáveis, o gráfico não
+  é desenhado. O IFIX fica `null` quando não cobre a janela inteira: uma lacuna invalida a
+  série, porque acumular por cima de um buraco produz um número que parece medido e não é.
 
 ---
 
