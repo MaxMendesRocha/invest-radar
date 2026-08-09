@@ -571,15 +571,23 @@ export interface BenchmarkPoint {
   portfolio: number;
   cdi: number;
   ibov: number;
-  ifix: number;
+  /** @nullable */
+  ifix: number | null;
 }
 
 export interface BenchmarkComparison {
   points: BenchmarkPoint[];
-  portfolioTotal: number;
-  cdiTotal: number;
-  ibovTotal: number;
-  ifixTotal: number;
+  windowMonths: number;
+  /** @nullable */
+  windowNote: string | null;
+  /** @nullable */
+  portfolioTotal: number | null;
+  /** @nullable */
+  cdiTotal: number | null;
+  /** @nullable */
+  ibovTotal: number | null;
+  /** @nullable */
+  ifixTotal: number | null;
 }
 
 export type AlertType = typeof AlertType[keyof typeof AlertType];

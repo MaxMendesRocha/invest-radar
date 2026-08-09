@@ -14,7 +14,31 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, BarChart, Bar
 } from "recharts";
-import { Activity, ArrowUpRight, Coins, Scale, TrendingUp } from "lucide-react";
+import { ArrowUpRight, Coins, Scale, TrendingUp } from "lucide-react";
+import { categoryLabel } from "@/lib/categories";
+
+/**
+ * Eixo de valor em reais. O formatador anterior era `R$${(val/1000).toFixed(0)}k`, que
+ * arredondava os milhares e produzia um eixo com rótulos repetidos: os ticks 750, 1500
+ * e 2250 viravam "R$1k", "R$2k" e "R$2k". Dois rótulos iguais em alturas diferentes
+ * fazem o eixo mentir sobre a própria escala.
+ */
+function formatAxisCurrency(value: number): string {
+  if (Math.abs(value) >= 1000) {
+    return `R$ ${(value / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k`;
+  }
+  return `R$ ${value.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
+}
+
+/** Placeholder de gráfico que ainda não tem dado real suficiente para desenhar. */
+function ChartEmptyState({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="flex h-[300px] w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed px-6 text-center">
+      <p className="text-sm font-medium">{title}</p>
+      <p className="max-w-md text-xs text-muted-foreground text-pretty">{detail}</p>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const { data: summary, isLoading: isLoadingSummary } = useGetPortfolioSummary({
@@ -140,10 +164,20 @@ export default function Dashboard() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Evolução Patrimonial</CardTitle>
+            <CardDescription>
+              {evolution && evolution.length > 0
+                ? `${evolution.length} ${evolution.length === 1 ? "mês medido" : "meses medidos"} — um ponto por mês com registro real da carteira.`
+                : "Um ponto por mês com registro real da carteira."}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {isLoadingEvo ? (
               <div className="h-[300px] w-full bg-muted/20 animate-pulse rounded" />
+            ) : !evolution || evolution.length < 2 ? (
+              <ChartEmptyState
+                title="Histórico ainda sendo coletado"
+                detail="A curva aparece a partir do segundo mês com registro. Antes disso não há o que traçar — o app registra o valor da carteira conforme você a acompanha, e não estima os meses anteriores ao seu primeiro acesso."
+              />
             ) : (
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -157,18 +191,27 @@ export default function Dashboard() {
                     <YAxis
                       tick={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}
                       stroke="hsl(var(--muted-foreground))"
-                      tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`}
+                      /* Enquadra a variação real em vez de ancorar em zero: com o eixo
+                         partindo de 0, uma carteira que oscila entre R$2,4k e R$2,8k
+                         desenha a variação inteira no sexto superior do gráfico. */
+                      domain={["dataMin", "dataMax"]}
+                      padding={{ top: 16, bottom: 16 }}
+                      tickFormatter={formatAxisCurrency}
                     />
                     <RechartsTooltip
                       formatter={(value: number) => [formatCurrency(value), "Valor"]}
                       contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '6px' }}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="value" 
-                      stroke="hsl(var(--primary))" 
+                    {/* Reta entre pontos medidos, não spline: com um ponto por mês,
+                        a curva suave desenhava subidas e quedas dentro do mês que
+                        nenhuma medição sustenta — a mesma fabricação, em forma de
+                        interpolação visual. */}
+                    <Line
+                      type="linear"
+                      dataKey="value"
+                      stroke="hsl(var(--primary))"
                       strokeWidth={3}
-                      dot={false}
+                      dot={{ r: 3, fill: "hsl(var(--primary))" }}
                       activeDot={{ r: 6, fill: "hsl(var(--primary))" }}
                     />
                   </LineChart>
@@ -191,7 +234,10 @@ export default function Dashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={distribution?.byCategory || []}
+                      /* A legenda mostrava `acoes`, `etfs`, `fiis` — as chaves cruas
+                         do banco vazando para a tela. O rótulo agora vem do mesmo
+                         mapa usado nas outras páginas (lib/categories). */
+                      data={(distribution?.byCategory || []).map((c) => ({ ...c, label: categoryLabel(c.label) }))}
                       cx="50%"
                       cy="45%"
                       innerRadius={60}
@@ -220,11 +266,26 @@ export default function Dashboard() {
         <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle>Comparativo (Benchmarks)</CardTitle>
-            <CardDescription>Carteira reflete sua rentabilidade real atual. CDI é real (Banco Central); IBOV usa dados reais dos meses recentes; IFIX ainda está sendo acumulado e usa aproximação simulada até ter histórico suficiente.</CardDescription>
+            {/* A explicação de método só faz sentido quando há gráfico. Sem janela, o
+                próprio placeholder já diz o que falta — repetir aqui duplicaria a
+                mensagem na mesma tela. */}
+            <CardDescription className="text-pretty">
+              {!benchmarks || benchmarks.points.length < 2
+                ? "Rentabilidade acumulada da carteira contra CDI e IBOV."
+                : `${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}Todas as séries partem de 0% no início da janela, que é o que torna o acumulado comparável entre elas. CDI vem do Banco Central e IBOV do fechamento real do índice.`}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {isLoadingBench ? (
               <div className="h-[300px] w-full bg-muted/20 animate-pulse rounded" />
+            ) : !benchmarks || benchmarks.points.length < 2 ? (
+              <ChartEmptyState
+                title="Sem janela comparável ainda"
+                detail={
+                  benchmarks?.windowNote ??
+                  "É preciso ter pelo menos dois meses seguidos com dado real de todas as séries para comparar rentabilidade acumulada."
+                }
+              />
             ) : (
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -245,9 +306,9 @@ export default function Dashboard() {
                       contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '6px' }}
                     />
                     <Legend />
-                    <Line type="monotone" name="Carteira" dataKey="portfolio" stroke="hsl(var(--primary))" strokeWidth={3} dot={false} />
-                    <Line type="monotone" name="CDI" dataKey="cdi" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={false} strokeDasharray="5 5" />
-                    <Line type="monotone" name="IBOV" dataKey="ibov" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="linear" name="Carteira" dataKey="portfolio" stroke="hsl(var(--primary))" strokeWidth={3} dot={false} />
+                    <Line type="linear" name="CDI" dataKey="cdi" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="linear" name="IBOV" dataKey="ibov" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} strokeDasharray="5 5" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

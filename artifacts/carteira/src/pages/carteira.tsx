@@ -33,6 +33,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Edit2, Trash2, Banknote } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { categoryLabel, CATEGORY_LABELS } from "@/lib/categories";
 
 /**
  * Título público carrega DATA-BASE (um dia), cotação de bolsa carrega um INSTANTE.
@@ -45,14 +46,6 @@ function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: stri
 }
 
 
-const CATEGORY_MAP: Record<string, string> = {
-  acoes: "Ações",
-  fiis: "FIIs",
-  etfs: "ETFs",
-  bdrs: "BDRs",
-  fundos: "Fundos",
-  renda_fixa: "Renda Fixa"
-};
 
 export default function Carteira() {
   const { data: assets, isLoading } = useListAssets({ query: { queryKey: getListAssetsQueryKey() } });
@@ -329,7 +322,7 @@ export default function Carteira() {
                 <Select value={category} onValueChange={(v) => { setCategory(v); setTreasuryKey(""); }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(CATEGORY_MAP).map(([k, v]) => (
+                    {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
                       <SelectItem key={k} value={k}>{v}</SelectItem>
                     ))}
                   </SelectContent>
@@ -502,7 +495,7 @@ export default function Carteira() {
                     <TableRow key={asset.id}>
                       <TableCell className="font-bold">{asset.ticker}</TableCell>
                       <TableCell>
-                        <div>{CATEGORY_MAP[asset.category] || asset.category}</div>
+                        <div>{categoryLabel(asset.category)}</div>
                         {asset.dividendFrequency && (
                           <div className="text-xs text-muted-foreground">{asset.dividendFrequency}</div>
                         )}
@@ -579,7 +572,7 @@ export default function Carteira() {
                     <div>
                       <div className="font-bold text-lg">{asset.ticker}</div>
                       <div className="text-xs text-muted-foreground">
-                        {CATEGORY_MAP[asset.category] || asset.category}
+                        {categoryLabel(asset.category)}
                         {asset.dividendFrequency && ` · ${asset.dividendFrequency}`}
                       </div>
                     </div>
@@ -670,7 +663,7 @@ export default function Carteira() {
               <Select value={category} onValueChange={setCategory}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(CATEGORY_MAP).map(([k, v]) => (
+                  {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
                     <SelectItem key={k} value={k}>{v}</SelectItem>
                   ))}
                 </SelectContent>

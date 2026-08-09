@@ -157,26 +157,34 @@ router.get("/portfolio/evolution", requireAuth, async (req, res): Promise<void> 
     currentValue += qty * price;
   }
 
-  // Months with a real snapshot (portfolio_snapshots) use it; months without one still
-  // fall back to a simulated approximation around the current value. The real portion
-  // grows on its own as portfolio_snapshots accumulates one row per day of app usage.
+  // SÓ mês com snapshot real vira ponto. Antes, mês sem snapshot recebia
+  // `currentValue * (1 - i*0.015 + Math.random()*0.02 - 0.01)` — ou seja, o gráfico
+  // desenhava uma curva de 12 meses inventada para quem tinha um dia de uso, e o
+  // "passado" mudava a cada F5 porque o Math.random era reavaliado a cada requisição.
+  // Uma linha curta e verdadeira vale mais que uma longa e fabricada; quantos meses
+  // existem de verdade é informação, e a tela mostra isso em vez de disfarçar.
   const snapshots = await getSnapshotsForUser(req.session.userId!);
 
-  const points = [];
+  const points: { date: string; value: number }[] = [];
   const now = new Date();
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const label = d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
     const snapshot = findSnapshotForMonth(snapshots, d.getFullYear(), d.getMonth());
+    if (!snapshot) continue;
+    points.push({
+      date: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
+      value: parseFloat(snapshot.totalValue),
+    });
+  }
 
-    let value: number;
-    if (snapshot) {
-      value = parseFloat(snapshot.totalValue);
-    } else {
-      const factor = 1 - i * 0.015 + Math.random() * 0.02 - 0.01;
-      value = Math.round(currentValue * factor * 100) / 100;
-    }
-    points.push({ date: label, value, cdi: null, ibov: null });
+  // O mês corrente é conhecido mesmo sem snapshot gravado: são as posições de hoje
+  // pelas cotações de hoje. Entra como último ponto — é medição, não estimativa.
+  const currentLabel = now.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
+  const last = points[points.length - 1];
+  if (last?.date === currentLabel) {
+    last.value = Math.round(currentValue * 100) / 100;
+  } else if (assets.length > 0) {
+    points.push({ date: currentLabel, value: Math.round(currentValue * 100) / 100 });
   }
 
   res.json(points);
@@ -431,71 +439,147 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     totalCost += qty * avgPrice;
     totalValue += qty * price;
   }
-  // Fallback for months without a real snapshot: current return held flat, since we
-  // have no other honest estimate for the past. A portfolio with 0 assets correctly
-  // shows 0%, not a fabricated gain.
   const portfolioReturn = totalCost > 0 ? Math.round(((totalValue - totalCost) / totalCost) * 10000) / 100 : 0;
   const snapshots = await getSnapshotsForUser(req.session.userId!);
 
-  // CDI is real for the full window (BCB publishes years of monthly history for free).
-  // IBOV/IFIX are real wherever we have two consecutive months of closes on file —
-  // IBOV starts with ~3 real months backfilled from brapi.dev's free tier; IFIX has no
-  // historical data available for free, so it only accumulates one day at a time from
-  // here on. Months without real data on either side still fall back to the old
-  // simulated approximation, same "real crowds out simulated, never fabricated" rule
-  // used for the portfolio's own snapshot history.
+  // Nada aqui é preenchido quando falta dado. Antes, mês sem fechamento de índice
+  // recebia `1 + Math.random()*0.03` para o IBOV e `1 + Math.random()*0.015` para o
+  // IFIX (esse último sempre positivo — o índice falso só sabia subir), e mês sem CDI
+  // recebia 1,0087 fixo. Duas chamadas seguidas devolviam históricos diferentes: o
+  // IBOV acumulado saltava de +4,56% para +7,71% num F5.
+  //
+  // A regra agora é a janela COMUM. Retorno acumulado só é comparável entre séries
+  // medidas no mesmo intervalo — plotar "carteira em 12 meses" contra "IBOV em 3
+  // meses" no mesmo eixo compara coisas diferentes mesmo com todo dado real. Então a
+  // janela é o trecho contíguo, terminando no mês corrente, em que TODAS as séries
+  // exibidas têm dado real, e todas são rebaseadas a 0% no início dela.
   const [cdiReturns, ibovCloses, ifixCloses] = await Promise.all([
     getCdiMonthlyReturns(),
     syncAndGetIndexCloses("^BVSP", "ibov"),
     syncAndGetIndexCloses("IFIX", "ifix"),
   ]);
 
-  const points = [];
   const now = new Date();
+  const monthKeyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const factorBetween = (closes: Map<string, number>, key: string, prevKey: string): number | null => {
+    const a = closes.get(key);
+    const b = closes.get(prevKey);
+    return a != null && b != null ? a / b : null;
+  };
 
-  let cdiAcc = 100, ibovAcc = 100, ifixAcc = 100;
+  interface MonthSlot {
+    label: string;
+    cdiReturn: number | null; // % do mês
+    ibovFactor: number | null; // fechamento do mês ÷ fechamento do mês anterior
+    ifixFactor: number | null;
+    portfolioReturn: number | null; // retorno sobre custo no fim do mês
+  }
 
+  const slots: MonthSlot[] = [];
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const prevD = new Date(now.getFullYear(), now.getMonth() - i - 1, 1);
-    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const prevMonthKey = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, "0")}`;
-    const label = d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
+    const key = monthKeyOf(d);
+    const prevKey = monthKeyOf(prevD);
     const snapshot = findSnapshotForMonth(snapshots, d.getFullYear(), d.getMonth());
 
-    let portfolioForMonth = portfolioReturn;
+    // O mês corrente tem retorno conhecido mesmo sem snapshot: são as posições de hoje
+    // pelas cotações de hoje. Os meses passados dependem do snapshot — sem ele, não há
+    // como saber quanto a carteira rendia naquela data.
+    let portfolioForMonth: number | null = null;
     if (snapshot) {
       const snapCost = parseFloat(snapshot.totalCost);
       const snapValue = parseFloat(snapshot.totalValue);
       portfolioForMonth = snapCost > 0 ? Math.round(((snapValue - snapCost) / snapCost) * 10000) / 100 : 0;
+    } else if (i === 0 && assets.length > 0) {
+      portfolioForMonth = portfolioReturn;
     }
 
-    const cdiMonthReturn = cdiReturns.get(monthKey);
-    cdiAcc *= cdiMonthReturn != null ? 1 + cdiMonthReturn / 100 : 1.0087;
-
-    const ibovThis = ibovCloses.get(monthKey);
-    const ibovPrev = ibovCloses.get(prevMonthKey);
-    ibovAcc *= ibovThis != null && ibovPrev != null ? ibovThis / ibovPrev : 1 + (0.008 + Math.random() * 0.03 - 0.015);
-
-    const ifixThis = ifixCloses.get(monthKey);
-    const ifixPrev = ifixCloses.get(prevMonthKey);
-    ifixAcc *= ifixThis != null && ifixPrev != null ? ifixThis / ifixPrev : 1 + (0.007 + Math.random() * 0.015 - 0.007);
-
-    points.push({
-      label,
-      portfolio: portfolioForMonth,
-      cdi: Math.round((cdiAcc - 100) * 100) / 100,
-      ibov: Math.round((ibovAcc - 100) * 100) / 100,
-      ifix: Math.round((ifixAcc - 100) * 100) / 100,
+    slots.push({
+      label: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
+      cdiReturn: cdiReturns.get(key) ?? null,
+      ibovFactor: factorBetween(ibovCloses, key, prevKey),
+      ifixFactor: factorBetween(ifixCloses, key, prevKey),
+      portfolioReturn: portfolioForMonth,
     });
   }
 
+  // Caminha do mês mais recente para trás enquanto carteira, CDI e IBOV têm dado real.
+  // O IFIX fica fora desta decisão: ele não tem histórico gratuito e exigi-lo zeraria
+  // a janela para todo mundo. Ele é reportado só quando cobre a janela inteira.
+  const REQUIRED_FOR_WINDOW = (s: MonthSlot) =>
+    s.cdiReturn != null && s.ibovFactor != null && s.portfolioReturn != null;
+
+  let firstIdx = slots.length;
+  for (let i = slots.length - 1; i >= 0; i--) {
+    if (!REQUIRED_FOR_WINDOW(slots[i])) break;
+    firstIdx = i;
+  }
+  // O mês-base não precisa dos fatores (ele vale 0% por definição), só do retorno da
+  // carteira, que é a referência contra a qual os meses seguintes são medidos.
+  if (firstIdx > 0 && slots[firstIdx - 1].portfolioReturn != null) firstIdx -= 1;
+
+  const windowSlots = slots.slice(firstIdx);
+
+  if (windowSlots.length < 2) {
+    const blocker = slots[slots.length - 1];
+    const missing = [
+      blocker?.portfolioReturn == null ? "histórico da carteira" : null,
+      blocker?.cdiReturn == null ? "CDI" : null,
+      blocker?.ibovFactor == null ? "IBOV" : null,
+    ].filter((m): m is string => m != null);
+    res.json({
+      points: [],
+      windowMonths: 0,
+      windowNote:
+        missing.length > 0
+          ? `Ainda não há dois meses seguidos com dado real de ${missing.join(", ")} para comparar.`
+          : "Ainda não há dois meses seguidos de histórico para comparar.",
+      portfolioTotal: null,
+      cdiTotal: null,
+      ibovTotal: null,
+      ifixTotal: null,
+    });
+    return;
+  }
+
+  const base = windowSlots[0];
+  let cdiAcc = 1;
+  let ibovAcc = 1;
+  // Uma única lacuna invalida a série inteira do IFIX na janela — acumular por cima de
+  // um buraco produziria um número que parece medido e não é.
+  let ifixAcc: number | null = 1;
+
+  const points = windowSlots.map((s, i) => {
+    if (i > 0) {
+      cdiAcc *= 1 + s.cdiReturn! / 100;
+      ibovAcc *= s.ibovFactor!;
+      ifixAcc = ifixAcc != null && s.ifixFactor != null ? ifixAcc * s.ifixFactor : null;
+    }
+    const pct = (acc: number) => Math.round((acc - 1) * 10000) / 100;
+    return {
+      label: s.label,
+      portfolio: Math.round((s.portfolioReturn! - base.portfolioReturn!) * 100) / 100,
+      cdi: pct(cdiAcc),
+      ibov: pct(ibovAcc),
+      ifix: ifixAcc != null ? pct(ifixAcc) : null,
+    };
+  });
+
+  const lastPoint = points[points.length - 1];
+  const windowNote =
+    windowSlots.length < slots.length
+      ? `Comparativo limitado a ${windowSlots.length} meses — é o histórico real disponível para todas as séries.`
+      : null;
+
   res.json({
     points,
-    portfolioTotal: portfolioReturn,
-    cdiTotal: Math.round((cdiAcc - 100) * 100) / 100,
-    ibovTotal: Math.round((ibovAcc - 100) * 100) / 100,
-    ifixTotal: Math.round((ifixAcc - 100) * 100) / 100,
+    windowMonths: points.length,
+    windowNote,
+    portfolioTotal: lastPoint.portfolio,
+    cdiTotal: lastPoint.cdi,
+    ibovTotal: lastPoint.ibov,
+    ifixTotal: lastPoint.ifix,
   });
 });
 

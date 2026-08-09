@@ -613,12 +613,14 @@ export const GetPortfolioBenchmarksResponse = zod.object({
   "portfolio": zod.number(),
   "cdi": zod.number(),
   "ibov": zod.number(),
-  "ifix": zod.number()
+  "ifix": zod.number().nullable()
 })),
-  "portfolioTotal": zod.number(),
-  "cdiTotal": zod.number(),
-  "ibovTotal": zod.number(),
-  "ifixTotal": zod.number()
+  "windowMonths": zod.number(),
+  "windowNote": zod.string().nullable(),
+  "portfolioTotal": zod.number().nullable(),
+  "cdiTotal": zod.number().nullable(),
+  "ibovTotal": zod.number().nullable(),
+  "ifixTotal": zod.number().nullable()
 })
 
 

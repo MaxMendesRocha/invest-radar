@@ -6,15 +6,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
 import { Banknote, Receipt } from "lucide-react";
+import { categoryLabel } from "@/lib/categories";
 
-const CATEGORY_MAP: Record<string, string> = {
-  acoes: "Ações",
-  fiis: "FIIs",
-  etfs: "ETFs",
-  bdrs: "BDRs",
-  fundos: "Fundos",
-  renda_fixa: "Renda Fixa"
-};
 
 function formatMonth(month: string): string {
   const [year, m] = month.split("-");
@@ -71,7 +64,7 @@ export default function Vendas() {
                       return (
                         <TableRow key={`${m.month}-${m.category}-${i}`}>
                           <TableCell className="capitalize">{formatMonth(m.month)}</TableCell>
-                          <TableCell>{CATEGORY_MAP[m.category] || m.category}</TableCell>
+                          <TableCell>{categoryLabel(m.category)}</TableCell>
                           <TableCell className="text-right font-mono">{formatCurrency(m.totalSaleValue)}</TableCell>
                           <TableCell className={`text-right font-mono ${isProfit ? "text-green-600 dark:text-green-500" : "text-destructive"}`}>
                             {isProfit ? "+" : "-"}{formatCurrency(Math.abs(m.totalGrossGain))}
@@ -103,7 +96,7 @@ export default function Vendas() {
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <div className="font-bold capitalize">{formatMonth(m.month)}</div>
-                            <div className="text-xs text-muted-foreground">{CATEGORY_MAP[m.category] || m.category}</div>
+                            <div className="text-xs text-muted-foreground">{categoryLabel(m.category)}</div>
                           </div>
                           {m.exempt ? (
                             <Badge variant="outline" className="bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400">Isento</Badge>
@@ -185,7 +178,7 @@ export default function Vendas() {
                     return (
                       <TableRow key={sale.id}>
                         <TableCell className="font-bold">{sale.ticker}</TableCell>
-                        <TableCell>{CATEGORY_MAP[sale.category] || sale.category}</TableCell>
+                        <TableCell>{categoryLabel(sale.category)}</TableCell>
                         <TableCell className="text-right font-mono">{sale.quantity}</TableCell>
                         <TableCell className="text-right font-mono">{formatCurrency(sale.averagePrice)}</TableCell>
                         <TableCell className="text-right font-mono">{formatCurrency(sale.salePrice)}</TableCell>
@@ -225,7 +218,7 @@ export default function Vendas() {
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <div className="font-bold">{sale.ticker}</div>
-                          <div className="text-xs text-muted-foreground">{CATEGORY_MAP[sale.category] || sale.category}</div>
+                          <div className="text-xs text-muted-foreground">{categoryLabel(sale.category)}</div>
                         </div>
                         <div className={`font-mono font-medium text-right ${isProfit ? "text-green-600 dark:text-green-500" : "text-destructive"}`}>
                           {isProfit ? "+" : "-"}{formatCurrency(Math.abs(sale.grossGain))}
