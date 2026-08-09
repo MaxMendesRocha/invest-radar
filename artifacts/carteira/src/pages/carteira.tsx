@@ -160,7 +160,7 @@ export default function Carteira() {
         // títulos, mas todo mundo sabe quanto investiu.
         quantity: selectedBond ? (derivedQuantity ?? enteredQuantity) : enteredQuantity,
         averagePrice: selectedBond ? effectiveUnitPrice : Number(averagePrice),
-        purchaseDate: selectedBond && purchaseDate ? purchaseDate : undefined,
+        purchaseDate: purchaseDate || undefined,
         category: category as any,
         treasuryBondType: selectedBond?.bondType ?? null,
         treasuryMaturityDate: selectedBond?.maturityDate ?? null,
@@ -191,6 +191,7 @@ export default function Carteira() {
     setQuantity(asset.quantity.toString());
     setAveragePrice(asset.averagePrice.toString());
     setCategory(asset.category);
+    setPurchaseDate(asset.purchaseDate ?? "");
     setIsEditOpen(true);
   };
 
@@ -204,6 +205,10 @@ export default function Carteira() {
         ticker,
         quantity: Number(quantity),
         averagePrice: Number(averagePrice),
+        // null (e não undefined) quando o campo é esvaziado: o servidor só ignora o
+        // campo quando ele vem undefined, então sem isso não haveria como APAGAR uma
+        // data cadastrada por engano.
+        purchaseDate: purchaseDate || null,
         category: category as any
       }
     }, {
@@ -435,16 +440,39 @@ export default function Carteira() {
                   </div>
                 </>
               ) : (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Quantidade</Label>
-                    <Input type="number" step="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Quantidade</Label>
+                      <Input type="number" step="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Preço Médio</Label>
+                      <Input type="number" step="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
+                    </div>
                   </div>
+                  {/* Opcional, mas com consequência concreta: a data-com de cada provento
+                      vem do provedor, então com a data de compra o app CONSEGUE decidir
+                      a quais proventos você tinha direito. Sem ela, todos caem em
+                      "confira" e a conferência sobra para o usuário. */}
                   <div className="space-y-2">
-                    <Label>Preço Médio</Label>
-                    <Input type="number" step="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
+                    <Label htmlFor="quoted-purchase-date">
+                      Data da compra <span className="font-normal text-muted-foreground">(opcional)</span>
+                    </Label>
+                    <Input
+                      id="quoted-purchase-date"
+                      type="date"
+                      value={purchaseDate}
+                      max={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) => setPurchaseDate(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground text-pretty">
+                      Com ela, o app sabe a quais proventos você tinha direito — compara com a
+                      data-com de cada pagamento — e sugere para registro só os que são seus.
+                      Sem ela, todos aparecem marcados para você conferir.
+                    </p>
                   </div>
-                </div>
+                </>
               )}
               <DialogFooter>
                 <Button type="submit" disabled={createAsset.isPending}>
@@ -668,6 +696,25 @@ export default function Carteira() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            {/* Sem este campo na edição, ativo já cadastrado nunca ganharia data de
+                compra — só re-cadastrando. É o caso de toda posição anterior a esta
+                versão, que é justamente quem tem proventos acumulados para registrar. */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-purchase-date">
+                Data da compra <span className="font-normal text-muted-foreground">(opcional)</span>
+              </Label>
+              <Input
+                id="edit-purchase-date"
+                type="date"
+                value={purchaseDate}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setPurchaseDate(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground text-pretty">
+                Preenchendo, o app passa a saber a quais proventos você tinha direito e para
+                de pedir conferência em cada um.
+              </p>
             </div>
             <DialogFooter>
               <Button type="submit" disabled={updateAsset.isPending}>
