@@ -6,7 +6,8 @@ import {
   getGetPortfolioSummaryQueryKey,
   getGetPortfolioEvolutionQueryKey,
   getGetPortfolioDistributionQueryKey,
-  getGetPortfolioBenchmarksQueryKey
+  getGetPortfolioBenchmarksQueryKey,
+  useGetPortfolioDividendsProjection
 } from "@workspace/api-client-react";
 import { formatCurrency, formatPercent, formatShortDateTime } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -14,7 +15,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, BarChart, Bar
 } from "recharts";
-import { ArrowUpRight, Coins, Scale, TrendingUp } from "lucide-react";
+import { ArrowUpRight, Coins, Scale, TrendingUp, type LucideIcon } from "lucide-react";
 import { categoryLabel } from "@/lib/categories";
 
 /**
@@ -40,6 +41,50 @@ function ChartEmptyState({ title, detail }: { title: string; detail: string }) {
   );
 }
 
+/**
+ * Cartão de indicador da fileira do topo.
+ *
+ * Os quatro eram blocos quase idênticos copiados, o que fazia qualquer ajuste de
+ * espaçamento precisar ser repetido quatro vezes. `value` recebe o número já
+ * formatado — ou um travessão, quando o indicador não existe: dois dos quatro
+ * cartões nasciam zerados para quem ainda não registrou provento, e um "R$ 0,00"
+ * ocupa o mesmo espaço visual de uma medição sem ser uma.
+ */
+function KpiCard({
+  title,
+  icon: Icon,
+  isLoading,
+  value,
+  valueClassName,
+  children,
+}: {
+  title: string;
+  icon: LucideIcon;
+  isLoading?: boolean;
+  value: string;
+  valueClassName?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="h-8 w-24 animate-pulse rounded bg-muted" />
+        ) : (
+          <div className={`font-mono text-2xl font-bold tracking-tight ${valueClassName ?? ""}`}>{value}</div>
+        )}
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+const EMPTY_VALUE = "—";
+
 export default function Dashboard() {
   const { data: summary, isLoading: isLoadingSummary } = useGetPortfolioSummary({
     query: { queryKey: getGetPortfolioSummaryQueryKey() }
@@ -57,7 +102,26 @@ export default function Dashboard() {
     query: { queryKey: getGetPortfolioBenchmarksQueryKey() }
   });
 
+  // Renda projetada a partir do DPS REAL pago pelos ativos nos últimos 12 meses —
+  // não é previsão de mercado, é o que a carteira de hoje teria recebido. Serve para
+  // os dois cartões de provento não nascerem zerados: `totalDividends` vem da tabela
+  // de transações, ou seja, mede o que o usuário REGISTROU, e é estruturalmente zero
+  // para quem acabou de chegar mesmo tendo ativos que distribuem.
+  const { data: projection, isLoading: isLoadingProjection } = useGetPortfolioDividendsProjection();
+
+  const hasAssets = (summary?.assetCount ?? 0) > 0;
   const isProfit = summary && summary.totalProfitLoss >= 0;
+
+  const receivedDividends = summary?.totalDividends ?? 0;
+  const received12m = summary?.dividendsLast12m ?? 0;
+  const projectedMonthly = projection?.projectedMonthlyAverage ?? 0;
+  const projectedAnnual = projection?.projectedAnnualIncome ?? 0;
+  const patrimony = summary?.totalPatrimony ?? 0;
+  const projectedYield = patrimony > 0 ? (projectedAnnual / patrimony) * 100 : 0;
+
+  const showProjectedIncome = receivedDividends <= 0 && projectedMonthly > 0;
+  const showProjectedYield = received12m <= 0 && projectedYield > 0;
+  const isLoadingDividendCards = isLoadingSummary || isLoadingProjection;
 
   return (
     <div className="space-y-6">
@@ -66,97 +130,109 @@ export default function Dashboard() {
         <p className="text-muted-foreground">Posição consolidada do seu portfólio.</p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Patrimônio Total</CardTitle>
-            <Scale className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoadingSummary ? (
-              <div className="h-8 w-24 bg-muted animate-pulse rounded" />
-            ) : (
-              <div className="text-2xl font-bold font-mono tracking-tight">
-                {formatCurrency(summary?.totalPatrimony || 0)}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">
-              Distribuído em {summary?.assetCount || 0} ativos
+      {/* Indicadores do topo */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          title="Patrimônio Total"
+          icon={Scale}
+          isLoading={isLoadingSummary}
+          value={hasAssets ? formatCurrency(summary?.totalPatrimony ?? 0) : EMPTY_VALUE}
+        >
+          <p className="mt-1 text-xs text-muted-foreground">
+            {hasAssets
+              ? `Distribuído em ${summary?.assetCount} ${summary?.assetCount === 1 ? "ativo" : "ativos"}`
+              : "Cadastre um ativo para começar a acompanhar"}
+          </p>
+          {summary?.pricesStale && summary.pricesStale.length > 0 && (
+            <p className="mt-1 text-xs text-amber-700 text-pretty dark:text-amber-500">
+              Cotação indisponível para {summary.pricesStale.map((s) => s.ticker).join(", ")} — avaliados
+              pelo último preço conhecido, o mais antigo deles de{" "}
+              {formatShortDateTime(summary.pricesStale.reduce((oldest, s) => (s.asOf < oldest ? s.asOf : oldest), summary.pricesStale[0].asOf))}.
             </p>
-            {summary?.pricesStale && summary.pricesStale.length > 0 && (
-              <p className="text-xs text-amber-700 dark:text-amber-500 mt-1 text-pretty">
-                Cotação indisponível para {summary.pricesStale.map((s) => s.ticker).join(", ")} — avaliados
-                pelo último preço conhecido, o mais antigo deles de{" "}
-                {formatShortDateTime(summary.pricesStale.reduce((oldest, s) => (s.asOf < oldest ? s.asOf : oldest), summary.pricesStale[0].asOf))}.
-              </p>
-            )}
-            {summary?.pricesUnavailable && summary.pricesUnavailable.length > 0 && (
-              <p className="text-xs text-amber-700 dark:text-amber-500 mt-1 text-pretty">
-                Sem cotação para {summary.pricesUnavailable.join(", ")} — entram no total pelo preço médio,
-                então aparecem sem lucro nem prejuízo.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+          )}
+          {summary?.pricesUnavailable && summary.pricesUnavailable.length > 0 && (
+            <p className="mt-1 text-xs text-amber-700 text-pretty dark:text-amber-500">
+              Sem cotação para {summary.pricesUnavailable.join(", ")} — entram no total pelo preço médio,
+              então aparecem sem lucro nem prejuízo.
+            </p>
+          )}
+        </KpiCard>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Rentabilidade</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoadingSummary ? (
-              <div className="h-8 w-24 bg-muted animate-pulse rounded" />
-            ) : (
-              <div className={`text-2xl font-bold font-mono tracking-tight ${isProfit ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
-                {isProfit ? '+' : ''}{formatCurrency(summary?.totalProfitLoss || 0)}
-              </div>
-            )}
-            <p className={`text-xs mt-1 font-medium ${isProfit ? 'text-green-600/80 dark:text-green-500/80' : 'text-destructive/80'}`}>
-              {isProfit ? '+' : ''}{formatPercent(summary?.totalProfitLossPercent || 0)}
-            </p>
-          </CardContent>
-        </Card>
+        <KpiCard
+          title="Rentabilidade"
+          icon={TrendingUp}
+          isLoading={isLoadingSummary}
+          value={
+            hasAssets
+              ? `${isProfit ? "+" : ""}${formatCurrency(summary?.totalProfitLoss ?? 0)}`
+              : EMPTY_VALUE
+          }
+          valueClassName={hasAssets ? (isProfit ? "text-green-600 dark:text-green-500" : "text-destructive") : ""}
+        >
+          <p
+            className={`mt-1 text-xs font-medium ${
+              hasAssets ? (isProfit ? "text-green-600/80 dark:text-green-500/80" : "text-destructive/80") : "text-muted-foreground"
+            }`}
+          >
+            {hasAssets
+              ? `${isProfit ? "+" : ""}${formatPercent(summary?.totalProfitLossPercent ?? 0)}`
+              : "Sem posição para medir"}
+          </p>
+        </KpiCard>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Dividendos Acumulados</CardTitle>
-            <Coins className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoadingSummary ? (
-              <div className="h-8 w-24 bg-muted animate-pulse rounded" />
-            ) : (
-              <div className="text-2xl font-bold font-mono tracking-tight text-primary">
-                {formatCurrency(summary?.totalDividends || 0)}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">
-              Rendimento histórico
-            </p>
-          </CardContent>
-        </Card>
+        {/* Recebido quando existe registro; projetado a partir do DPS real quando não —
+            nunca R$ 0,00, que ocuparia o mesmo peso visual de uma medição. */}
+        <KpiCard
+          title={showProjectedIncome ? "Renda Projetada" : "Dividendos Acumulados"}
+          icon={Coins}
+          isLoading={isLoadingDividendCards}
+          value={
+            receivedDividends > 0
+              ? formatCurrency(receivedDividends)
+              : showProjectedIncome
+                ? formatCurrency(projectedMonthly)
+                : EMPTY_VALUE
+          }
+          valueClassName={receivedDividends > 0 ? "text-primary" : ""}
+        >
+          <p className="mt-1 text-xs text-muted-foreground text-pretty">
+            {receivedDividends > 0
+              ? "Rendimento histórico"
+              : showProjectedIncome
+                ? "Por mês, pelo que seus ativos distribuíram nos últimos 12 meses. Nada recebido foi registrado ainda."
+                : hasAssets
+                  ? "Seus ativos não distribuíram proventos nos últimos 12 meses"
+                  : "Sem ativos para distribuir proventos"}
+          </p>
+        </KpiCard>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Yield da Carteira</CardTitle>
-            <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoadingSummary ? (
-              <div className="h-8 w-24 bg-muted animate-pulse rounded" />
+        <KpiCard
+          title={showProjectedYield ? "Yield Projetado" : "Yield da Carteira"}
+          icon={ArrowUpRight}
+          isLoading={isLoadingDividendCards}
+          value={
+            received12m > 0
+              ? formatPercent(summary?.portfolioYield ?? 0)
+              : showProjectedYield
+                ? formatPercent(projectedYield)
+                : EMPTY_VALUE
+          }
+        >
+          <p className="mt-1 text-xs text-muted-foreground text-pretty">
+            {received12m > 0 ? (
+              <>
+                Proventos de 12 meses sobre o valor atual
+                {summary?.yieldOnCost != null && ` · ${formatPercent(summary.yieldOnCost)} sobre o custo`}
+              </>
+            ) : showProjectedYield ? (
+              "Sobre o valor atual, pelo DPS real dos últimos 12 meses dos seus ativos"
+            ) : hasAssets ? (
+              "Ainda sem proventos para calcular"
             ) : (
-              <div className="text-2xl font-bold font-mono tracking-tight">
-                {formatPercent(summary?.portfolioYield || 0)}
-              </div>
+              "Sem posição para calcular"
             )}
-            <p className="text-xs text-muted-foreground mt-1">
-              Proventos de 12 meses sobre o valor atual
-              {summary?.yieldOnCost != null && ` · ${formatPercent(summary.yieldOnCost)} sobre o custo`}
-            </p>
-          </CardContent>
-        </Card>
+          </p>
+        </KpiCard>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -164,10 +240,15 @@ export default function Dashboard() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Evolução Patrimonial</CardTitle>
+            {/* Sem ativo não há o que medir. O endpoint ainda devolve um ponto porque
+                o snapshot do dia é gravado a cada leitura do resumo, inclusive com
+                patrimônio zero — anunciar "1 mês medido" ali seria ruído. */}
             <CardDescription>
-              {evolution && evolution.length > 0
-                ? `${evolution.length} ${evolution.length === 1 ? "mês medido" : "meses medidos"} — um ponto por mês com registro real da carteira.`
-                : "Um ponto por mês com registro real da carteira."}
+              {!hasAssets
+                ? "Um ponto por mês com registro real da carteira."
+                : evolution && evolution.length > 0
+                  ? `${evolution.length} ${evolution.length === 1 ? "mês medido" : "meses medidos"} — um ponto por mês com registro real da carteira.`
+                  : "Um ponto por mês com registro real da carteira."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -229,6 +310,11 @@ export default function Dashboard() {
           <CardContent>
             {isLoadingDist ? (
               <div className="h-[300px] w-full bg-muted/20 animate-pulse rounded" />
+            ) : !distribution || distribution.byCategory.length === 0 ? (
+              <ChartEmptyState
+                title="Nada para distribuir ainda"
+                detail="A rosca mostra como o patrimônio se reparte entre classes de ativo. Cadastre a primeira posição para vê-la."
+              />
             ) : (
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
