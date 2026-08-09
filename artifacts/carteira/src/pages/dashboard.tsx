@@ -158,8 +158,13 @@ export default function Dashboard() {
           )}
         </KpiCard>
 
+        {/* "Resultado", não "Rentabilidade": o gráfico de Comparativo logo abaixo também
+            é sobre rendimento, e as duas palavras iguais sobre números diferentes liam
+            como contradição na tela. Este card mede o total sobre o custo desde a compra;
+            o gráfico mede o rendimento dentro da janela comparável. "Resultado" ainda é
+            o vocabulário que Minha Carteira já usa nos ativos ("L&P"). */}
         <KpiCard
-          title="Rentabilidade"
+          title="Resultado"
           icon={TrendingUp}
           isLoading={isLoadingSummary}
           value={
@@ -178,6 +183,11 @@ export default function Dashboard() {
               ? `${isProfit ? "+" : ""}${formatPercent(summary?.totalProfitLossPercent ?? 0)}`
               : "Sem posição para medir"}
           </p>
+          {hasAssets && (
+            <p className="mt-0.5 text-[11px] text-muted-foreground text-pretty">
+              sobre o custo, desde a compra
+            </p>
+          )}
         </KpiCard>
 
         {/* Recebido quando existe registro; projetado a partir do DPS real quando não —
@@ -362,10 +372,13 @@ export default function Dashboard() {
             {/* A explicação de método só faz sentido quando há gráfico. Sem janela, o
                 próprio placeholder já diz o que falta — repetir aqui duplicaria a
                 mensagem na mesma tela. */}
+            {/* A frase de abertura responde "o que estou vendo" antes de explicar método:
+                era o método que vinha primeiro, e o leitor chegava ao número do gráfico
+                sem saber que ele mede outro intervalo que o card Resultado. */}
             <CardDescription className="text-pretty">
               {!benchmarks || benchmarks.points.length < 2
-                ? "Rentabilidade acumulada da carteira contra CDI e IBOV."
-                : `${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}Todas as séries partem de 0% no início da janela, e a Carteira entra com aportes e resgates neutralizados — dinheiro novo não é desempenho, e sem descontá-lo a carteira apareceria pior que índices que não recebem aporte. Por isso esta linha não coincide com o KPI Rentabilidade, que mede outra coisa: o total sobre o custo. CDI vem do Banco Central e IBOV do fechamento real do índice.`}
+                ? "Rendimento da carteira contra CDI e IBOV, no período em que dá para comparar."
+                : `Rendimento dentro da janela, com todas as séries partindo de 0% — é isso que as torna comparáveis, e é por isso que a Carteira aqui não bate com o card Resultado, que mede o total desde a compra. Aporte e resgate saem da conta, porque índice não recebe aporte. ${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}CDI do Banco Central, IBOV pelo fechamento real do índice.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -394,14 +407,17 @@ export default function Dashboard() {
                       stroke="hsl(var(--muted-foreground))"
                       tickFormatter={(val) => `${val.toFixed(0)}%`}
                     />
-                    {/* "Rentabilidade" era a mesma palavra do KPI ao lado, que mede outra
-                        coisa (total desde a compra, não acumulado na janela). */}
+                    {/* O nome da série, não um rótulo fixo: o formatter descartava o
+                        segundo argumento e rotulava as TRÊS linhas com a mesma palavra,
+                        deixando só a cor para distinguir carteira de CDI e de IBOV. */}
                     <RechartsTooltip
-                      formatter={(value: number) => [`${value.toFixed(2)}%`, "Acumulado na janela"]}
+                      formatter={(value: number, name: string) => [`${value.toFixed(2)}%`, name]}
                       contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '6px' }}
                     />
                     <Legend />
-                    <Line type="linear" name="Carteira" dataKey="portfolio" stroke="hsl(var(--primary))" strokeWidth={3} dot={false} />
+                    {/* "(no período)" na própria legenda: é o único lugar que o olho
+                        cruza ao comparar a linha com o card Resultado logo acima. */}
+                    <Line type="linear" name="Carteira (no período)" dataKey="portfolio" stroke="hsl(var(--primary))" strokeWidth={3} dot={false} />
                     <Line type="linear" name="CDI" dataKey="cdi" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={false} strokeDasharray="5 5" />
                     <Line type="linear" name="IBOV" dataKey="ibov" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} strokeDasharray="5 5" />
                   </LineChart>

@@ -354,7 +354,7 @@ comparação numérica direta. A IA escreve o texto *em volta* dele, mas nunca o
 
 | Tela | A pergunta | O que mostra |
 |---|---|---|
-| **Dashboard** | Como estou, no geral? | Patrimônio, rentabilidade, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks |
+| **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks |
 | **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático e a data da compra, opcional em qualquer classe, editável depois |
 | **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
@@ -425,7 +425,10 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   fatores são multiplicados, com o fluxo do período descontado do valor inicial. Venda entra
   pelo valor de mercado recebido, com dado real da tabela `sales` — descontá-la pelo custo
   inventaria prejuízo em toda venda com lucro. É por isso que essa linha **não** bate com o
-  KPI Rentabilidade, que responde outra pergunta ("quanto eu ganhei", sobre o custo).
+  card **Resultado**, que responde outra pergunta ("quanto eu ganhei", sobre o custo desde
+  a compra). Os dois cards ficam na mesma tela, e por isso não repetem a palavra
+  "rentabilidade": um diz *Resultado*, o outro rotula a série como *Carteira (no período)*
+  — dois números diferentes com o mesmo nome liam como contradição.
 
 ---
 
