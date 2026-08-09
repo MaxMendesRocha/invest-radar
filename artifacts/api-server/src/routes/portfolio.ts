@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
-import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable } from "@workspace/db";
+import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable, salesTable } from "@workspace/db";
 import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months } from "../lib/market-data";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
+import { computeMonthlyTwrFactors } from "../lib/time-weighted-return";
 import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
 import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/analysis-engine";
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
@@ -23,7 +24,7 @@ import { rankOpportunitiesFor } from "../lib/opportunity-ranking";
 import { suggestTreasuryBonds } from "../lib/treasury-engine";
 import { listTreasuryBondOptions, latestTreasuryBonds, priceOnDate } from "../lib/treasury-identity";
 import type { ProfileClassification } from "../lib/investor-profile-engine";
-import { isoDate } from "../lib/local-date";
+import { isoDate, todayInAppTimezone } from "../lib/local-date";
 import { computeDistributionQuality, type DistributionQuality } from "../lib/distribution-quality-engine";
 
 const router: IRouter = Router();
@@ -580,11 +581,23 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     totalCost += qty * avgPrice;
     totalValue += qty * price;
   }
-  // Razão valor÷custo, não percentual. É o mesmo formato em que CDI e IBOV entram
-  // (fator multiplicativo), e é o que permite rebasear a carteira compondo em vez de
-  // subtraindo — ver o cálculo de `points` mais abaixo.
-  const portfolioRatio = totalCost > 0 ? totalValue / totalCost : null;
-  const snapshots = await getSnapshotsForUser(req.session.userId!);
+  const [snapshots, sales] = await Promise.all([
+    getSnapshotsForUser(req.session.userId!),
+    db.select().from(salesTable).where(eq(salesTable.userId, req.session.userId!)),
+  ]);
+
+  // Time-weighted, não retorno sobre custo. Aporte entra na carteira mas não no CDI nem
+  // no IBOV: medir a carteira por (valor − custo) / custo faria dinheiro novo diluir a
+  // rentabilidade e aparecer como desempenho pior que o dos índices ao lado. O TWR
+  // neutraliza o fluxo, que é justamente o que torna as três séries comparáveis.
+  // Detalhes e limites do método em time-weighted-return.ts.
+  const twrFactors = computeMonthlyTwrFactors(
+    snapshots,
+    sales,
+    assets.length > 0 && totalCost > 0
+      ? { date: todayInAppTimezone(), value: totalValue, cost: totalCost }
+      : null,
+  );
 
   // Nada aqui é preenchido quando falta dado. Antes, mês sem fechamento de índice
   // recebia `1 + Math.random()*0.03` para o IBOV e `1 + Math.random()*0.015` para o
@@ -616,7 +629,8 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     cdiReturn: number | null; // % do mês
     ibovFactor: number | null; // fechamento do mês ÷ fechamento do mês anterior
     ifixFactor: number | null;
-    portfolioRatio: number | null; // valor ÷ custo no fim do mês
+    /** Crescimento acumulado de R$ 1 na carteira até o fim do mês, líquido de aporte. */
+    portfolioFactor: number | null;
   }
 
   const slots: MonthSlot[] = [];
@@ -625,29 +639,15 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     const prevD = new Date(now.getFullYear(), now.getMonth() - i - 1, 1);
     const key = monthKeyOf(d);
     const prevKey = monthKeyOf(prevD);
-    const snapshot = findSnapshotForMonth(snapshots, d.getFullYear(), d.getMonth());
-
-    // O mês corrente tem retorno conhecido mesmo sem snapshot: são as posições de hoje
-    // pelas cotações de hoje. Os meses passados dependem do snapshot — sem ele, não há
-    // como saber quanto a carteira rendia naquela data.
-    let portfolioForMonth: number | null = null;
-    if (snapshot) {
-      const snapCost = parseFloat(snapshot.totalCost);
-      const snapValue = parseFloat(snapshot.totalValue);
-      // Custo zero é carteira vazia, não retorno zero. Tratá-lo como 0% deixava um mês
-      // anterior ao primeiro aporte entrar na janela e virar o mês-base — ancorando a
-      // comparação inteira num ponto em que não havia carteira para render.
-      portfolioForMonth = snapCost > 0 ? snapValue / snapCost : null;
-    } else if (i === 0 && assets.length > 0) {
-      portfolioForMonth = portfolioRatio;
-    }
 
     slots.push({
       label: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
       cdiReturn: cdiReturns.get(key) ?? null,
       ibovFactor: factorBetween(ibovCloses, key, prevKey),
       ifixFactor: factorBetween(ifixCloses, key, prevKey),
-      portfolioRatio: portfolioForMonth,
+      // Mês sem medição não está no mapa, e ausência continua sendo ausência: o mês fica
+      // de fora da janela em vez de receber um valor de preenchimento.
+      portfolioFactor: twrFactors.get(key) ?? null,
     });
   }
 
@@ -655,7 +655,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   // O IFIX fica fora desta decisão: ele não tem histórico gratuito e exigi-lo zeraria
   // a janela para todo mundo. Ele é reportado só quando cobre a janela inteira.
   const REQUIRED_FOR_WINDOW = (s: MonthSlot) =>
-    s.cdiReturn != null && s.ibovFactor != null && s.portfolioRatio != null;
+    s.cdiReturn != null && s.ibovFactor != null && s.portfolioFactor != null;
 
   let firstIdx = slots.length;
   for (let i = slots.length - 1; i >= 0; i--) {
@@ -664,14 +664,14 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   }
   // O mês-base não precisa dos fatores (ele vale 0% por definição), só do retorno da
   // carteira, que é a referência contra a qual os meses seguintes são medidos.
-  if (firstIdx > 0 && slots[firstIdx - 1].portfolioRatio != null) firstIdx -= 1;
+  if (firstIdx > 0 && slots[firstIdx - 1].portfolioFactor != null) firstIdx -= 1;
 
   const windowSlots = slots.slice(firstIdx);
 
   if (windowSlots.length < 2) {
     const blocker = slots[slots.length - 1];
     const missing = [
-      blocker?.portfolioRatio == null ? "histórico da carteira" : null,
+      blocker?.portfolioFactor == null ? "histórico da carteira" : null,
       blocker?.cdiReturn == null ? "CDI" : null,
       blocker?.ibovFactor == null ? "IBOV" : null,
     ].filter((m): m is string => m != null);
@@ -706,12 +706,9 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     const pct = (acc: number) => Math.round((acc - 1) * 10000) / 100;
     return {
       label: s.label,
-      // Composto, não subtraído. Antes era `retorno_do_mês − retorno_do_mês_base`, uma
-      // subtração de percentuais posta no mesmo eixo de duas séries que compõem
-      // (`cdiAcc *=`, `ibovAcc *=`) — comparação errada por construção mesmo com dado
-      // 100% real. Dividir as razões dá "quanto rendeu R$1 desde o início da janela",
-      // que é exatamente o que CDI e IBOV medem ao lado.
-      portfolio: Math.round((s.portfolioRatio! / base.portfolioRatio! - 1) * 10000) / 100,
+      // Composto, não subtraído — dividir os fatores dá "quanto rendeu R$ 1 desde o
+      // início da janela", exatamente o que CDI e IBOV medem ao lado.
+      portfolio: Math.round((s.portfolioFactor! / base.portfolioFactor! - 1) * 10000) / 100,
       cdi: pct(cdiAcc),
       ibov: pct(ibovAcc),
       ifix: ifixAcc != null ? pct(ifixAcc) : null,
