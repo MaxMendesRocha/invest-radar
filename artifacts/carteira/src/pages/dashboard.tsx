@@ -365,7 +365,7 @@ export default function Dashboard() {
             <CardDescription className="text-pretty">
               {!benchmarks || benchmarks.points.length < 2
                 ? "Rentabilidade acumulada da carteira contra CDI e IBOV."
-                : `${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}Todas as séries partem de 0% no início da janela, que é o que torna o acumulado comparável entre elas. Por isso a linha Carteira mede o rendimento DENTRO da janela e não coincide com o KPI Rentabilidade, que é o total desde a compra. CDI vem do Banco Central e IBOV do fechamento real do índice.`}
+                : `${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}Todas as séries partem de 0% no início da janela, e a Carteira entra com aportes e resgates neutralizados — dinheiro novo não é desempenho, e sem descontá-lo a carteira apareceria pior que índices que não recebem aporte. Por isso esta linha não coincide com o KPI Rentabilidade, que mede outra coisa: o total sobre o custo. CDI vem do Banco Central e IBOV do fechamento real do índice.`}
             </CardDescription>
           </CardHeader>
           <CardContent>

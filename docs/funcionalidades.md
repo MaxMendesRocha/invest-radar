@@ -417,6 +417,15 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   IBOV, cujo plano gratuito cobre poucos meses. Sem dois meses comparáveis, o gráfico não
   é desenhado. O IFIX fica `null` quando não cobre a janela inteira: uma lacuna invalida a
   série, porque acumular por cima de um buraco produz um número que parece medido e não é.
+- **A carteira entra no comparativo com aporte neutralizado.** Retorno sobre custo se move
+  quando entra dinheiro novo mesmo sem preço nenhum ter mudado: R$ 100 valendo R$ 110 estão
+  +10%, e um aporte de R$ 100 ao preço de mercado derruba isso para +5% sem que nada tenha
+  acontecido. Índice não recebe aporte, então comparar os dois assim penalizaria quem
+  aporta. A linha Carteira é **time-weighted**: a série é quebrada nas datas de medição e os
+  fatores são multiplicados, com o fluxo do período descontado do valor inicial. Venda entra
+  pelo valor de mercado recebido, com dado real da tabela `sales` — descontá-la pelo custo
+  inventaria prejuízo em toda venda com lucro. É por isso que essa linha **não** bate com o
+  KPI Rentabilidade, que responde outra pergunta ("quanto eu ganhei", sobre o custo).
 
 ---
 
@@ -438,6 +447,13 @@ para decidir nada.
   número combina score e yield reais, documentado como estimativa interna, não previsão.
 - **Posições antigas em Tesouro** cadastradas antes da identificação por tipo + vencimento
   continuam sem marcação a mercado. Casar texto livre com um título real seria adivinhação.
+- **O fluxo do time-weighted é posicionado no início do subperíodo.** O dado tem o dia do
+  aporte, não a hora, então ponderar pelo tempo dentro do período (Dietz modificado) não é
+  possível. Com snapshot quase diário — um por dia em que o app é aberto — o subperíodo é
+  curto e o erro é pequeno; entre medições distantes, cresce.
+- **Editar quantidade ou preço médio conta como aporte.** O fluxo é derivado da variação do
+  custo, então corrigir um preço médio digitado errado é indistinguível de dinheiro entrando.
+  Some quando houver extrato de movimentações em vez de posição consolidada.
 
 ---
 
