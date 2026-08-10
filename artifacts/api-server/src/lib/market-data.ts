@@ -709,22 +709,69 @@ async function fetchStockDividendsBatch(tickers: string[]): Promise<Map<string, 
 // alguns poucos (ex: HGLG11, MXRF11). Por isso é best-effort por ticker, sem log de
 // warning quando falha (esperado, não é um erro de fato) — o FII que falhar
 // simplesmente não contribui pro total de dividendos, nunca com valor inventado.
+interface BrapiCashDividend {
+  paymentDate: string;
+  rate: number;
+  label: string;
+  approvedOn: string | null;
+  lastDatePrior: string | null;
+}
+
+interface BrapiDividendsResult extends BrapiResult {
+  dividendsData?: { cashDividends?: BrapiCashDividend[] };
+}
+
+/**
+ * Proventos de FII (e ETF) via `/quote/:ticker?dividends=true`.
+ *
+ * NÃO usa `/api/v2/fii/dividends`, que era a fonte anterior: aquele endpoint devolve
+ * uma janela móvel de ~12 pagamentos JÁ LIQUIDADOS, e nada mais. Medido nos três FIIs
+ * do teste — MXRF11 12 eventos contra 112 aqui, GARE11 13 contra 49, DVFF11 12 contra
+ * 32 — e, o que mais importa, o pagamento ANUNCIADO não aparecia lá: em 10/08/2026 o
+ * MXRF11 tinha 14/08 anunciado e a janela parava em 14/07.
+ *
+ * A consequência não era cosmética. "Proventos anunciados" filtra por pagamento no
+ * futuro, então com uma fonte que só carrega liquidado o card ficava estruturalmente
+ * VAZIO para FII — para qualquer usuário, sempre. Funcionava só para ação, que vem de
+ * outro endpoint.
+ *
+ * Mesmo dado de origem nos dois (`remarks: "fii-dividends-csv"`), só que aqui sem o
+ * corte. `approvedOn` continua vindo null nos 112 eventos medidos — segue sem servir
+ * para distinguir "confirmado" de "previsto" em FII, igual à fonte antiga.
+ *
+ * Ticker inexistente devolve 404 aqui (a fonte antiga devolvia 200 com lista vazia); o
+ * `!response.ok` abaixo já trata os dois como "sem eventos".
+ */
 async function fetchFiiDividends(ticker: string): Promise<DividendEvent[]> {
   const token = process.env.BRAPI_TOKEN;
-  const url = `https://brapi.dev/api/v2/fii/dividends?symbols=${encodeURIComponent(ticker)}`;
+  const url = `${BRAPI_BASE_URL}/${encodeURIComponent(ticker)}?dividends=true`;
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   const response = await fetch(url, { headers });
   if (!response.ok) return [];
 
-  const body = (await response.json()) as { dividends?: { paymentDate: string; rate: number; label: string; approvedOn: string | null; lastDatePrior: string | null }[] };
-  // approvedOn vem sempre null nesse endpoint (dado importado de CSV, ver comentário
-  // acima) — mesmo pra pagamentos já ocorridos no passado, então não serve pra
-  // distinguir "confirmado" de "previsto" em FIIs como serve pra ações.
-  return (body.dividends ?? []).map((d) => ({
-    paymentDate: d.paymentDate, rate: d.rate, label: d.label,
-    approvedOn: d.approvedOn ?? null, lastDatePrior: d.lastDatePrior ?? null,
+  const body = (await response.json()) as { results?: BrapiDividendsResult[] };
+  const events = body.results?.[0]?.dividendsData?.cashDividends ?? [];
+
+  return events.map((d) => ({
+    paymentDate: d.paymentDate,
+    rate: d.rate,
+    label: d.label,
+    approvedOn: d.approvedOn ?? null,
+    lastDatePrior: d.lastDatePrior ?? null,
   }));
+}
+
+/**
+ * Ordem crescente por data de pagamento, aplicada aos DOIS caminhos (ação e FII).
+ *
+ * Cada endpoint entrega numa ordem própria e nenhum documenta qual: medido, ação vem
+ * fora de ordem e FII vem ordenado. Nenhum consumidor depende disso hoje — todos
+ * filtram por janela de data —, mas duas fontes com contratos implícitos diferentes é
+ * armadilha para o primeiro consumidor que assumir "o último é o mais recente".
+ */
+function sortByPaymentDate(events: DividendEvent[]): DividendEvent[] {
+  return [...events].sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
 }
 
 /**
@@ -778,7 +825,8 @@ export async function getDividendEvents(
       logger.warn({ err: outcome.reason }, "brapi.dev stock dividends batch errored");
       continue;
     }
-    for (const [ticker, events] of outcome.value) {
+    for (const [ticker, batchEvents] of outcome.value) {
+      const events = sortByPaymentDate(batchEvents);
       dividendCache.set(ticker, { events, fetchedAt: now });
       fresh.set(ticker, events);
     }
@@ -786,7 +834,7 @@ export async function getDividendEvents(
 
   staleFiis.forEach((ticker, i) => {
     const outcome = fiiResults[i];
-    const events = outcome.status === "fulfilled" ? outcome.value : [];
+    const events = sortByPaymentDate(outcome.status === "fulfilled" ? outcome.value : []);
     dividendCache.set(ticker, { events, fetchedAt: now });
     fresh.set(ticker, events);
   });
@@ -808,7 +856,7 @@ export async function getDividendEventsForTicker(ticker: string): Promise<Divide
     fetchFiiDividends(upper),
   ]);
   const stockEvents = stockResult.get(upper) ?? [];
-  return stockEvents.length > 0 ? stockEvents : fiiEvents;
+  return sortByPaymentDate(stockEvents.length > 0 ? stockEvents : fiiEvents);
 }
 
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
