@@ -359,7 +359,7 @@ comparação numérica direta. A IA escreve o texto *em volta* dele, mas nunca o
 | **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
 | **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Análise completa de qualquer ticker, sem exigir posição. Range de 52 semanas, tendência de proventos, comparação setorial |
-| **Oportunidades** | O que existe lá fora? | Universo varrido semanalmente, reordenado pelo nível de risco compatível com o perfil |
+| **Oportunidades** | O que existe lá fora? | Universo de ~180 tickers varrido semanalmente, reordenado pelo nível de risco compatível com o perfil |
 | **Dividendos** | Quanto recebo, e caminho para a meta? | Total acumulado, yield on cost, histórico de 12 meses, proventos anunciados, progresso da meta |
 | **Operações Encerradas** | Quanto ganhei, e quanto devo? | Vendas com resultado realizado e consolidação mensal de IR com compensação de prejuízo |
 | **Saúde do Portfólio** | A estrutura está boa? | Score em cinco pilares — diversificação 25%, concentração 25%, risco 20%, dividendos 15%, crescimento 15% — mais diagnóstico da IA |
@@ -374,9 +374,18 @@ estado da última execução fica **no banco, não em memória** — é o que pe
 sem redisparar o trabalho nem pular um ciclo.
 
 **Regeneração de oportunidades** (a cada 7 dias) — varre o universo ao vivo (top 80 ações, 50 FIIs,
-15 ETFs, 25 BDRs por valor de mercado), calcula o score com o motor apropriado e substitui a tabela
-inteira em transação, para não existir a janela em que a tela fica vazia. Universo vazio significa
-provedor fora do ar: nesse caso aborta sem tocar na tabela, mantendo a última rodada boa.
+15 ETFs, 25 BDRs por valor de mercado, mais uma passada de resgate), calcula o score com o motor
+apropriado e substitui a tabela inteira em transação, para não existir a janela em que a tela fica
+vazia. Universo vazio significa provedor fora do ar: nesse caso aborta sem tocar na tabela,
+mantendo a última rodada boa.
+
+A passada de resgate existe porque ordenar por valor de mercado é cego para quem não tem esse dado:
+o provedor devolve valor de mercado nulo para *units* — BPAC11, SANB11, TAEE11, KLBN11, ENGI11,
+ALUP11, SAPR11, IGTI11, BRBI11 —, e um valor nulo nunca alcança o corte do topo N, em nenhuma
+posição e com nenhum limite. Empresas grandes e líquidas ficavam invisíveis para a tela. A passada
+consulta a mesma categoria ordenada por volume e fica só com o que não tem valor de mercado — o
+critério é o próprio defeito, não uma lista de exceções, então serve para qualquer papel que o
+provedor deixe de preencher no futuro.
 
 **Sincronização do Tesouro** (diária) — ingere o arquivo oficial de PU. Na primeira execução carrega
 o histórico completo; depois, apenas o incremento a partir da última data conhecida.
