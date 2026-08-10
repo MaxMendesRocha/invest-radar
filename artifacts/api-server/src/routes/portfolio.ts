@@ -5,7 +5,7 @@ import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries } from "../lib/market-data";
 import { computeCompositionRisk, type RiskPosition } from "../lib/portfolio-risk-metrics";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
-import { computeMonthlyTwrFactors } from "../lib/time-weighted-return";
+import { computeMonthlyTwr } from "../lib/time-weighted-return";
 import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
 import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/analysis-engine";
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
@@ -595,7 +595,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   // rentabilidade e aparecer como desempenho pior que o dos índices ao lado. O TWR
   // neutraliza o fluxo, que é justamente o que torna as três séries comparáveis.
   // Detalhes e limites do método em time-weighted-return.ts.
-  const twrFactors = computeMonthlyTwrFactors(
+  const twrByMonth = computeMonthlyTwr(
     snapshots,
     sales,
     assets.length > 0 && totalCost > 0
@@ -635,6 +635,8 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     ifixFactor: number | null;
     /** Crescimento acumulado de R$ 1 na carteira até o fim do mês, líquido de aporte. */
     portfolioFactor: number | null;
+    /** Patrimônio no fechamento do mês — só usado para nomear o ponto de partida. */
+    portfolioValue: number | null;
   }
 
   const slots: MonthSlot[] = [];
@@ -651,7 +653,8 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
       ifixFactor: factorBetween(ifixCloses, key, prevKey),
       // Mês sem medição não está no mapa, e ausência continua sendo ausência: o mês fica
       // de fora da janela em vez de receber um valor de preenchimento.
-      portfolioFactor: twrFactors.get(key) ?? null,
+      portfolioFactor: twrByMonth.get(key)?.factor ?? null,
+      portfolioValue: twrByMonth.get(key)?.value ?? null,
     });
   }
 
@@ -690,6 +693,8 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
       cdiTotal: null,
       ibovTotal: null,
       ifixTotal: null,
+      baseLabel: null,
+      baseValue: null,
     });
     return;
   }
@@ -733,6 +738,11 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     cdiTotal: lastPoint.cdi,
     ibovTotal: lastPoint.ibov,
     ifixTotal: lastPoint.ifix,
+    // O ponto de partida, dito com todas as letras. O gráfico mede a partir daqui, e
+    // sem expor QUANDO e QUANTO era, a diferença para o card Resultado — que mede
+    // contra o custo — só se resolve refazendo a conta à mão.
+    baseLabel: base.label,
+    baseValue: base.portfolioValue,
   });
 });
 

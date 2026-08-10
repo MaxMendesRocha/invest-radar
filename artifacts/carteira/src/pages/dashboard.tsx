@@ -387,7 +387,10 @@ export default function Dashboard() {
             <CardDescription className="text-pretty">
               {!benchmarks || benchmarks.points.length < 2
                 ? "Rendimento da carteira contra CDI e IBOV, no período em que dá para comparar."
-                : `Rendimento dentro da janela, com todas as séries partindo de 0% — é isso que as torna comparáveis, e é por isso que a Carteira aqui não bate com o card Resultado, que mede o total desde a compra. Aporte e resgate saem da conta, porque índice não recebe aporte. ${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}CDI do Banco Central, IBOV pelo fechamento real do índice.`}
+                /* A reconciliação com o card Resultado saiu daqui: o rodapé abaixo do
+                   gráfico diz a mesma coisa com o mês e o valor concretos, e repetir
+                   em prosa antes de mostrar o número era dizer duas vezes. */
+                : `Rendimento dentro da janela, com todas as séries partindo de 0% — é isso que as torna comparáveis. Aporte e resgate saem da conta, porque índice não recebe aporte. ${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}CDI do Banco Central, IBOV pelo fechamento real do índice.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -432,6 +435,23 @@ export default function Dashboard() {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+            )}
+            {/* O ponto de partida, escrito. O eixo X já mostra o mês, mas não o valor
+                — e é o VALOR que explica por que este gráfico não bate com o card
+                Resultado: um mede a partir do que a carteira valia aqui, o outro a
+                partir do que ela custou. Sem esta linha, reconciliar os dois exige
+                refazer a conta à mão. */}
+            {benchmarks && benchmarks.points.length >= 2 && benchmarks.baseLabel && (
+              <p className="mt-3 border-t pt-3 text-xs text-muted-foreground text-pretty">
+                Todas as séries partem de 0% em <strong className="font-medium text-foreground">{benchmarks.baseLabel}</strong>
+                {benchmarks.baseValue != null && (
+                  <>
+                    , quando a carteira valia{" "}
+                    <strong className="font-mono font-medium text-foreground">{formatCurrency(benchmarks.baseValue)}</strong>
+                  </>
+                )}
+                . O card Resultado mede a partir do custo, não daqui — por isso os dois percentuais diferem.
+              </p>
             )}
           </CardContent>
         </Card>

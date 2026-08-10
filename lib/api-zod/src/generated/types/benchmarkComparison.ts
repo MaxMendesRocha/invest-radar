@@ -20,4 +20,8 @@ export interface BenchmarkComparison {
   ibovTotal: number | null;
   /** @nullable */
   ifixTotal: number | null;
+  /** @nullable */
+  baseLabel: string | null;
+  /** @nullable */
+  baseValue: number | null;
 }

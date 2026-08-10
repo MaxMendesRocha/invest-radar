@@ -620,7 +620,9 @@ export const GetPortfolioBenchmarksResponse = zod.object({
   "portfolioTotal": zod.number().nullable(),
   "cdiTotal": zod.number().nullable(),
   "ibovTotal": zod.number().nullable(),
-  "ifixTotal": zod.number().nullable()
+  "ifixTotal": zod.number().nullable(),
+  "baseLabel": zod.string().nullable(),
+  "baseValue": zod.number().nullable()
 })
 
 

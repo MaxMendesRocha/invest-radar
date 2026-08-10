@@ -1491,7 +1491,9 @@ components:
 
     BenchmarkComparison:
       type: object
-      required: [points, windowMonths, windowNote, portfolioTotal, cdiTotal, ibovTotal, ifixTotal]
+      required:
+        [points, windowMonths, windowNote, portfolioTotal, cdiTotal, ibovTotal, ifixTotal,
+         baseLabel, baseValue]
       properties:
         points:
           type: array
@@ -1512,6 +1514,15 @@ components:
         ibovTotal:
           type: ["number", "null"]
         ifixTotal:
+          type: ["number", "null"]
+        # Mês que abre a janela e patrimônio no fechamento dele — o ponto de onde
+        # TODAS as séries partem de 0%. Exposto porque sem ele a diferença entre o
+        # percentual do gráfico e o do card Resultado (que mede contra o custo, não
+        # contra o valor de partida) só se resolve refazendo a conta à mão. Null
+        # quando não há janela comparável.
+        baseLabel:
+          type: ["string", "null"]
+        baseValue:
           type: ["number", "null"]
 
     # Mede a COMPOSIÇÃO DE HOJE contra um ano de fechamentos reais, mantendo as

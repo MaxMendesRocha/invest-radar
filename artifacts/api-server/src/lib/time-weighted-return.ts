@@ -97,24 +97,35 @@ function buildSeries(snapshots: PortfolioSnapshot[], live: PortfolioPoint | null
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+export interface MonthlyTwr {
+  /** Crescimento acumulado de R$ 1 desde o início da cadeia. 1,05 = +5%. */
+  factor: number;
+  /** Patrimônio no fechamento do mês — o que a tela mostra como ponto de partida. */
+  value: number;
+}
+
 /**
- * Fator acumulado (crescimento de R$ 1 aplicado) ao fim de cada mês com medição.
+ * Fator acumulado e patrimônio ao fim de cada mês com medição.
  *
- * A chave é "YYYY-MM" e o valor é o fator, não o percentual: 1,05 significa +5% desde o
- * início da cadeia. Quem chama rebaseia dividindo pelo fator do mês que abre a janela,
- * que é como as séries de índice ao lado também são rebaseadas.
+ * A chave é "YYYY-MM". O fator vai em razão, não em percentual, porque quem chama
+ * rebaseia dividindo pelo fator do mês que abre a janela — mesma forma como as séries
+ * de índice ao lado são rebaseadas.
+ *
+ * O `value` acompanha para a tela poder dizer QUANTO a carteira valia no mês-base. Sem
+ * isso, o gráfico mostra um percentual medido a partir de um ponto que o usuário não
+ * enxerga, e a diferença para o card Resultado (que mede contra o custo) vira mistério.
  *
  * Mês sem medição simplesmente não aparece no mapa — ausência é ausência, não zero.
  */
-export function computeMonthlyTwrFactors(
+export function computeMonthlyTwr(
   snapshots: PortfolioSnapshot[],
   sales: Sale[],
   live: PortfolioPoint | null,
-): Map<string, number> {
+): Map<string, MonthlyTwr> {
   const series = buildSeries(snapshots, live);
   const flows = toSaleFlows(sales);
 
-  let byMonth = new Map<string, number>();
+  let byMonth = new Map<string, MonthlyTwr>();
   let running = 1;
   let previous: PortfolioPoint | null = null;
   let flowIdx = 0;
@@ -133,7 +144,7 @@ export function computeMonthlyTwrFactors(
 
     if (previous == null) {
       running = 1;
-      byMonth.set(point.date.slice(0, 7), running);
+      byMonth.set(point.date.slice(0, 7), { factor: running, value: point.value });
       previous = point;
       while (flowIdx < flows.length && flows[flowIdx].date <= point.date) flowIdx++;
       continue;
@@ -158,14 +169,14 @@ export function computeMonthlyTwrFactors(
       // vez de produzir um fator que pareceria medido.
       byMonth = new Map();
       running = 1;
-      byMonth.set(point.date.slice(0, 7), running);
+      byMonth.set(point.date.slice(0, 7), { factor: running, value: point.value });
       previous = point;
       continue;
     }
 
     running *= point.value / opening;
     // Sobrescreve o mês a cada medição: sobra a última do mês, que é o fechamento.
-    byMonth.set(point.date.slice(0, 7), running);
+    byMonth.set(point.date.slice(0, 7), { factor: running, value: point.value });
     previous = point;
   }
 
