@@ -416,6 +416,13 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   incerteza só para ativo sem data de compra cadastrada, e aí o item é mostrado marcado em vez
   de escondido — a data é opcional em qualquer classe e pode ser preenchida depois, na edição
   do ativo, para quem cadastrou a posição antes de existir o campo.
+- **Provento de FII vem do endpoint de cotação, não do endpoint de FII.** Soa às avessas e é
+  deliberado: `/v2/fii/dividends` devolve uma janela móvel de ~12 pagamentos **já liquidados**,
+  então o pagamento anunciado e ainda não pago nunca aparecia ali. Como "Proventos anunciados"
+  filtra por pagamento no futuro, o card ficava estruturalmente **vazio para FII** — para todo
+  usuário, sempre —, funcionando só para ação, que vem de outra fonte. `/quote/:ticker?dividends=true`
+  traz o mesmo dado de origem sem o corte: medido, MXRF11 passou de 12 para 112 eventos, GARE11
+  de 13 para 49, DVFF11 de 12 para 32, e o pagamento anunciado aparece.
 - **Os gráficos de histórico só plotam o que foi medido.** A evolução patrimonial devolve
   um ponto por mês com snapshot real, mais o mês corrente (que é medição: posições de hoje
   pelas cotações de hoje). Meses anteriores ao primeiro acesso não são estimados — a tela
