@@ -580,6 +580,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/BenchmarkComparison"
 
+  /portfolio/risk-metrics:
+    get:
+      operationId: getPortfolioRiskMetrics
+      tags: [portfolio]
+      summary: Volatility and month-by-month behaviour of the CURRENT portfolio composition, measured over one year of real daily closes
+      responses:
+        "200":
+          description: Composition risk metrics, or the reason they are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioRiskMetrics"
+
   /portfolio/dividends/upcoming:
     get:
       operationId: getPortfolioDividendsUpcoming
@@ -1499,6 +1512,77 @@ components:
         ibovTotal:
           type: ["number", "null"]
         ifixTotal:
+          type: ["number", "null"]
+
+    # Mede a COMPOSIÇÃO DE HOJE contra um ano de fechamentos reais, mantendo as
+    # quantidades atuais fixas. Responde "quão oscilante é o que eu tenho", e não
+    # "como foi o meu histórico" — este último sai dos snapshots, em
+    # BenchmarkComparison, e exige meses de uso do app. As duas medidas não se
+    # somam nem se substituem.
+    PortfolioRiskMetrics:
+      type: object
+      required: [available, reason, metrics]
+      properties:
+        available:
+          type: boolean
+        # Por que não há métrica: carteira sem ativo de bolsa, ou pregões em comum
+        # insuficientes. Preenchido só quando available é false.
+        reason:
+          type: ["string", "null"]
+        metrics:
+          oneOf:
+            - $ref: "#/components/schemas/CompositionRisk"
+            - type: "null"
+
+    CompositionRisk:
+      type: object
+      required:
+        [volatility, benchmarkVolatility, tradingDays, fromDate, toDate, monthlyReturns,
+         positiveMonths, monthsAboveBenchmark, coveragePercent, uncovered]
+      properties:
+        # Desvio-padrão dos retornos diários anualizado (× √252), em %.
+        volatility:
+          type: number
+        # A do IBOV, medida exatamente nos mesmos pregões. Null quando a série do
+        # índice não cobre o intervalo.
+        benchmarkVolatility:
+          type: ["number", "null"]
+        tradingDays:
+          type: integer
+        fromDate:
+          type: string
+          format: date
+        toDate:
+          type: string
+          format: date
+        monthlyReturns:
+          type: array
+          items:
+            $ref: "#/components/schemas/RiskMonthlyReturn"
+        positiveMonths:
+          type: integer
+        monthsAboveBenchmark:
+          type: ["integer", "null"]
+        # Quanto do VALOR da carteira a medição cobre. Renda fixa não tem série
+        # diária de bolsa e fica de fora; sem este campo a volatilidade de quem tem
+        # metade em renda fixa seria subestimada em silêncio.
+        coveragePercent:
+          type: number
+        uncovered:
+          type: array
+          items:
+            type: string
+
+    RiskMonthlyReturn:
+      type: object
+      required: [month, percent, benchmarkPercent]
+      properties:
+        # "YYYY-MM"
+        month:
+          type: string
+        percent:
+          type: number
+        benchmarkPercent:
           type: ["number", "null"]
 
     # ─── ALERTS SCHEMAS ───────────────────────────────────────────────────────
