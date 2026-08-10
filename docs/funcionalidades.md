@@ -354,7 +354,7 @@ comparação numérica direta. A IA escreve o texto *em volta* dele, mas nunca o
 
 | Tela | A pergunta | O que mostra |
 |---|---|---|
-| **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks |
+| **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks, oscilação da composição atual |
 | **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático e a data da compra, opcional em qualquer classe, editável depois |
 | **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
@@ -438,6 +438,18 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   a compra). Os dois cards ficam na mesma tela, e por isso não repetem a palavra
   "rentabilidade": um diz *Resultado*, o outro rotula a série como *Carteira (no período)*
   — dois números diferentes com o mesmo nome liam como contradição.
+- **Oscilação é medida sobre a composição de hoje, não sobre o histórico.** O card de
+  oscilação aplica as quantidades atuais a um ano de fechamentos reais e calcula o
+  desvio-padrão dos retornos diários anualizado (× √252), ao lado do IBOV medido nos
+  **mesmos pregões**. Responde "quão oscilante é o que eu tenho", não "como foi o meu
+  histórico" — as posições mudaram no período, e as duas medidas nunca são somadas. A
+  escolha existe porque histórico real depende de meses de uso do app, enquanto esta
+  funciona no primeiro dia: o dado é do mercado, não do usuário. Três detalhes decidem se
+  o número presta: usa `adjustedClose` (em MXRF11, 7,5% ajustado contra 9,0% cru — o
+  provento mensal do FII vira queda falsa no fechamento puro); só considera datas comuns
+  a todos os ativos, porque um papel sem negócio no dia produziria variação inexistente;
+  e reporta quanto do valor da carteira cobriu, já que renda fixa não tem cotação diária
+  de bolsa e sair em silêncio subestimaria a oscilação de quem tem metade ali.
 
 ---
 

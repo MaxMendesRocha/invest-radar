@@ -625,6 +625,31 @@ export const GetPortfolioBenchmarksResponse = zod.object({
 
 
 /**
+ * @summary Volatility and month-by-month behaviour of the CURRENT portfolio composition, measured over one year of real daily closes
+ */
+export const GetPortfolioRiskMetricsResponse = zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable(),
+  "metrics": zod.union([zod.object({
+  "volatility": zod.number(),
+  "benchmarkVolatility": zod.number().nullable(),
+  "tradingDays": zod.number(),
+  "fromDate": zod.coerce.date(),
+  "toDate": zod.coerce.date(),
+  "monthlyReturns": zod.array(zod.object({
+  "month": zod.string(),
+  "percent": zod.number(),
+  "benchmarkPercent": zod.number().nullable()
+})),
+  "positiveMonths": zod.number(),
+  "monthsAboveBenchmark": zod.number().nullable(),
+  "coveragePercent": zod.number(),
+  "uncovered": zod.array(zod.string())
+}),zod.null()])
+})
+
+
+/**
  * @summary Upcoming dividend/JCP payments for assets currently held, based on real provider data
  */
 export const GetPortfolioDividendsUpcomingResponseItem = zod.object({

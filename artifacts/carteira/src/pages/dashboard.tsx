@@ -7,6 +7,8 @@ import {
   getGetPortfolioEvolutionQueryKey,
   getGetPortfolioDistributionQueryKey,
   getGetPortfolioBenchmarksQueryKey,
+  useGetPortfolioRiskMetrics,
+  getGetPortfolioRiskMetricsQueryKey,
   useGetPortfolioDividendsProjection
 } from "@workspace/api-client-react";
 import { formatCurrency, formatPercent, formatShortDateTime } from "@/lib/utils";
@@ -100,6 +102,13 @@ export default function Dashboard() {
   
   const { data: benchmarks, isLoading: isLoadingBench } = useGetPortfolioBenchmarks({
     query: { queryKey: getGetPortfolioBenchmarksQueryKey() }
+  });
+
+  // Risco da composição de HOJE, medido sobre um ano de fechamentos reais. Vem de
+  // fonte diferente do gráfico acima de propósito: o comparativo depende do histórico
+  // de uso do app (meses), este depende do mercado (existe desde o primeiro dia).
+  const { data: risk, isLoading: isLoadingRisk } = useGetPortfolioRiskMetrics({
+    query: { queryKey: getGetPortfolioRiskMetricsQueryKey() }
   });
 
   // Renda projetada a partir do DPS REAL pago pelos ativos nos últimos 12 meses —
@@ -427,7 +436,86 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
+        {/* Card PRÓPRIO, não uma faixa dentro do Comparativo. Os dois falam de
+            oscilação, mas medem coisas diferentes: o gráfico acima é o histórico
+            da pessoa (depende de meses de uso do app), este é a composição de hoje
+            contra um ano de mercado (existe desde o primeiro dia). Encostar um no
+            outro recriaria a leitura de contradição que motivou renomear os cards. */}
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>Oscilação da carteira atual</CardTitle>
+            <CardDescription className="text-pretty">
+              {risk?.available && risk.metrics
+                ? `Quanto os ativos que você tem HOJE oscilaram no último ano, com as quantidades atuais aplicadas aos preços reais de ${risk.metrics.tradingDays} pregões. Não é o seu histórico — suas posições mudaram no período; é o comportamento do que está na carteira agora.`
+                : "Quanto os ativos que você tem hoje oscilaram no último ano."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoadingRisk ? (
+              <div className="h-24 w-full animate-pulse rounded bg-muted/20" />
+            ) : !risk?.available || !risk.metrics ? (
+              /* Não usa ChartEmptyState aqui: aquele componente reserva a altura de
+                 um gráfico, e para três números vira um vazio de 300px na home. */
+              <div className="rounded-lg border border-dashed p-4">
+                <p className="text-sm font-medium">Sem oscilação medida</p>
+                <p className="mt-1 text-xs text-muted-foreground text-pretty">
+                  {risk?.reason ?? "Não há pregões suficientes para medir."}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <RiskStat
+                    label="Volatilidade anual"
+                    value={`${risk.metrics.volatility.toFixed(1).replace(".", ",")}%`}
+                    detail={
+                      risk.metrics.benchmarkVolatility != null
+                        ? `IBOV no mesmo período: ${risk.metrics.benchmarkVolatility.toFixed(1).replace(".", ",")}%`
+                        : "Sem série do IBOV para comparar"
+                    }
+                  />
+                  <RiskStat
+                    label="Meses positivos"
+                    value={`${risk.metrics.positiveMonths} de ${risk.metrics.monthlyReturns.length}`}
+                    detail="Fechamento de mês contra o anterior"
+                  />
+                  <RiskStat
+                    label="Meses acima do IBOV"
+                    value={
+                      risk.metrics.monthsAboveBenchmark != null
+                        ? `${risk.metrics.monthsAboveBenchmark} de ${risk.metrics.monthlyReturns.filter((m) => m.benchmarkPercent != null).length}`
+                        : EMPTY_VALUE
+                    }
+                    detail="Comparado mês a mês, não no acumulado"
+                  />
+                </div>
+                {/* A cobertura só vira aviso quando falta pedaço: dizer "100% medido"
+                    a quem só tem ação seria ruído em toda visita. */}
+                {risk.metrics.coveragePercent < 99.5 && (
+                  <p className="mt-3 text-xs text-amber-700 text-pretty dark:text-amber-500">
+                    Medido sobre {risk.metrics.coveragePercent.toFixed(0)}% da carteira.{" "}
+                    {risk.metrics.uncovered.join(", ")} {risk.metrics.uncovered.length === 1 ? "ficou" : "ficaram"} de
+                    fora por não ter cotação diária de bolsa, então a oscilação real da carteira inteira é menor que a
+                    mostrada.
+                  </p>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+
       </div>
+    </div>
+  );
+}
+
+/** Número grande com rótulo e uma linha de contexto — o padrão dos KPIs do topo. */
+function RiskStat({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-lg border bg-muted/20 p-4">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="mt-1 font-mono text-2xl font-bold tabular-nums">{value}</p>
+      <p className="mt-1 text-[11px] text-muted-foreground text-pretty">{detail}</p>
     </div>
   );
 }

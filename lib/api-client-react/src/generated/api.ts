@@ -49,6 +49,7 @@ import type {
   PortfolioDividendsProjection,
   PortfolioHealth,
   PortfolioReport,
+  PortfolioRiskMetrics,
   PortfolioSummary,
   Sale,
   SellAssetInput,
@@ -2113,6 +2114,83 @@ export function useGetPortfolioBenchmarks<TData = Awaited<ReturnType<typeof getP
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPortfolioBenchmarksQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPortfolioRiskMetricsUrl = () => {
+
+
+
+
+  return `/api/portfolio/risk-metrics`
+}
+
+/**
+ * @summary Volatility and month-by-month behaviour of the CURRENT portfolio composition, measured over one year of real daily closes
+ */
+export const getPortfolioRiskMetrics = async ( options?: RequestInit): Promise<PortfolioRiskMetrics> => {
+
+  return customFetch<PortfolioRiskMetrics>(getGetPortfolioRiskMetricsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPortfolioRiskMetricsQueryKey = () => {
+    return [
+    `/api/portfolio/risk-metrics`
+    ] as const;
+    }
+
+
+export const getGetPortfolioRiskMetricsQueryOptions = <TData = Awaited<ReturnType<typeof getPortfolioRiskMetrics>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolioRiskMetrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPortfolioRiskMetricsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPortfolioRiskMetrics>>> = ({ signal }) => getPortfolioRiskMetrics({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPortfolioRiskMetrics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPortfolioRiskMetricsQueryResult = NonNullable<Awaited<ReturnType<typeof getPortfolioRiskMetrics>>>
+export type GetPortfolioRiskMetricsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Volatility and month-by-month behaviour of the CURRENT portfolio composition, measured over one year of real daily closes
+ */
+
+export function useGetPortfolioRiskMetrics<TData = Awaited<ReturnType<typeof getPortfolioRiskMetrics>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolioRiskMetrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPortfolioRiskMetricsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

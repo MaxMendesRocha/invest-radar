@@ -678,6 +678,35 @@ export interface BenchmarkComparison {
   ifixTotal: number | null;
 }
 
+export interface RiskMonthlyReturn {
+  month: string;
+  percent: number;
+  /** @nullable */
+  benchmarkPercent: number | null;
+}
+
+export interface CompositionRisk {
+  volatility: number;
+  /** @nullable */
+  benchmarkVolatility: number | null;
+  tradingDays: number;
+  fromDate: string;
+  toDate: string;
+  monthlyReturns: RiskMonthlyReturn[];
+  positiveMonths: number;
+  /** @nullable */
+  monthsAboveBenchmark: number | null;
+  coveragePercent: number;
+  uncovered: string[];
+}
+
+export interface PortfolioRiskMetrics {
+  available: boolean;
+  /** @nullable */
+  reason: string | null;
+  metrics: CompositionRisk | null;
+}
+
 export type AlertType = typeof AlertType[keyof typeof AlertType];
 
 

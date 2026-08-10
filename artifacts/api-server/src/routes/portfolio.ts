@@ -2,7 +2,8 @@ import { Router, type IRouter } from "express";
 import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable, salesTable } from "@workspace/db";
 import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months } from "../lib/market-data";
+import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries } from "../lib/market-data";
+import { computeCompositionRisk, type RiskPosition } from "../lib/portfolio-risk-metrics";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
 import { computeMonthlyTwrFactors } from "../lib/time-weighted-return";
 import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
@@ -28,6 +29,9 @@ import { isoDate, todayInAppTimezone } from "../lib/local-date";
 import { computeDistributionQuality, type DistributionQuality } from "../lib/distribution-quality-engine";
 
 const router: IRouter = Router();
+
+/** Código do Ibovespa na brapi. Usado como benchmark de risco e de retorno. */
+const IBOV_SERIES_TICKER = "^BVSP";
 
 router.get("/portfolio/summary", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
@@ -612,7 +616,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   // exibidas têm dado real, e todas são rebaseadas a 0% no início dela.
   const [cdiReturns, ibovCloses, ifixCloses] = await Promise.all([
     getCdiMonthlyReturns(),
-    syncAndGetIndexCloses("^BVSP", "ibov"),
+    syncAndGetIndexCloses(IBOV_SERIES_TICKER, "ibov"),
     syncAndGetIndexCloses("IFIX", "ifix"),
   ]);
 
@@ -730,6 +734,60 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     ibovTotal: lastPoint.ibov,
     ifixTotal: lastPoint.ifix,
   });
+});
+
+/**
+ * Risco da composição atual, medido sobre 1 ano de preços reais.
+ *
+ * Endpoint separado de /benchmarks de propósito: aquele mede o histórico do usuário
+ * (precisa de meses de uso do app), este mede o que ele tem hoje (funciona no
+ * primeiro dia, porque o dado é do mercado). Perguntas diferentes, disponibilidades
+ * diferentes — juntá-los faria a resposta inteira depender da parte mais escassa.
+ */
+router.get("/portfolio/risk-metrics", requireAuth, async (req, res): Promise<void> => {
+  const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
+  const prices = await getPricesFor(assets);
+
+  let totalValue = 0;
+  // TODAS as posições vão para a função, inclusive renda fixa. Ela não tem série
+  // diária de bolsa e vai cair em `uncovered` — que é o ponto: sem aparecer ali, o
+  // usuário veria "cobertura 41%" sem saber o que ficou de fora.
+  const positions: RiskPosition[] = [];
+  const quotedTickers: string[] = [];
+  for (const a of assets) {
+    const qty = parseFloat(a.quantity);
+    const ticker = a.ticker.toUpperCase();
+    const value = qty * (prices.get(ticker)?.price ?? parseFloat(a.averagePrice));
+    totalValue += value;
+    positions.push({ ticker, value, quantity: qty });
+    if (QUOTED_CATEGORIES.has(a.category)) quotedTickers.push(ticker);
+  }
+
+  if (quotedTickers.length === 0) {
+    res.json({ available: false, reason: "Nenhum ativo de bolsa na carteira para medir oscilação.", metrics: null });
+    return;
+  }
+
+  // Só o que é de bolsa é buscado — pedir série de "TESOURO IPCA+ 2035" ao provedor
+  // de cotação seria uma chamada que nasce condenada.
+  const series = await getTechnicalSeries([...quotedTickers, IBOV_SERIES_TICKER]);
+  const metrics = computeCompositionRisk(
+    positions,
+    series,
+    series.get(IBOV_SERIES_TICKER) ?? null,
+    totalValue,
+  );
+
+  if (metrics == null) {
+    res.json({
+      available: false,
+      reason: "Ainda não há pregões suficientes em comum entre os ativos da carteira para medir oscilação.",
+      metrics: null,
+    });
+    return;
+  }
+
+  res.json({ available: true, reason: null, metrics });
 });
 
 /**
