@@ -1137,6 +1137,63 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
 
 
 /**
+ * @summary Price targets the user entered, with upside against the real quote
+ */
+export const ListPriceTargetsResponseItem = zod.object({
+  "ticker": zod.string(),
+  "targetPrice": zod.number(),
+  "source": zod.string().nullable(),
+  "notes": zod.string().nullable(),
+  "currentPrice": zod.number().nullable(),
+  "upsidePercent": zod.number().nullable(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListPriceTargetsResponse = zod.array(ListPriceTargetsResponseItem)
+
+
+/**
+ * @summary Create or update the user's price target for a ticker
+ */
+export const UpsertPriceTargetParams = zod.object({
+  "ticker": zod.coerce.string()
+})
+
+export const upsertPriceTargetBodyTargetPriceExclusiveMin = 0;
+
+export const upsertPriceTargetBodySourceMax = 80;
+
+export const upsertPriceTargetBodyNotesMax = 500;
+
+
+
+export const UpsertPriceTargetBody = zod.object({
+  "targetPrice": zod.number().gt(upsertPriceTargetBodyTargetPriceExclusiveMin),
+  "source": zod.string().max(upsertPriceTargetBodySourceMax).nullish(),
+  "notes": zod.string().max(upsertPriceTargetBodyNotesMax).nullish()
+})
+
+export const UpsertPriceTargetResponse = zod.object({
+  "ticker": zod.string(),
+  "targetPrice": zod.number(),
+  "source": zod.string().nullable(),
+  "notes": zod.string().nullable(),
+  "currentPrice": zod.number().nullable(),
+  "upsidePercent": zod.number().nullable(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Remove the user's price target for a ticker
+ */
+export const DeletePriceTargetParams = zod.object({
+  "ticker": zod.coerce.string()
+})
+
+export const DeletePriceTargetResponse = zod.void()
+
+
+/**
  * @summary Official indicators — Selic, IPCA, IGP-M, juro real and câmbio from the Banco Central, plus the Ibovespa
  */
 export const GetMacroSnapshotResponse = zod.object({

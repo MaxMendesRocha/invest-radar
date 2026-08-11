@@ -51,6 +51,8 @@ import type {
   PortfolioReport,
   PortfolioRiskMetrics,
   PortfolioSummary,
+  PriceTarget,
+  PriceTargetInput,
   Sale,
   SellAssetInput,
   SuccessResponse,
@@ -3326,6 +3328,226 @@ export const useGeneratePortfolioAnalysis = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getGeneratePortfolioAnalysisMutationOptions(options));
+    }
+
+export const getListPriceTargetsUrl = () => {
+
+
+
+
+  return `/api/price-targets`
+}
+
+/**
+ * @summary Price targets the user entered, with upside against the real quote
+ */
+export const listPriceTargets = async ( options?: RequestInit): Promise<PriceTarget[]> => {
+
+  return customFetch<PriceTarget[]>(getListPriceTargetsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPriceTargetsQueryKey = () => {
+    return [
+    `/api/price-targets`
+    ] as const;
+    }
+
+
+export const getListPriceTargetsQueryOptions = <TData = Awaited<ReturnType<typeof listPriceTargets>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPriceTargets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPriceTargetsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPriceTargets>>> = ({ signal }) => listPriceTargets({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPriceTargets>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPriceTargetsQueryResult = NonNullable<Awaited<ReturnType<typeof listPriceTargets>>>
+export type ListPriceTargetsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Price targets the user entered, with upside against the real quote
+ */
+
+export function useListPriceTargets<TData = Awaited<ReturnType<typeof listPriceTargets>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPriceTargets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPriceTargetsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpsertPriceTargetUrl = (ticker: string,) => {
+
+
+
+
+  return `/api/price-targets/${ticker}`
+}
+
+/**
+ * @summary Create or update the user's price target for a ticker
+ */
+export const upsertPriceTarget = async (ticker: string,
+    priceTargetInput: PriceTargetInput, options?: RequestInit): Promise<PriceTarget> => {
+
+  return customFetch<PriceTarget>(getUpsertPriceTargetUrl(ticker),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(priceTargetInput)
+  }
+);}
+
+
+
+
+
+export const getUpsertPriceTargetMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertPriceTarget>>, TError,{ticker: string;data: BodyType<PriceTargetInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertPriceTarget>>, TError,{ticker: string;data: BodyType<PriceTargetInput>}, TContext> => {
+
+const mutationKey = ['upsertPriceTarget'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertPriceTarget>>, {ticker: string;data: BodyType<PriceTargetInput>}> = (props) => {
+          const {ticker,data} = props ?? {};
+
+          return  upsertPriceTarget(ticker,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertPriceTargetMutationResult = NonNullable<Awaited<ReturnType<typeof upsertPriceTarget>>>
+    export type UpsertPriceTargetMutationBody = BodyType<PriceTargetInput>
+    export type UpsertPriceTargetMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create or update the user's price target for a ticker
+ */
+export const useUpsertPriceTarget = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertPriceTarget>>, TError,{ticker: string;data: BodyType<PriceTargetInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertPriceTarget>>,
+        TError,
+        {ticker: string;data: BodyType<PriceTargetInput>},
+        TContext
+      > => {
+      return useMutation(getUpsertPriceTargetMutationOptions(options));
+    }
+
+export const getDeletePriceTargetUrl = (ticker: string,) => {
+
+
+
+
+  return `/api/price-targets/${ticker}`
+}
+
+/**
+ * @summary Remove the user's price target for a ticker
+ */
+export const deletePriceTarget = async (ticker: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeletePriceTargetUrl(ticker),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeletePriceTargetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePriceTarget>>, TError,{ticker: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePriceTarget>>, TError,{ticker: string}, TContext> => {
+
+const mutationKey = ['deletePriceTarget'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePriceTarget>>, {ticker: string}> = (props) => {
+          const {ticker} = props ?? {};
+
+          return  deletePriceTarget(ticker,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePriceTargetMutationResult = NonNullable<Awaited<ReturnType<typeof deletePriceTarget>>>
+
+    export type DeletePriceTargetMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove the user's price target for a ticker
+ */
+export const useDeletePriceTarget = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePriceTarget>>, TError,{ticker: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePriceTarget>>,
+        TError,
+        {ticker: string},
+        TContext
+      > => {
+      return useMutation(getDeletePriceTargetMutationOptions(options));
     }
 
 export const getGetMacroSnapshotUrl = () => {

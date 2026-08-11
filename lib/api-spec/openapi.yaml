@@ -853,6 +853,69 @@ paths:
                 $ref: "#/components/schemas/PortfolioReport"
 
   # ─── MACRO ───────────────────────────────────────────────────────────────────
+  # Preço-alvo é dado DO USUÁRIO (vem da casa de análise que ele assina), não do
+  # provedor: targetMeanPrice dá 403 em todos os planos. Por isso fica fora de
+  # /assets — a pergunta "quanto vale" é anterior a ter posição, e o uso principal é
+  # o Parecer de Ativo, consultado sobre ticker que ainda não se comprou.
+  /price-targets:
+    get:
+      operationId: listPriceTargets
+      tags: [portfolio]
+      summary: Price targets the user entered, with upside against the real quote
+      responses:
+        "200":
+          description: List of price targets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PriceTarget"
+
+  /price-targets/{ticker}:
+    put:
+      operationId: upsertPriceTarget
+      tags: [portfolio]
+      summary: Create or update the user's price target for a ticker
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PriceTargetInput"
+      responses:
+        "200":
+          description: Saved price target
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceTarget"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deletePriceTarget
+      tags: [portfolio]
+      summary: Remove the user's price target for a ticker
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
   /macro:
     get:
       operationId: getMacroSnapshot
@@ -1910,6 +1973,44 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    PriceTarget:
+      type: object
+      required: [ticker, targetPrice, source, notes, currentPrice, upsidePercent, updatedAt]
+      properties:
+        ticker:
+          type: string
+        targetPrice:
+          type: number
+        # Procedência em texto livre ("Eleven", "meu cálculo", "consenso") — é o que o
+        # usuário reconhece, não um enum que o app tenha autoridade para definir.
+        source:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        currentPrice:
+          type: ["number", "null"]
+        # A única coisa que o app calcula aqui: (alvo − cotação) / cotação. O alvo em
+        # si é dado de terceiro, e apresentá-lo como medição do Radar seria mentira.
+        upsidePercent:
+          type: ["number", "null"]
+        updatedAt:
+          type: string
+          format: date-time
+
+    PriceTargetInput:
+      type: object
+      required: [targetPrice]
+      properties:
+        targetPrice:
+          type: number
+          exclusiveMinimum: 0
+        source:
+          type: ["string", "null"]
+          maxLength: 80
+        notes:
+          type: ["string", "null"]
+          maxLength: 500
 
     # Triagem pré-compra: afirmação sobre a RÉGUA DO APP ("atende ao corte de score"),
     # nunca sobre o que a pessoa deve fazer. Não reaproveita COMPRAR/MANTER/VENDER da

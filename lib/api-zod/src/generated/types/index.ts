@@ -93,6 +93,8 @@ export * from './portfolioReport';
 export * from './portfolioRiskMetrics';
 export * from './portfolioSummary';
 export * from './portfolioSummaryPricesStaleItem';
+export * from './priceTarget';
+export * from './priceTargetInput';
 export * from './purchaseScreening';
 export * from './purchaseScreeningOutcome';
 export * from './riskMonthlyReturn';

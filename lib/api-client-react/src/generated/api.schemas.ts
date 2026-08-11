@@ -1042,6 +1042,35 @@ export interface AssetAnalysis {
   updatedAt: string;
 }
 
+export interface PriceTarget {
+  ticker: string;
+  targetPrice: number;
+  /** @nullable */
+  source: string | null;
+  /** @nullable */
+  notes: string | null;
+  /** @nullable */
+  currentPrice: number | null;
+  /** @nullable */
+  upsidePercent: number | null;
+  updatedAt: string;
+}
+
+export interface PriceTargetInput {
+  /** @exclusiveMinimum 0 */
+  targetPrice: number;
+  /**
+     * @maxLength 80
+     * @nullable
+     */
+  source?: string | null;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  notes?: string | null;
+}
+
 export type PurchaseScreeningOutcome = typeof PurchaseScreeningOutcome[keyof typeof PurchaseScreeningOutcome];
 
 
