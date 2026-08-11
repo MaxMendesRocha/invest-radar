@@ -36,7 +36,16 @@ export async function getCdiMonthlyReturns(): Promise<Map<string, number>> {
     logger.warn({ err }, "BCB CDI (série 4390) request errored");
   }
 
-  cdiCache = { returns, fetchedAt: now };
+  // NÃO cacheia resultado vazio. `fetchSeriesRange` devolve [] tanto em erro de rede
+  // quanto em resposta não-ok, então uma indisponibilidade do BCB produzia um mapa
+  // vazio guardado por 6 HORAS — e o comparativo continuava apagado por todo esse
+  // tempo depois que a fonte já tinha voltado. Aconteceu de verdade: em 11/08/2026 a
+  // API do SGS devolvia 502 em todas as séries com o site do BCB no ar.
+  //
+  // Como o BCB publica anos de histórico, mapa vazio é sempre falha, nunca "não há
+  // dado" — então guardar só o resultado preenchido não perde nada e faz a próxima
+  // requisição tentar de novo.
+  if (returns.size > 0) cdiCache = { returns, fetchedAt: now };
   return returns;
 }
 

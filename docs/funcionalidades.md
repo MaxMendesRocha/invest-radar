@@ -483,6 +483,14 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   IBOV, cujo plano gratuito cobre poucos meses. Sem dois meses comparáveis, o gráfico não
   é desenhado. O IFIX fica `null` quando não cobre a janela inteira: uma lacuna invalida a
   série, porque acumular por cima de um buraco produz um número que parece medido e não é.
+- **Fonte fora do ar não é o mesmo que histórico curto, e a tela diz qual dos dois é.** Como o
+  BCB publica anos de CDI de graça, série vazia só acontece quando a API dele cai — e escrever
+  "*ainda* não há dois meses seguidos" nesse caso joga a culpa no histórico do usuário, que
+  passa a esperar amadurecer algo que já existe. Aconteceu em 11/08/2026: o SGS devolvia 502 em
+  todas as séries com o site do BCB no ar, e o comparativo sumiu sem explicar por quê. Agora a
+  mensagem separa os dois casos e avisa que o gráfico volta sozinho. **Resultado vazio também
+  deixou de ser cacheado**: como a falha era guardada pelas mesmas 6 horas do dado bom, o
+  gráfico continuava apagado por horas depois de a fonte já ter voltado.
 - **A carteira entra no comparativo com aporte neutralizado.** Retorno sobre custo se move
   quando entra dinheiro novo mesmo sem preço nenhum ter mudado: R$ 100 valendo R$ 110 estão
   +10%, e um aporte de R$ 100 ao preço de mercado derruba isso para +5% sem que nada tenha
