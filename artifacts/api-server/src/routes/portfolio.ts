@@ -682,11 +682,21 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
       blocker?.cdiReturn == null ? "CDI" : null,
       blocker?.ibovFactor == null ? "IBOV" : null,
     ].filter((m): m is string => m != null);
+
+    // Série INTEIRA vazia é outra coisa que "faltou este mês". O BCB publica anos de
+    // histórico de graça, então zero pontos só acontece quando a API dele está fora
+    // do ar — e dizer "AINDA não há dois meses seguidos" nesse caso joga a culpa no
+    // histórico do usuário, que fica esperando amadurecer algo que já existe. O
+    // gráfico volta sozinho quando a fonte se restabelecer, e a tela precisa dizer
+    // isso em vez de sugerir que falta tempo de carteira.
+    const cdiSourceDown = cdiReturns.size === 0;
+
     res.json({
       points: [],
       windowMonths: 0,
-      windowNote:
-        missing.length > 0
+      windowNote: cdiSourceDown
+        ? "O Banco Central não respondeu agora, então o CDI não pôde ser lido e não há como comparar sem ele. O comparativo volta sozinho assim que a fonte se restabelecer — não falta histórico seu."
+        : missing.length > 0
           ? `Ainda não há dois meses seguidos com dado real de ${missing.join(", ")} para comparar.`
           : "Ainda não há dois meses seguidos de histórico para comparar.",
       portfolioTotal: null,
