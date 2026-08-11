@@ -8,6 +8,7 @@
 import type { AssetOpinionDividendFrequency } from './assetOpinionDividendFrequency';
 import type { AssetOpinionDividendTrend } from './assetOpinionDividendTrend';
 import type { AssetOpinionScoreClassification } from './assetOpinionScoreClassification';
+import type { PurchaseScreening } from './purchaseScreening';
 import type { TechnicalIndicators } from './technicalIndicators';
 
 /**
@@ -43,5 +44,6 @@ export interface AssetOpinion {
   dividendFrequency?: AssetOpinionDividendFrequency;
   newsItems: string[];
   opinion: string;
+  screening: PurchaseScreening;
   updatedAt: Date;
 }

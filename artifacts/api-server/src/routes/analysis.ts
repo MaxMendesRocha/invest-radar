@@ -23,7 +23,7 @@ import {
   type FiiProfile,
   type DividendEvent,
 } from "../lib/market-data";
-import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, analyzeFii, computeDuPontBreakdown, computeTrimSuggestion, resolveStatusReason, type AnalysisResult, concentrationLimitsFor, type ConcentrationLimits } from "../lib/analysis-engine";
+import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, analyzeFii, computeDuPontBreakdown, computeTrimSuggestion, resolveStatusReason, screenForPurchase, type AnalysisResult, concentrationLimitsFor, type ConcentrationLimits } from "../lib/analysis-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { getCdiTrailingAnnual } from "../lib/benchmark-data";
@@ -651,6 +651,9 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     dividendFrequency,
     newsItems,
     opinion: aiOpinion ?? analysis.monitoringRecommendation,
+    // Triagem determinística, calculada aqui e não escrita pela IA — mesma divisão de
+    // trabalho do resto do app: a IA redige, nunca decide enum nem nota.
+    screening: screenForPurchase(analysis),
     updatedAt: new Date().toISOString(),
   };
 

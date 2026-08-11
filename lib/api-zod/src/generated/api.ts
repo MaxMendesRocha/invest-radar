@@ -1017,6 +1017,11 @@ export const GetAssetOpinionResponse = zod.object({
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "newsItems": zod.array(zod.string()),
   "opinion": zod.string(),
+  "screening": zod.object({
+  "outcome": zod.enum(['atende', 'nao_atende', 'sem_dados']),
+  "scoreThreshold": zod.number(),
+  "riskCount": zod.number()
+}),
   "updatedAt": zod.coerce.date()
 }).describe('Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (COMPRAR\/MANTER\/VENDER).')
 

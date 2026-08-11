@@ -111,6 +111,51 @@ export default function Parecer() {
               </div>
             </div>
 
+            {/* Veredito de TRIAGEM, logo abaixo do score, que é o número de que ele
+                deriva. Diz "atende / não atende ao corte do Radar" e nunca "compre":
+                esta tela é consultada para ativo que a pessoa não tem, e transformar
+                uma régua interna em recomendação seria a primeira afirmação inventada
+                do app. A contagem de riscos vai ao lado, não dentro — ver
+                screenForPurchase para por que risco não derruba o veredito. */}
+            <div
+              className={`mt-6 rounded-lg border p-4 ${
+                opinion.screening.outcome === "atende"
+                  ? "border-green-600/30 bg-green-600/5"
+                  : opinion.screening.outcome === "nao_atende"
+                    ? "border-amber-600/30 bg-amber-600/5"
+                    : "border-dashed"
+              }`}
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-sm font-semibold">
+                  {opinion.screening.outcome === "atende" && "Atende ao corte de compra do Radar"}
+                  {opinion.screening.outcome === "nao_atende" && "Não atende ao corte de compra do Radar"}
+                  {opinion.screening.outcome === "sem_dados" && "Sem dados suficientes para triagem"}
+                </p>
+                {opinion.available && (
+                  <p className="font-mono text-xs text-muted-foreground">
+                    score {opinion.score} · corte {opinion.screening.scoreThreshold}
+                  </p>
+                )}
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground text-pretty">
+                {opinion.screening.outcome === "sem_dados"
+                  ? "Sem indicadores reais suficientes, o Radar não emite triagem — é o mesmo piso de evidência que evita veredito sobre número quebrado."
+                  : "É o corte de nota do próprio app, não uma recomendação de compra."}
+                {opinion.screening.riskCount > 0 && (
+                  <>
+                    {" "}
+                    <span className="font-medium text-foreground">
+                      {opinion.screening.riskCount === 1
+                        ? "1 fator de risco identificado"
+                        : `${opinion.screening.riskCount} fatores de risco identificados`}
+                    </span>{" "}
+                    abaixo — eles não entram nesta conta, e podem pesar mais que a nota.
+                  </>
+                )}
+              </p>
+            </div>
+
             {rangePercent != null && (
               <div className="mt-6 space-y-1.5">
                 <div className="flex justify-between text-xs font-medium text-muted-foreground">

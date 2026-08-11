@@ -142,6 +142,25 @@ empresa. Abaixo do piso a resposta é "dados insuficientes", que é a verdade.
 O piso exclui os 25 BDRs e 7 ações de cobertura mínima. **Não toca nenhuma das 74 ações com
 cobertura real**, que têm em média 6,9 indicadores cada.
 
+### A triagem pré-compra diz "atende", nunca "compre"
+
+O Parecer de Ativo responde à pergunta com um veredito explícito — **"atende ao corte de
+compra do Radar"** ou **"não atende"** —, mostrando score e corte lado a lado. É uma afirmação
+sobre a régua do app, não sobre o que a pessoa deve fazer, e a diferença é o que separa uma
+ferramenta de uma recomendação de investimento.
+
+Não reaproveita o COMPRAR/MANTER/VENDER da Análise de Ativos, e o motivo é concreto: aquele
+status depende de quanto o ativo pesa na carteira, e para quem não tem posição o percentual é
+zero — "MANTER" ou "VENDER" sobre algo que você não possui não quer dizer nada.
+
+**Risco não derruba o veredito, e isso é uma escolha.** O TAEE11 pontua 83 (acima do corte de
+82) carregando dois riscos sérios de caixa, e aparece como "atende" com os dois riscos logo
+abaixo e um aviso de que eles não entram na conta. Reprovar por risco exigiria definir quais
+são eliminatórios — e "alavancagem acima de 3x EBITDA" é o normal de transmissora e saneamento,
+então o limiar genérico reprovaria setores inteiros por funcionarem como funcionam. Enquanto
+isso não for medido, a honestidade está em mostrar as duas coisas lado a lado em vez de fundir
+num rótulo só.
+
 ### Saúde financeira: entra na lista, não na nota
 
 Cobertura do dividendo por caixa, alavancagem, conversão de lucro em caixa e liquidez corrente
@@ -167,6 +186,11 @@ mesmos limiares marcaria como risco o funcionamento normal do setor. Dois limiar
 líquida sobre EBITDA** é o patamar usual de covenant no crédito corporativo brasileiro. Quando o
 caixa livre é negativo o aviso muda de frase em vez de virar percentual — "cobre −73%" não
 significa nada, e o caso apareceu de verdade na verificação (SBSP3).
+
+O elogio de cobertura também tem **teto**: acima de 10x o dividendo é irrelevante perto do
+caixa gerado, e "coberto com folga" deixa de dizer algo sobre sustentação de provento. Também
+não é hipótese — MGLU3 mediu **160x** de cobertura justamente porque havia cortado o provento
+em 73%, e aparecia como ponto positivo numa empresa que estava reduzindo distribuição.
 
 ---
 
@@ -384,7 +408,7 @@ comparação numérica direta. A IA escreve o texto *em volta* dele, mas nunca o
 | **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático e a data da compra, opcional em qualquer classe, editável depois |
 | **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
-| **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Análise completa de qualquer ticker, sem exigir posição. Range de 52 semanas, tendência de proventos, comparação setorial |
+| **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Triagem "atende / não atende ao corte", análise completa de qualquer ticker sem exigir posição, range de 52 semanas, tendência de proventos, comparação setorial |
 | **Oportunidades** | O que existe lá fora? | Universo de ~180 tickers varrido semanalmente, reordenado pelo nível de risco compatível com o perfil |
 | **Dividendos** | Quanto recebo, e caminho para a meta? | Total acumulado, yield on cost, histórico de 12 meses, proventos anunciados, progresso da meta |
 | **Operações Encerradas** | Quanto ganhei, e quanto devo? | Vendas com resultado realizado e consolidação mensal de IR com compensação de prejuízo |

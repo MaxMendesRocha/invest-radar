@@ -1911,9 +1911,29 @@ components:
           type: string
           format: date-time
 
+    # Triagem pré-compra: afirmação sobre a RÉGUA DO APP ("atende ao corte de score"),
+    # nunca sobre o que a pessoa deve fazer. Não reaproveita COMPRAR/MANTER/VENDER da
+    # Análise de Ativos porque aquele status depende de quanto o ativo pesa na carteira,
+    # e para quem não tem posição isso não significa nada.
+    PurchaseScreening:
+      type: object
+      required: [outcome, scoreThreshold, riskCount]
+      properties:
+        outcome:
+          type: string
+          enum: [atende, nao_atende, sem_dados]
+        scoreThreshold:
+          type: number
+        # Contagem de fatores de risco, exibida AO LADO do resultado e não embutida
+        # nele: reprovar por risco exigiria definir quais são eliminatórios, e o
+        # limiar genérico de alavancagem reprovaria transmissora e saneamento por
+        # funcionarem como funcionam. Calibrar isso pede medição antes.
+        riskCount:
+          type: integer
+
     AssetOpinion:
       type: object
-      required: [ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, newsItems, opinion, updatedAt]
+      required: [ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, newsItems, opinion, screening, updatedAt]
       description: Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (COMPRAR/MANTER/VENDER).
       properties:
         ticker:
@@ -1969,6 +1989,8 @@ components:
             type: string
         opinion:
           type: string
+        screening:
+          $ref: "#/components/schemas/PurchaseScreening"
         updatedAt:
           type: string
           format: date-time
