@@ -60,6 +60,14 @@ export function computeFinancialHealth(f: Fundamentals, dps12m: number | null): 
  */
 const COVERAGE_RISK = 1;
 const COVERAGE_COMFORTABLE = 1.5;
+/**
+ * Teto do elogio de cobertura. Acima disso o dividendo é irrelevante perto do caixa
+ * gerado, e "coberto com folga" deixa de dizer algo sobre sustentação do provento.
+ * Não é hipótese: MGLU3 mediu 160x de cobertura — porque o provento tinha caído 73% —
+ * e aparecia como ponto POSITIVO numa empresa que estava justamente cortando
+ * distribuição. Um número altíssimo aqui é sinal de dividendo simbólico, não de folga.
+ */
+const COVERAGE_IMMATERIAL = 10;
 const LEVERAGE_RISK = 3;
 const CASH_CONVERSION_RISK = 0.5;
 const CURRENT_RATIO_RISK = 1;
@@ -106,7 +114,10 @@ export function financialHealthSignals(
       risks.push(
         `Dividendo não coberto pelo caixa — o fluxo de caixa livre cobre ${(h.dividendCashCoverage * 100).toFixed(0)}% do que foi distribuído em 12 meses`,
       );
-    } else if (h.dividendCashCoverage >= COVERAGE_COMFORTABLE) {
+    } else if (
+      h.dividendCashCoverage >= COVERAGE_COMFORTABLE &&
+      h.dividendCashCoverage <= COVERAGE_IMMATERIAL
+    ) {
       positives.push(
         `Dividendo coberto com folga — o caixa livre cobre ${h.dividendCashCoverage.toFixed(1)}x o distribuído em 12 meses`,
       );

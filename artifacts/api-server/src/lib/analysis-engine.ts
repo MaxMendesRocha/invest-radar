@@ -267,7 +267,7 @@ function scoreClassification(score: number): ScoreClassification {
 // pede COMPRAR, Crítico pede VENDER, o meio é MANTER. Antes os dois conjuntos de
 // números divergiam sem motivo, o que permitia um ativo "Forte" com status "Manter" e
 // tornava impossível explicar a relação entre o badge e a classificação.
-const BUY_SCORE_THRESHOLD = 82;
+export const BUY_SCORE_THRESHOLD = 82;
 const SELL_SCORE_THRESHOLD = 45;
 
 /**
@@ -482,6 +482,54 @@ export function noFundamentalsAnalysis(): AnalysisResult {
  * sem ele, o payout ratio simplesmente não entra na média, igual a qualquer outro
  * fundamento indisponível, nunca vira um valor chutado.
  */
+export type PurchaseScreeningOutcome = "atende" | "nao_atende" | "sem_dados";
+
+export interface PurchaseScreening {
+  outcome: PurchaseScreeningOutcome;
+  /** O corte, para a tela poder mostrar a régua junto do resultado. */
+  scoreThreshold: number;
+  /** Quantos fatores de risco o ativo carrega — mostrados AO LADO, não embutidos. */
+  riskCount: number;
+}
+
+/**
+ * Triagem pré-compra: o ativo atende ao corte de score do Radar?
+ *
+ * É uma afirmação sobre a RÉGUA DO APP, não sobre o que a pessoa deve fazer. Por isso
+ * o vocabulário é "atende / não atende", e nunca "compre" — a tela de Parecer é
+ * consultada para ativo que não se tem, e chamar isso de recomendação seria a primeira
+ * afirmação inventada do app.
+ *
+ * Também NÃO reaproveita o status COMPRAR/MANTER/VENDER da Análise de Ativos. Aquele
+ * depende de quanto o ativo pesa na carteira — para quem não tem posição o percentual
+ * é zero, e "MANTER" ou "VENDER" sobre algo que você não possui não quer dizer nada.
+ *
+ * ## O que a triagem deliberadamente NÃO faz
+ *
+ * Risco não derruba o veredito, e a decisão é consciente. O TAEE11 pontua 83 (acima do
+ * corte) carregando dois riscos sérios de caixa; aqui ele aparece como "atende", com os
+ * dois riscos exibidos ao lado. Reprovar por risco exigiria definir quais são
+ * eliminatórios — e "alavancagem acima de 3x EBITDA" é o normal de transmissora e
+ * saneamento, então o limiar genérico reprovaria setores inteiros por funcionarem como
+ * funcionam. Isso é calibração, e calibração aqui se faz medindo antes (ver a
+ * recalibração do score em analysis-engine e a nota em financial-health-engine).
+ *
+ * Enquanto isso não é medido, a honestidade está em mostrar as duas coisas lado a lado
+ * em vez de fundir num rótulo só: o corte é objetivo, os riscos são reais, e quem
+ * decide é quem lê.
+ */
+export function screenForPurchase(analysis: AnalysisResult): PurchaseScreening {
+  return {
+    outcome: !analysis.available
+      ? "sem_dados"
+      : analysis.score >= BUY_SCORE_THRESHOLD
+        ? "atende"
+        : "nao_atende",
+    scoreThreshold: BUY_SCORE_THRESHOLD,
+    riskCount: analysis.risks.length,
+  };
+}
+
 export function analyzeFundamentals(
   f: Fundamentals,
   dps12m: number | null = null,

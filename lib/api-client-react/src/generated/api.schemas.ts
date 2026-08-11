@@ -1042,6 +1042,21 @@ export interface AssetAnalysis {
   updatedAt: string;
 }
 
+export type PurchaseScreeningOutcome = typeof PurchaseScreeningOutcome[keyof typeof PurchaseScreeningOutcome];
+
+
+export const PurchaseScreeningOutcome = {
+  atende: 'atende',
+  nao_atende: 'nao_atende',
+  sem_dados: 'sem_dados',
+} as const;
+
+export interface PurchaseScreening {
+  outcome: PurchaseScreeningOutcome;
+  scoreThreshold: number;
+  riskCount: number;
+}
+
 export type AssetOpinionScoreClassification = typeof AssetOpinionScoreClassification[keyof typeof AssetOpinionScoreClassification];
 
 
@@ -1111,6 +1126,7 @@ export interface AssetOpinion {
   dividendFrequency?: AssetOpinionDividendFrequency;
   newsItems: string[];
   opinion: string;
+  screening: PurchaseScreening;
   updatedAt: string;
 }
 
