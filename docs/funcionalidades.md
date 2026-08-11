@@ -174,10 +174,38 @@ estava em 4,7x EBITDA. Bullet tem cara de fato, texto tem cara de opinião, e qu
 o texto. Medido em 18 ações com fundamentos reais: **10 ganharam ao menos um risco**, e três
 (PETR4, TAEE11, VIVT3) saíram de *zero* riscos.
 
-Não entram na nota porque mudar a média mexeria no score de todo ativo do app, e a régua daqui é
-medir antes de calibrar — foi assim que a recalibração anterior foi feita, comparando as duas
-versões sobre fundamentos congelados. Parar de esconder risco é uma coisa; mudar a nota é outra
-decisão, que pede o mesmo comparativo antes.
+Não entram na nota porque **a medição disse para não entrarem**, e isso foi testado, não suposto.
+O comparativo está em `artifacts/api-server/harness/health-score.mts`: congela os fundamentos das
+90 ações do universo e roda o motor atual contra um candidato em que a saúde vira um quarto
+componente da média.
+
+O resultado, com peso 0,15 sobre 83 ações com fundamentos:
+
+| setor | n | delta médio no score |
+|---|---|---|
+| **Energia** | 26 | **−4,6** |
+| (sem setor) | 11 | −2,5 |
+| Bens Industriais | 3 | −1,0 |
+| Consumo Cíclico | 3 | −0,3 |
+| Materiais Básicos | 9 | −0,1 |
+| Serviços Financeiros | 15 | 0,0 |
+| Consumo Não Cíclico | 5 | +1,4 |
+
+A penalidade não se espalha pelo mercado: ela cai quase inteira em **Energia**, e os seis maiores
+tombos são todos do setor (CMIG3/4, ISAE3/4, CPFE3, CPLE3). A faixa "Forte" encolhe de 10 para 4
+ações e as seis que perdem o corte de compra são, em sua maioria, elétricas e transmissoras. Isso
+não é medir saúde financeira — é medir intensidade de capital, que em utility regulada é o modelo
+de negócio, não uma fragilidade.
+
+Testada também a variante que compara alavancagem contra a **mediana do próprio setor**, na
+hipótese de que o viés viesse da curva absoluta: Energia melhora de −4,6 para −3,4 e continua
+quatro vezes pior que qualquer outro setor. O viés sobrevive porque não vem só da alavancagem —
+cobertura de dividendo por caixa e conversão em caixa também são estruturalmente piores em quem
+distribui muito e investe pesado.
+
+Conclusão medida: **saúde financeira fica na lista de riscos, não na nota**. Ali ela faz o
+trabalho — expor que o dividendo é pago com dívida — sem distorcer a comparação entre setores. O
+harness fica no repositório para a decisão poder ser revista com dado novo, não com opinião.
 
 Banco e seguradora ficam fora destes sinais por inteiro: o balanço deles é estruturalmente outro
 (captação é passivo operacional, liquidez corrente gira perto de 1 por natureza), e aplicar os
