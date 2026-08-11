@@ -142,6 +142,32 @@ empresa. Abaixo do piso a resposta é "dados insuficientes", que é a verdade.
 O piso exclui os 25 BDRs e 7 ações de cobertura mínima. **Não toca nenhuma das 74 ações com
 cobertura real**, que têm em média 6,9 indicadores cada.
 
+### Saúde financeira: entra na lista, não na nota
+
+Cobertura do dividendo por caixa, alavancagem, conversão de lucro em caixa e liquidez corrente
+viram **pontos positivos e riscos**, mas **não entram na média do score**. A separação é
+deliberada nos dois sentidos.
+
+Entram na lista porque escondê-los produzia telas que se contradiziam. O TAEE11 aparecia com
+**6 positivos e zero riscos** — um deles "dividend yield acima da média do mercado" — enquanto o
+parecer da IA ao lado dizia que o fluxo de caixa livre cobria 41% do dividendo e a dívida líquida
+estava em 4,7x EBITDA. Bullet tem cara de fato, texto tem cara de opinião, e quem estava certo era
+o texto. Medido em 18 ações com fundamentos reais: **10 ganharam ao menos um risco**, e três
+(PETR4, TAEE11, VIVT3) saíram de *zero* riscos.
+
+Não entram na nota porque mudar a média mexeria no score de todo ativo do app, e a régua daqui é
+medir antes de calibrar — foi assim que a recalibração anterior foi feita, comparando as duas
+versões sobre fundamentos congelados. Parar de esconder risco é uma coisa; mudar a nota é outra
+decisão, que pede o mesmo comparativo antes.
+
+Banco e seguradora ficam fora destes sinais por inteiro: o balanço deles é estruturalmente outro
+(captação é passivo operacional, liquidez corrente gira perto de 1 por natureza), e aplicar os
+mesmos limiares marcaria como risco o funcionamento normal do setor. Dois limiares merecem nome:
+**1x de cobertura** é o ponto em que a empresa distribui mais caixa do que gerou, e **3x de dívida
+líquida sobre EBITDA** é o patamar usual de covenant no crédito corporativo brasileiro. Quando o
+caixa livre é negativo o aviso muda de frase em vez de virar percentual — "cobre −73%" não
+significa nada, e o caso apareceu de verdade na verificação (SBSP3).
+
 ---
 
 ## A régua de FII, que é outra régua

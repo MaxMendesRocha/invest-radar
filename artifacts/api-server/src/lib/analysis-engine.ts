@@ -1,5 +1,6 @@
 import type { DividendEvent, Fundamentals, FiiProfile } from "./market-data";
 import { classifyDividendFrequency, computeDistributionMomentum, sumLast12Months } from "./market-data";
+import { computeFinancialHealth, financialHealthSignals } from "./financial-health-engine";
 
 export type AnalysisStatus = "COMPRAR" | "MANTER" | "VENDER";
 export type ScoreClassification = "Excelente" | "Forte" | "Estavel" | "Atencao" | "Critico";
@@ -520,8 +521,15 @@ export function analyzeFundamentals(
   const score = Math.round(components.reduce((sum, c) => sum + c.score * c.weight, 0) / totalWeight);
 
   const allMetrics = [...fundamentalMetrics, trend, volatility].filter((m): m is MetricEval => m != null);
-  const positives = allMetrics.filter((m) => m.positive).map((m) => m.positive!);
-  const risks = allMetrics.filter((m) => m.risk).map((m) => m.risk!);
+
+  // Saúde financeira entra na LISTA, não na média. Os indicadores de caixa já eram
+  // calculados e mandados para a IA, mas nunca viravam bullet — e a tela se
+  // contradizia: fundamentos com zero riscos ao lado de um parecer descrevendo
+  // dividendo pago com dívida. Fora do score de propósito; ver financialHealthSignals.
+  const healthSignals = financialHealthSignals(computeFinancialHealth(f, dps12m), f.sector);
+
+  const positives = [...allMetrics.filter((m) => m.positive).map((m) => m.positive!), ...healthSignals.positives];
+  const risks = [...allMetrics.filter((m) => m.risk).map((m) => m.risk!), ...healthSignals.risks];
 
   if (positives.length === 0 && risks.length === 0) {
     positives.push("Fundamentos dentro de padrões medianos, sem sinais de alerta relevantes");
