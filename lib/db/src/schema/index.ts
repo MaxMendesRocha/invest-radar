@@ -15,3 +15,4 @@ export * from "./price-snapshots";
 export * from "./job-runs";
 export * from "./sales";
 export * from "./sector-benchmarks";
+export * from "./price-targets";

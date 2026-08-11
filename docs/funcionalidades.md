@@ -532,8 +532,13 @@ para decidir nada.
 - **Correlação entre ativos não é calculada.** A diversificação é medida por dispersão entre setores
   e tickers; duas ações do mesmo setor que andam juntas contam como diversificação. Calcular
   correlação real é possível com as séries já em cache — próximo passo natural.
-- **Retorno potencial é heurística.** Não há fonte de preço-alvo de analista no plano atual. O
-  número combina score e yield reais, documentado como estimativa interna, não previsão.
+- **Retorno potencial é heurística.** Não há fonte de preço-alvo de analista em plano nenhum
+  (`targetMeanPrice` dá 403 na v1 e na v2), então o número das Oportunidades combina score e
+  yield reais, documentado como estimativa interna e não previsão. Quem tem a informação por
+  fora — assinante de casa de análise — pode **cadastrar o preço-alvo por ticker** no Parecer
+  de Ativo, com a procedência que quiser escrever; daí o app calcula o upside contra a cotação
+  real. O alvo é dado de terceiro e aparece rotulado como tal: não entra no score, não entra na
+  triagem, e a única coisa que o Radar acrescenta é a divisão.
 - **Posições antigas em Tesouro** cadastradas antes da identificação por tipo + vencimento
   continuam sem marcação a mercado. Casar texto livre com um título real seria adivinhação.
 - **O fluxo do time-weighted é posicionado no início do subperíodo.** O dado tem o dia do

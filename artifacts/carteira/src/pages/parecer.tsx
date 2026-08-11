@@ -1,5 +1,13 @@
 import { useState, type FormEvent } from "react";
-import { useGetAssetOpinion, getGetAssetOpinionQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetAssetOpinion,
+  getGetAssetOpinionQueryKey,
+  useListPriceTargets,
+  getListPriceTargetsQueryKey,
+  useUpsertPriceTarget,
+  useDeletePriceTarget,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +15,112 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Search, Check, AlertTriangle, Newspaper, Sparkles, TrendingUp, Coins, LineChart, CalendarClock } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+
+/**
+ * Preço-alvo do usuário para o ticker consultado.
+ *
+ * Fica nesta tela porque é aqui que a pergunta "quanto isso vale" é feita — antes de
+ * comprar. O app não tem essa informação e não vai ter: `targetMeanPrice` dá 403 em
+ * todos os planos do provedor. Quem assina casa de análise tem o número; o app só
+ * precisava de onde recebê-lo.
+ *
+ * O upside é a ÚNICA coisa calculada aqui. O alvo é dado de terceiro, exibido com a
+ * procedência que o usuário escreveu, e nunca se mistura com o score nem com a
+ * triagem — apresentar opinião de fora como medição do Radar seria o mesmo erro que
+ * fabricar número.
+ */
+function PriceTargetBlock({ ticker, currentPrice }: { ticker: string; currentPrice: number }) {
+  const queryClient = useQueryClient();
+  const { data: targets } = useListPriceTargets({ query: { queryKey: getListPriceTargetsQueryKey() } });
+  const existing = targets?.find((t) => t.ticker === ticker);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [source, setSource] = useState("");
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListPriceTargetsQueryKey() });
+  const upsert = useUpsertPriceTarget({ mutation: { onSuccess: () => { invalidate(); setIsEditing(false); } } });
+  const remove = useDeletePriceTarget({ mutation: { onSuccess: invalidate } });
+
+  const openEditor = () => {
+    setValue(existing ? String(existing.targetPrice) : "");
+    setSource(existing?.source ?? "");
+    setIsEditing(true);
+  };
+
+  const save = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const parsed = Number(value.replace(",", "."));
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    upsert.mutate({ ticker, data: { targetPrice: parsed, source: source.trim() || null } });
+  };
+
+  if (isEditing) {
+    return (
+      <form onSubmit={save} className="mt-4 rounded-lg border p-4">
+        <p className="text-sm font-semibold">Preço-alvo para {ticker}</p>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="target-price">Alvo (R$)</label>
+            <Input id="target-price" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} placeholder="29,92" required />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="target-source">Fonte (opcional)</label>
+            <Input id="target-source" value={source} onChange={(e) => setSource(e.target.value)} placeholder="Eleven, meu cálculo…" maxLength={80} />
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button type="submit" size="sm" disabled={upsert.isPending}>{upsert.isPending ? "Salvando..." : "Salvar"}</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setIsEditing(false)}>Cancelar</Button>
+          {existing && (
+            <Button type="button" size="sm" variant="ghost" className="text-destructive"
+              onClick={() => { remove.mutate({ ticker }); setIsEditing(false); }}>
+              Remover
+            </Button>
+          )}
+        </div>
+      </form>
+    );
+  }
+
+  if (!existing) {
+    return (
+      <button type="button" onClick={openEditor}
+        className="mt-4 w-full rounded-lg border border-dashed p-3 text-left text-xs text-muted-foreground hover:bg-muted/40">
+        <span className="font-medium text-foreground">Definir preço-alvo</span> — se você acompanha alguma casa de
+        análise, informe o alvo dela e o app calcula o upside contra a cotação real. O Radar não tem esse número:
+        preço-alvo de analista não é publicado por nenhum provedor de dados aberto.
+      </button>
+    );
+  }
+
+  const upside = existing.upsidePercent;
+  const stale = upside != null && upside < 0;
+
+  return (
+    <button type="button" onClick={openEditor} className="mt-4 w-full rounded-lg border p-3 text-left hover:bg-muted/40">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm">
+          Preço-alvo <span className="font-mono font-semibold">{formatCurrency(existing.targetPrice)}</span>
+          {existing.source && <span className="text-xs text-muted-foreground"> · {existing.source}</span>}
+        </p>
+        {upside != null && (
+          <p className={`font-mono text-sm font-semibold ${upside >= 0 ? "text-green-600 dark:text-green-500" : "text-destructive"}`}>
+            {upside >= 0 ? "+" : ""}{upside.toFixed(1)}%
+          </p>
+        )}
+      </div>
+      {/* Alvo abaixo da cotação quase sempre significa alvo velho, não pessimismo:
+          relatório é datado e o preço andou desde então. Dizer isso evita ler como
+          recomendação de venda algo que é só defasagem. */}
+      <p className="mt-1 text-[11px] text-muted-foreground text-pretty">
+        {stale
+          ? `Contra a cotação de hoje (${formatCurrency(currentPrice)}), o alvo já ficou para trás — vale conferir se a fonte publicou revisão.`
+          : `Upside contra ${formatCurrency(currentPrice)}. Número seu, não do Radar — só o cálculo é do app.`}
+      </p>
+    </button>
+  );
+}
 
 const CROSS_SIGNAL_LABELS: Record<string, string> = {
   golden_cross_recente: "Cruzamento dourado recente",
@@ -155,6 +269,8 @@ export default function Parecer() {
                 )}
               </p>
             </div>
+
+            <PriceTargetBlock ticker={opinion.ticker} currentPrice={opinion.price} />
 
             {rangePercent != null && (
               <div className="mt-6 space-y-1.5">
