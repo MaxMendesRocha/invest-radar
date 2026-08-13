@@ -708,6 +708,8 @@ export interface MarketContext {
   coveragePercent: number;
   uncovered: string[];
   asOf: string;
+  /** @nullable */
+  narrative: string | null;
 }
 
 export interface PortfolioMarketContext {

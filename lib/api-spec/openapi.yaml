@@ -1623,7 +1623,7 @@ components:
       type: object
       required:
         [windows, attribution, attributionSessions, attributionTotalPercent, benchmarkLabel,
-         benchmarkNote, coveragePercent, uncovered, asOf]
+         benchmarkNote, coveragePercent, uncovered, asOf, narrative]
       properties:
         windows:
           type: array
@@ -1653,6 +1653,11 @@ components:
         asOf:
           type: string
           format: date
+        # Texto da IA explicando o movimento, escrito SOBRE os números acima e ancorado
+        # em manchetes reais dos ativos. Null sem ANTHROPIC_API_KEY ou em caso de erro —
+        # o card funciona inteiro sem ele.
+        narrative:
+          type: ["string", "null"]
 
     MarketContextWindow:
       type: object

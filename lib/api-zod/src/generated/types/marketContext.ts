@@ -19,4 +19,6 @@ export interface MarketContext {
   coveragePercent: number;
   uncovered: string[];
   asOf: Date;
+  /** @nullable */
+  narrative: string | null;
 }

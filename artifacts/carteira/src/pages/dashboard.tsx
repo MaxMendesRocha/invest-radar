@@ -20,7 +20,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, BarChart, Bar
 } from "recharts";
-import { ArrowUpRight, Coins, Scale, TrendingUp, type LucideIcon } from "lucide-react";
+import { ArrowUpRight, Coins, Scale, Sparkles, TrendingUp, type LucideIcon } from "lucide-react";
 import { categoryLabel } from "@/lib/categories";
 
 /**
@@ -629,6 +629,21 @@ function MarketContextCard({ context }: { context: MarketContext }) {
             quase não pesar — e o contrário também.
           </p>
         </div>
+
+        {/* O texto vem DEPOIS dos números, nunca no lugar deles: se a IA falhar ou a
+            chave não existir, o card inteiro continua de pé. */}
+        {context.narrative && (
+          <div className="mt-5 rounded-lg border bg-muted/20 p-4">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5" /> O que aconteceu
+            </p>
+            <p className="mt-2 text-sm text-pretty leading-relaxed">{context.narrative}</p>
+            <p className="mt-2 text-[10px] text-muted-foreground text-pretty">
+              Leitura da IA sobre os números acima e as notícias reais dos ativos. Quando as manchetes não explicam o
+              movimento, o texto diz isso em vez de sugerir uma causa.
+            </p>
+          </div>
+        )}
 
         {context.benchmarkNote && (
           <p className="mt-3 border-t pt-3 text-[11px] text-amber-700 text-pretty dark:text-amber-500">
