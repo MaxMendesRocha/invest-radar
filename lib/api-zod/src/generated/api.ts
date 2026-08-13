@@ -652,6 +652,36 @@ export const GetPortfolioRiskMetricsResponse = zod.object({
 
 
 /**
+ * @summary Portfolio move against the market over 1/5/21 sessions, plus which asset drove it
+ */
+export const GetPortfolioMarketContextResponse = zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable(),
+  "context": zod.union([zod.object({
+  "windows": zod.array(zod.object({
+  "label": zod.string(),
+  "sessions": zod.number(),
+  "portfolioPercent": zod.number(),
+  "benchmarkPercent": zod.number().nullable()
+})),
+  "attribution": zod.array(zod.object({
+  "ticker": zod.string(),
+  "weightPercent": zod.number(),
+  "movePercent": zod.number(),
+  "contributionPp": zod.number()
+})),
+  "attributionSessions": zod.number(),
+  "attributionTotalPercent": zod.number(),
+  "benchmarkLabel": zod.string(),
+  "benchmarkNote": zod.string().nullable(),
+  "coveragePercent": zod.number(),
+  "uncovered": zod.array(zod.string()),
+  "asOf": zod.coerce.date()
+}),zod.null()])
+})
+
+
+/**
  * @summary Upcoming dividend/JCP payments for assets currently held, based on real provider data
  */
 export const GetPortfolioDividendsUpcomingResponseItem = zod.object({

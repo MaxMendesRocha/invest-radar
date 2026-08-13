@@ -432,7 +432,7 @@ comparação numérica direta. A IA escreve o texto *em volta* dele, mas nunca o
 
 | Tela | A pergunta | O que mostra |
 |---|---|---|
-| **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks, oscilação da composição atual |
+| **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, **carteira contra o mercado e quem puxou o resultado**, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks, oscilação da composição atual |
 | **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático e a data da compra, opcional em qualquer classe, editável depois |
 | **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
@@ -519,6 +519,18 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   mensagem separa os dois casos e avisa que o gráfico volta sozinho. **Resultado vazio também
   deixou de ser cacheado**: como a falha era guardada pelas mesmas 6 horas do dado bom, o
   gráfico continuava apagado por horas depois de a fonte já ter voltado.
+- **"Sou eu ou é o mercado?" tem resposta na tela.** Quatro etiquetas vermelhas diziam que tudo
+  caiu e nada mais. Medido na carteira que motivou o card: em 5 pregões ela caiu **1,38%** enquanto
+  o IBOV caiu **5,98%** — a carteira defensiva fez o que se espera dela, e a tela mostrava só
+  prejuízo. As três janelas (1 dia, 1 semana, 1 mês) usam fechamento ajustado e recortam o
+  benchmark nas mesmas datas.
+- **A atribuição é por contribuição, não por variação.** Na mesma carteira, o KLBN3 caiu 4,53% e
+  custou **0,12pp**; o MXRF11 caiu 1,48% e explicou **63% da queda**, porque pesa 67%. Ordenar por
+  variação — que é o que o olho faz sozinho diante de uma lista vermelha — aponta o culpado errado,
+  então a lista ordena por peso × movimento e mostra as duas colunas lado a lado.
+- **Carteira de FII comparada ao IBOV avisa que a régua não é a ideal.** Acima de 60% em FII, o
+  card diz que o espelho certo seria o IFIX e que o provedor de cotação não entrega série histórica
+  dele. Usar o IBOV calado sugeriria uma comparação que não é justa.
 - **A carteira entra no comparativo com aporte neutralizado.** Retorno sobre custo se move
   quando entra dinheiro novo mesmo sem preço nenhum ter mudado: R$ 100 valendo R$ 110 estão
   +10%, e um aporte de R$ 100 ao preço de mercado derruba isso para +5% sem que nada tenha
