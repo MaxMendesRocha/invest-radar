@@ -39,8 +39,25 @@ function PriceTargetBlock({ ticker, currentPrice }: { ticker: string; currentPri
   const [source, setSource] = useState("");
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListPriceTargetsQueryKey() });
-  const upsert = useUpsertPriceTarget({ mutation: { onSuccess: () => { invalidate(); setIsEditing(false); } } });
-  const remove = useDeletePriceTarget({ mutation: { onSuccess: invalidate } });
+
+  // Sem tratamento de erro, uma falha ao salvar não fazia NADA visível: o formulário
+  // continuava aberto e o usuário concluía que o clique não pegou. Descoberto testando
+  // o cenário em que a tabela `price_targets` ainda não existe no banco — o PUT devolve
+  // 500 e a tela ficava muda. Vale para qualquer falha, não só essa.
+  const [error, setError] = useState<string | null>(null);
+  const upsert = useUpsertPriceTarget({
+    mutation: {
+      onMutate: () => setError(null),
+      onSuccess: () => { invalidate(); setIsEditing(false); },
+      onError: () => setError("Não foi possível salvar o preço-alvo. Tente de novo em instantes."),
+    },
+  });
+  const remove = useDeletePriceTarget({
+    mutation: {
+      onSuccess: invalidate,
+      onError: () => setError("Não foi possível remover o preço-alvo."),
+    },
+  });
 
   const openEditor = () => {
     setValue(existing ? String(existing.targetPrice) : "");
@@ -69,6 +86,7 @@ function PriceTargetBlock({ ticker, currentPrice }: { ticker: string; currentPri
             <Input id="target-source" value={source} onChange={(e) => setSource(e.target.value)} placeholder="Eleven, meu cálculo…" maxLength={80} />
           </div>
         </div>
+        {error && <p className="mt-3 text-xs text-destructive text-pretty">{error}</p>}
         <div className="mt-3 flex flex-wrap gap-2">
           <Button type="submit" size="sm" disabled={upsert.isPending}>{upsert.isPending ? "Salvando..." : "Salvar"}</Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => setIsEditing(false)}>Cancelar</Button>
