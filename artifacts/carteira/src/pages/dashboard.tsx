@@ -9,6 +9,9 @@ import {
   getGetPortfolioBenchmarksQueryKey,
   useGetPortfolioRiskMetrics,
   getGetPortfolioRiskMetricsQueryKey,
+  useGetPortfolioMarketContext,
+  getGetPortfolioMarketContextQueryKey,
+  type MarketContext,
   useGetPortfolioDividendsProjection
 } from "@workspace/api-client-react";
 import { formatCurrency, formatPercent, formatShortDateTime } from "@/lib/utils";
@@ -109,6 +112,13 @@ export default function Dashboard() {
   // de uso do app (meses), este depende do mercado (existe desde o primeiro dia).
   const { data: risk, isLoading: isLoadingRisk } = useGetPortfolioRiskMetrics({
     query: { queryKey: getGetPortfolioRiskMetricsQueryKey() }
+  });
+
+  // Carteira contra mercado + atribuição. Silencioso enquanto carrega e quando não há
+  // pregões suficientes: é contexto, não indicador — um esqueleto piscando no topo da
+  // home custaria mais atenção do que entrega.
+  const { data: marketContext } = useGetPortfolioMarketContext({
+    query: { queryKey: getGetPortfolioMarketContextQueryKey() }
   });
 
   // Renda projetada a partir do DPS REAL pago pelos ativos nos últimos 12 meses —
@@ -260,6 +270,12 @@ export default function Dashboard() {
           </p>
         </KpiCard>
       </div>
+
+      {/* Logo abaixo dos KPIs de propósito: quando tudo está vermelho, "sou eu ou é o
+          mercado?" é a primeira pergunta, e ela vinha sem resposta em lugar nenhum. */}
+      {marketContext?.available && marketContext.context && (
+        <MarketContextCard context={marketContext.context} />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Evolution Chart */}
@@ -526,6 +542,107 @@ export default function Dashboard() {
 
       </div>
     </div>
+  );
+}
+
+/**
+ * "Sou eu ou é o mercado?" — carteira contra benchmark, e quem puxou o resultado.
+ *
+ * A lista de atribuição é ordenada por CONTRIBUIÇÃO, não por variação, e mostra as
+ * duas colunas lado a lado justamente porque elas discordam: medido nesta carteira, o
+ * KLBN3 caiu 4,53% e custou 0,12pp, enquanto o MXRF11 caiu 1,48% e custou 1,00pp. Uma
+ * tela que ordena por variação — que é o que o olho faz sozinho em quatro etiquetas
+ * vermelhas — aponta o culpado errado.
+ */
+function MarketContextCard({ context }: { context: MarketContext }) {
+  const week = context.windows.find((w) => w.sessions === 5) ?? context.windows[0];
+  const beatMarket =
+    week?.benchmarkPercent != null && week.portfolioPercent > week.benchmarkPercent;
+  const maxAbs = Math.max(...context.attribution.map((a) => Math.abs(a.contributionPp)), 0.01);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sua carteira e o mercado</CardTitle>
+        <CardDescription className="text-pretty">
+          {week?.benchmarkPercent != null ? (
+            <>
+              Em {week.label.toLowerCase()}, sua carteira fez{" "}
+              <strong className="font-medium text-foreground">{formatPercent(week.portfolioPercent)}</strong> e o{" "}
+              {context.benchmarkLabel} fez{" "}
+              <strong className="font-medium text-foreground">{formatPercent(week.benchmarkPercent)}</strong> —{" "}
+              {beatMarket ? "você caiu menos que o mercado" : "você acompanhou ou ficou atrás do mercado"}.
+            </>
+          ) : (
+            <>Comparação com o {context.benchmarkLabel} nos mesmos pregões.</>
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {context.windows.map((w) => (
+            <div key={w.sessions} className="rounded-lg border bg-muted/20 p-3">
+              <p className="text-xs font-medium text-muted-foreground">{w.label}</p>
+              <p
+                className={`mt-1 font-mono text-xl font-bold tabular-nums ${
+                  w.portfolioPercent >= 0 ? "text-green-600 dark:text-green-500" : "text-destructive"
+                }`}
+              >
+                {formatPercent(w.portfolioPercent)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {context.benchmarkLabel}{" "}
+                {w.benchmarkPercent != null ? formatPercent(w.benchmarkPercent) : EMPTY_VALUE}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Quem puxou o resultado — {context.attributionSessions} pregões
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {context.attribution.map((a) => (
+              <div key={a.ticker} className="flex items-center gap-3">
+                <span className="w-16 shrink-0 font-mono text-sm font-medium">{a.ticker}</span>
+                {/* Barra proporcional à contribuição: torna visível que um ativo
+                    domina, o que a lista de números sozinha não comunica. */}
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={`h-full rounded-full ${a.contributionPp >= 0 ? "bg-green-600/70" : "bg-destructive/70"}`}
+                    style={{ width: `${(Math.abs(a.contributionPp) / maxAbs) * 100}%` }}
+                  />
+                </div>
+                <span className="w-20 shrink-0 text-right font-mono text-xs tabular-nums">
+                  {a.contributionPp >= 0 ? "+" : ""}
+                  {a.contributionPp.toFixed(2)}pp
+                </span>
+                <span className="hidden w-32 shrink-0 text-right text-[11px] text-muted-foreground sm:block">
+                  pesa {a.weightPercent.toFixed(0)}% · variou {formatPercent(a.movePercent)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground text-pretty">
+            Contribuição é peso × variação, em pontos percentuais da carteira. Um ativo pequeno pode cair muito e
+            quase não pesar — e o contrário também.
+          </p>
+        </div>
+
+        {context.benchmarkNote && (
+          <p className="mt-3 border-t pt-3 text-[11px] text-amber-700 text-pretty dark:text-amber-500">
+            {context.benchmarkNote}
+          </p>
+        )}
+        {context.coveragePercent < 99.5 && (
+          <p className="mt-2 text-[11px] text-muted-foreground text-pretty">
+            Medido sobre {context.coveragePercent.toFixed(0)}% da carteira — {context.uncovered.join(", ")} não tem
+            cotação diária de bolsa.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

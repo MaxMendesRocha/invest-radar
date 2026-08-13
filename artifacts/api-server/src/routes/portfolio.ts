@@ -4,6 +4,7 @@ import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries } from "../lib/market-data";
 import { computeCompositionRisk, type RiskPosition } from "../lib/portfolio-risk-metrics";
+import { computeMarketContext } from "../lib/market-context-engine";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
 import { computeMonthlyTwr } from "../lib/time-weighted-return";
 import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
@@ -808,6 +809,70 @@ router.get("/portfolio/risk-metrics", requireAuth, async (req, res): Promise<voi
   }
 
   res.json({ available: true, reason: null, metrics });
+});
+
+/** Quanto do valor precisa estar em FII para o IBOV deixar de ser a régua certa. */
+const FII_HEAVY_THRESHOLD = 60;
+
+/**
+ * "Sou eu ou é o mercado?" — carteira contra benchmark em 1, 5 e 21 pregões, mais a
+ * atribuição de quem puxou o resultado.
+ *
+ * Endpoint próprio, e não um campo de /risk-metrics, porque responde outra pergunta:
+ * risco é "quão oscilante é o que tenho", este é "o que aconteceu agora e por causa de
+ * quem". Compartilham a fonte (série diária) e as regras de cobertura, nada mais.
+ */
+router.get("/portfolio/market-context", requireAuth, async (req, res): Promise<void> => {
+  const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
+  const prices = await getPricesFor(assets);
+
+  let totalValue = 0;
+  let fiiValue = 0;
+  const positions: RiskPosition[] = [];
+  const quotedTickers: string[] = [];
+  for (const a of assets) {
+    const qty = parseFloat(a.quantity);
+    const ticker = a.ticker.toUpperCase();
+    const value = qty * (prices.get(ticker)?.price ?? parseFloat(a.averagePrice));
+    totalValue += value;
+    if (a.category === "fiis") fiiValue += value;
+    positions.push({ ticker, value, quantity: qty });
+    if (QUOTED_CATEGORIES.has(a.category)) quotedTickers.push(ticker);
+  }
+
+  if (quotedTickers.length === 0) {
+    res.json({ available: false, reason: "Nenhum ativo de bolsa na carteira para comparar com o mercado.", context: null });
+    return;
+  }
+
+  const series = await getTechnicalSeries([...quotedTickers, IBOV_SERIES_TICKER]);
+
+  // O IFIX seria a régua certa para carteira de FII, mas a brapi devolve só o
+  // fechamento do dia — um ponto, sem série. Em vez de comparar FII com Ibovespa
+  // calado, o app usa o IBOV e DIZ que ele não é o espelho ideal.
+  const fiiShare = totalValue > 0 ? (fiiValue / totalValue) * 100 : 0;
+  const benchmarkNote =
+    fiiShare >= FII_HEAVY_THRESHOLD
+      ? `${fiiShare.toFixed(0)}% da sua carteira é FII, e fundo imobiliário não segue o Ibovespa. A régua certa seria o IFIX, que o provedor de cotação não entrega com histórico — então o IBOV aqui é referência de mercado, não espelho da sua carteira.`
+      : null;
+
+  const context = computeMarketContext(
+    positions,
+    series,
+    { label: "IBOV", series: series.get(IBOV_SERIES_TICKER) ?? null, note: benchmarkNote },
+    totalValue,
+  );
+
+  if (context == null) {
+    res.json({
+      available: false,
+      reason: "Ainda não há pregões suficientes em comum entre os ativos da carteira para comparar.",
+      context: null,
+    });
+    return;
+  }
+
+  res.json({ available: true, reason: null, context });
 });
 
 /**

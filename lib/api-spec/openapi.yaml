@@ -593,6 +593,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortfolioRiskMetrics"
 
+  /portfolio/market-context:
+    get:
+      operationId: getPortfolioMarketContext
+      tags: [portfolio]
+      summary: Portfolio move against the market over 1/5/21 sessions, plus which asset drove it
+      responses:
+        "200":
+          description: Market context, or the reason it is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioMarketContext"
+
   /portfolio/dividends/upcoming:
     get:
       operationId: getPortfolioDividendsUpcoming
@@ -1587,6 +1600,86 @@ components:
           type: ["string", "null"]
         baseValue:
           type: ["number", "null"]
+
+    # Responde "sou eu ou é o mercado?". A atribuição é por CONTRIBUIÇÃO (peso ×
+    # movimento) e não por variação: medido, o ativo que mais caiu (KLBN3, -4,53%)
+    # custou 0,12pp enquanto o que menos caiu (MXRF11, -1,48%) explicou 63% da queda,
+    # porque pesa 67%. Ordenar por variação — o que o olho faz sozinho — leva à
+    # conclusão errada sobre onde está o problema.
+    PortfolioMarketContext:
+      type: object
+      required: [available, reason, context]
+      properties:
+        available:
+          type: boolean
+        reason:
+          type: ["string", "null"]
+        context:
+          oneOf:
+            - $ref: "#/components/schemas/MarketContext"
+            - type: "null"
+
+    MarketContext:
+      type: object
+      required:
+        [windows, attribution, attributionSessions, attributionTotalPercent, benchmarkLabel,
+         benchmarkNote, coveragePercent, uncovered, asOf]
+      properties:
+        windows:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketContextWindow"
+        attribution:
+          type: array
+          items:
+            $ref: "#/components/schemas/DropAttribution"
+        attributionSessions:
+          type: integer
+        attributionTotalPercent:
+          type: number
+        benchmarkLabel:
+          type: string
+        # Preenchido quando o benchmark exibido não é o espelho da carteira — carteira
+        # majoritariamente de FII contra IBOV, porque o IFIX não tem série histórica
+        # disponível no provedor de cotação.
+        benchmarkNote:
+          type: ["string", "null"]
+        coveragePercent:
+          type: number
+        uncovered:
+          type: array
+          items:
+            type: string
+        asOf:
+          type: string
+          format: date
+
+    MarketContextWindow:
+      type: object
+      required: [label, sessions, portfolioPercent, benchmarkPercent]
+      properties:
+        label:
+          type: string
+        sessions:
+          type: integer
+        portfolioPercent:
+          type: number
+        benchmarkPercent:
+          type: ["number", "null"]
+
+    DropAttribution:
+      type: object
+      required: [ticker, weightPercent, movePercent, contributionPp]
+      properties:
+        ticker:
+          type: string
+        weightPercent:
+          type: number
+        movePercent:
+          type: number
+        # Pontos percentuais da carteira. A soma aproxima a variação total.
+        contributionPp:
+          type: number
 
     # Mede a COMPOSIÇÃO DE HOJE contra um ano de fechamentos reais, mantendo as
     # quantidades atuais fixas. Responde "quão oscilante é o que eu tenho", e não

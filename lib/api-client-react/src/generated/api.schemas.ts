@@ -682,6 +682,41 @@ export interface BenchmarkComparison {
   baseValue: number | null;
 }
 
+export interface MarketContextWindow {
+  label: string;
+  sessions: number;
+  portfolioPercent: number;
+  /** @nullable */
+  benchmarkPercent: number | null;
+}
+
+export interface DropAttribution {
+  ticker: string;
+  weightPercent: number;
+  movePercent: number;
+  contributionPp: number;
+}
+
+export interface MarketContext {
+  windows: MarketContextWindow[];
+  attribution: DropAttribution[];
+  attributionSessions: number;
+  attributionTotalPercent: number;
+  benchmarkLabel: string;
+  /** @nullable */
+  benchmarkNote: string | null;
+  coveragePercent: number;
+  uncovered: string[];
+  asOf: string;
+}
+
+export interface PortfolioMarketContext {
+  available: boolean;
+  /** @nullable */
+  reason: string | null;
+  context: MarketContext | null;
+}
+
 export interface RiskMonthlyReturn {
   month: string;
   percent: number;

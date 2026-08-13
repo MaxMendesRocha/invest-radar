@@ -48,6 +48,7 @@ import type {
   PortfolioDistribution,
   PortfolioDividendsProjection,
   PortfolioHealth,
+  PortfolioMarketContext,
   PortfolioReport,
   PortfolioRiskMetrics,
   PortfolioSummary,
@@ -2193,6 +2194,83 @@ export function useGetPortfolioRiskMetrics<TData = Awaited<ReturnType<typeof get
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPortfolioRiskMetricsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPortfolioMarketContextUrl = () => {
+
+
+
+
+  return `/api/portfolio/market-context`
+}
+
+/**
+ * @summary Portfolio move against the market over 1/5/21 sessions, plus which asset drove it
+ */
+export const getPortfolioMarketContext = async ( options?: RequestInit): Promise<PortfolioMarketContext> => {
+
+  return customFetch<PortfolioMarketContext>(getGetPortfolioMarketContextUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPortfolioMarketContextQueryKey = () => {
+    return [
+    `/api/portfolio/market-context`
+    ] as const;
+    }
+
+
+export const getGetPortfolioMarketContextQueryOptions = <TData = Awaited<ReturnType<typeof getPortfolioMarketContext>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolioMarketContext>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPortfolioMarketContextQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPortfolioMarketContext>>> = ({ signal }) => getPortfolioMarketContext({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPortfolioMarketContext>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPortfolioMarketContextQueryResult = NonNullable<Awaited<ReturnType<typeof getPortfolioMarketContext>>>
+export type GetPortfolioMarketContextQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Portfolio move against the market over 1/5/21 sessions, plus which asset drove it
+ */
+
+export function useGetPortfolioMarketContext<TData = Awaited<ReturnType<typeof getPortfolioMarketContext>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolioMarketContext>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPortfolioMarketContextQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
