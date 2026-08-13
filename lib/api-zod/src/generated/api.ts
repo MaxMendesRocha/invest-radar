@@ -676,7 +676,8 @@ export const GetPortfolioMarketContextResponse = zod.object({
   "benchmarkNote": zod.string().nullable(),
   "coveragePercent": zod.number(),
   "uncovered": zod.array(zod.string()),
-  "asOf": zod.coerce.date()
+  "asOf": zod.coerce.date(),
+  "narrative": zod.string().nullable()
 }),zod.null()])
 })
 

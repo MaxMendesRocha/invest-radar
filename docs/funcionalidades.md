@@ -532,6 +532,15 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
 - **Carteira de FII comparada ao IBOV avisa que a régua não é a ideal.** Acima de 60% em FII, o
   card diz que o espelho certo seria o IFIX e que o provedor de cotação não entrega série histórica
   dele. Usar o IBOV calado sugeriria uma comparação que não é justa.
+- **A IA explica o movimento, mas tem permissão para dizer que não sabe.** Perguntar a um modelo
+  "por que o mercado caiu" é convite a inventar causa: existe sempre uma narrativa macro plausível
+  para qualquer movimento, em qualquer direção. Por isso a IA recebe SÓ manchetes reais dos ativos
+  que mais pesaram e o snapshot macro medido, e o prompt manda dizer explicitamente quando elas não
+  explicam — **e parar aí**. Testado: a primeira versão admitia não saber e emendava "parece
+  refletir um movimento mais amplo do mercado de fundos imobiliários", hipótese que nenhum dado
+  sustentava; o prompt passou a proibir nominalmente esse tipo de emenda e afirmações sobre setor
+  ou classe que não estejam medidos. O texto vem depois dos números e nunca no lugar deles: sem
+  `ANTHROPIC_API_KEY` o campo é null e o card fica inteiro.
 - **A carteira entra no comparativo com aporte neutralizado.** Retorno sobre custo se move
   quando entra dinheiro novo mesmo sem preço nenhum ter mudado: R$ 100 valendo R$ 110 estão
   +10%, e um aporte de R$ 100 ao preço de mercado derruba isso para +5% sem que nada tenha

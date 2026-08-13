@@ -6,6 +6,8 @@ import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividen
 import { computeCompositionRisk, type RiskPosition } from "../lib/portfolio-risk-metrics";
 import { computeMarketContext } from "../lib/market-context-engine";
 import { fetchIndexSeries, isMaisRetornoConfigured } from "../lib/mais-retorno";
+import { synthesizeMarketNarrative } from "../lib/market-context-ai";
+import { getNewsFor, resolveSearchTerm } from "../lib/news";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
 import { computeMonthlyTwr } from "../lib/time-weighted-return";
 import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
@@ -896,7 +898,20 @@ router.get("/portfolio/market-context", requireAuth, async (req, res): Promise<v
     return;
   }
 
-  res.json({ available: true, reason: null, context });
+  // Manchetes reais dos ativos que mais moveram o resultado. Só os três primeiros da
+  // atribuição: é onde a explicação está, e cada ticker custa uma busca de RSS.
+  const topMovers = context.attribution.slice(0, 3).map((a) => a.ticker);
+  const [newsPerTicker, macro] = await Promise.all([
+    Promise.all(topMovers.map(async (t) => ({ ticker: t, items: await getNewsFor(resolveSearchTerm(t), 2) }))),
+    getMacroSnapshot(),
+  ]);
+  const headlines = newsPerTicker.flatMap((n) =>
+    n.items.map((i) => ({ ticker: n.ticker, title: i.title, impact: i.impact })),
+  );
+
+  const narrative = await synthesizeMarketNarrative({ context, headlines, macro });
+
+  res.json({ available: true, reason: null, context: { ...context, narrative } });
 });
 
 /**
