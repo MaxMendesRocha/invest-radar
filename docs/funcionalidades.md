@@ -83,6 +83,7 @@ depende da IA para existir.**
 | `api.bcb.gov.br` | Selic, IPCA, IGP-M, CDI, dólar | Séries oficiais do Banco Central. A Selic é a referência contra a qual o rendimento de FII é lido, e o CDI é a taxa livre de risco do Sharpe |
 | `tesourotransparente` | PU diário de todos os títulos do Tesouro Direto | Descoberto via CKAN — o endpoint JSON amplamente citado em tutoriais responde `410 Gone`. Ingestão incremental e de memória constante |
 | InfoMoney RSS | Manchetes recentes por ativo | Só título e link. A classificação de impacto é o único ponto em que a IA toca notícia |
+| `maisretorno.com` (opcional) | IFIX e CDI com histórico, dados D-1 | Entra só onde as outras fontes são cegas: o IFIX, que a brapi não devolve com série, e o CDI quando o BCB não responde. Sem `MAIS_RETORNO_TOKEN` o app funciona igual a antes — nada depende dela |
 
 ---
 

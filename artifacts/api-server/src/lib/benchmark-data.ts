@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { logger } from "./logger";
 import { fetchSeriesRange } from "./macro-data";
 import { todayInAppTimezone } from "./local-date";
+import { fetchIndexSeries, isMaisRetornoConfigured } from "./mais-retorno";
 
 const BRAPI_BASE_URL = "https://brapi.dev/api/quote";
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // same cadence as macro-data.ts
@@ -45,8 +46,84 @@ export async function getCdiMonthlyReturns(): Promise<Map<string, number>> {
   // Como o BCB publica anos de histórico, mapa vazio é sempre falha, nunca "não há
   // dado" — então guardar só o resultado preenchido não perde nada e faz a próxima
   // requisição tentar de novo.
+  if (returns.size === 0) {
+    const fallback = await cdiFromMaisRetorno();
+    if (fallback != null) {
+      logger.info({ months: fallback.size }, "CDI servido pela fonte de reserva (Mais Retorno)");
+      cdiCache = { returns: fallback, fetchedAt: now };
+      return fallback;
+    }
+  }
+
   if (returns.size > 0) cdiCache = { returns, fetchedAt: now };
   return returns;
+}
+
+/**
+ * Faixa plausível para o CDI acumulado em UM mês, em %.
+ *
+ * Existe porque a fonte de reserva entrega o campo `c` ("fechamento") igual para ação e
+ * para índice, e a documentação não diz se o CDI vem como NÍVEL de índice acumulado ou
+ * como taxa. Aqui ele é tratado como nível, e a razão entre dois fechamentos vira o
+ * retorno do mês — mas se a interpretação estiver errada, o número sai absurdo em vez
+ * de sutilmente errado. Um CDI mensal fora desta faixa é sinal de leitura equivocada,
+ * não de mercado atípico: mesmo na hiperinflação o piso e o teto abaixo seriam rompidos
+ * por ordens de grandeza.
+ *
+ * Preferir NENHUM CDI a um CDI errado é a regra da casa: linha de benchmark plausível e
+ * falsa é pior que gráfico ausente, porque ninguém desconfia dela.
+ *
+ * O PISO é positivo de propósito, e a razão é a falha que ele existe para pegar. CDI é
+ * taxa de juro: não é negativo e não é zero. Se o campo `c` trouxer a TAXA em vez do
+ * nível acumulado, a razão entre o fechamento de dois meses dá algo perto de 1 — ou
+ * seja, ~0% ao mês, que passaria por um piso negativo sem levantar suspeita e pintaria
+ * o CDI como parado. Piso em 0,1% ao mês corresponde a uma Selic de ~1,2% ao ano,
+ * abaixo do mínimo histórico brasileiro (2% em 2021), então nenhum cenário real cai
+ * ali — só leitura equivocada do campo. O teto de 4% cobre folgadamente o pico de
+ * Selic da série histórica.
+ */
+const CDI_MONTHLY_MIN = 0.1;
+const CDI_MONTHLY_MAX = 4;
+
+/**
+ * CDI mensal a partir da Mais Retorno, usado só quando o BCB não responde.
+ *
+ * Converte fechamentos diários em retorno mensal encadeando o último fechamento de cada
+ * mês — mesma mecânica do IBOV, que também chega como nível. Devolve null se o token
+ * não estiver configurado, se a série vier vazia, ou se QUALQUER mês cair fora da faixa
+ * plausível.
+ */
+async function cdiFromMaisRetorno(): Promise<Map<string, number> | null> {
+  if (!isMaisRetornoConfigured()) return null;
+
+  const end = todayInAppTimezone();
+  const start = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+  const series = await fetchIndexSeries("cdi", start, end);
+  if (series == null || series.length < 2) return null;
+
+  // Último fechamento de cada mês; o mapa preserva a ordem de inserção da série, que
+  // parseQuoteSeries já devolve crescente.
+  const monthEnd = new Map<string, number>();
+  for (const p of series) monthEnd.set(p.date.slice(0, 7), p.value);
+
+  const months = [...monthEnd.keys()].sort();
+  const returns = new Map<string, number>();
+  for (let i = 1; i < months.length; i++) {
+    const previous = monthEnd.get(months[i - 1])!;
+    const current = monthEnd.get(months[i])!;
+    if (previous <= 0) return null;
+    const percent = (current / previous - 1) * 100;
+    if (percent < CDI_MONTHLY_MIN || percent > CDI_MONTHLY_MAX) {
+      logger.warn(
+        { month: months[i], percent },
+        "CDI de reserva fora da faixa plausível — série provavelmente não é nível de índice; descartada",
+      );
+      return null;
+    }
+    returns.set(months[i], Math.round(percent * 10000) / 10000);
+  }
+
+  return returns.size > 0 ? returns : null;
 }
 
 /**
