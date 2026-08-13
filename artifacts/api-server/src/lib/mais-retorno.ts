@@ -33,15 +33,41 @@ export interface QuotePoint {
   value: number;
 }
 
-/** Formas de autenticação a tentar, em ordem. A documentação não diz qual é a certa. */
+/**
+ * `X-Api-Key` primeiro porque é o recomendado na documentação para uso server-side;
+ * `Bearer` fica como alternativa documentada. A lista sobrevive à descoberta porque
+ * uma das duas pode ser desativada sem aviso, e cair para a outra é mais barato que
+ * uma indisponibilidade.
+ */
 const AUTH_STRATEGIES = [
+  { name: "x-api-key", headers: (t: string) => ({ "X-Api-Key": t }) },
   { name: "bearer", headers: (t: string) => ({ Authorization: `Bearer ${t}` }) },
-  { name: "x-api-key", headers: (t: string) => ({ "x-api-key": t }) },
-  { name: "api-key", headers: (t: string) => ({ "api-key": t }) },
 ] as const;
+
+/**
+ * Índices têm sufixo `:idx` — a documentação mostra `cdi:idx`. Para IFIX e IBOV o
+ * formato é o mesmo por analogia, mas NÃO foi visto num exemplo, então quem chama
+ * tenta o alternativo quando o primeiro vem vazio (ver INDEX_IDENTIFIERS).
+ */
+export const INDEX_IDENTIFIERS: Record<"cdi" | "ifix" | "ibov", string[]> = {
+  cdi: ["cdi:idx", "CDI"],
+  ifix: ["ifix:idx", "IFIX"],
+  ibov: ["ibov:idx", "IBOV"],
+};
 
 /** Descoberta na primeira chamada bem-sucedida e reusada — evita 401 desnecessário. */
 let workingStrategy: (typeof AUTH_STRATEGIES)[number] | null = null;
+
+/**
+ * Cache de série de índice. Não é otimização, é orçamento: o plano gratuito dá 500
+ * créditos POR MÊS e cada /quotes custa 1. Sem cache, uma tela que consulta o índice a
+ * cada carregamento gasta a cota inteira em poucos dias de uso normal — 20 aberturas
+ * por dia dariam 600 chamadas no mês. Com 6h, caem para ~4 por dia.
+ *
+ * Dado D-1 não muda dentro do dia, então a janela larga não custa frescor nenhum.
+ */
+const INDEX_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const indexCache = new Map<string, { series: QuotePoint[]; fetchedAt: number }>();
 
 async function request(path: string): Promise<unknown | null> {
   const token = process.env.MAIS_RETORNO_TOKEN;
@@ -74,8 +100,16 @@ async function request(path: string): Promise<unknown | null> {
   return null;
 }
 
-const DATE_KEYS = ["date", "data", "dt", "reference_date", "referenceDate", "quote_date"];
-const VALUE_KEYS = ["value", "valor", "close", "quote", "price", "fechamento", "cota"];
+/**
+ * `d` e `c` vêm primeiro porque são os nomes REAIS, tirados do exemplo da
+ * documentação — a resposta de /quotes é `{ market, currency, nicename, shortname,
+ * quotes: [{ d, c, p, q }] }`, com d = data, c = fechamento, p = volume financeiro e
+ * q = quantidade. Vale registrar que a primeira versão deste parser procurava
+ * `date`/`value` e teria falhado em tudo; achou-se o contrato lendo a documentação de
+ * exemplos, não adivinhando. Os nomes longos ficam como rede caso a v4 mude.
+ */
+const DATE_KEYS = ["d", "date", "data", "dt", "reference_date", "referenceDate", "quote_date"];
+const VALUE_KEYS = ["c", "value", "valor", "close", "quote", "price", "fechamento", "cota"];
 
 function pick(item: Record<string, unknown>, keys: string[]): unknown {
   for (const k of keys) if (k in item) return item[k];
@@ -132,7 +166,7 @@ export function parseQuoteSeries(body: unknown, context: string): QuotePoint[] |
   return points.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** Série histórica de um identificador (IFIX, IBOV, CDI, ticker…). Null se indisponível. */
+/** Série histórica de um identificador. Null se indisponível. */
 export async function fetchQuoteSeries(
   identifier: string,
   startDate: string,
@@ -142,6 +176,35 @@ export async function fetchQuoteSeries(
     `/quotes/${encodeURIComponent(identifier)}?start_date=${startDate}&end_date=${endDate}`,
   );
   return body == null ? null : parseQuoteSeries(body, identifier);
+}
+
+/**
+ * Série de um índice, tentando os identificadores conhecidos em ordem.
+ *
+ * Só `cdi:idx` aparece num exemplo da documentação; IFIX e IBOV seguem o padrão por
+ * analogia. Em vez de apostar num, tenta o provável e cai para o alternativo — uma
+ * requisição a mais custa 1 crédito e evita ficar sem a série por causa de um sufixo.
+ */
+export async function fetchIndexSeries(
+  index: keyof typeof INDEX_IDENTIFIERS,
+  startDate: string,
+  endDate: string,
+): Promise<QuotePoint[] | null> {
+  const key = `${index}:${startDate}:${endDate}`;
+  const cached = indexCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < INDEX_CACHE_TTL_MS) return cached.series;
+
+  for (const identifier of INDEX_IDENTIFIERS[index]) {
+    const series = await fetchQuoteSeries(identifier, startDate, endDate);
+    if (series != null && series.length > 0) {
+      logger.info({ index, identifier, points: series.length }, "Mais Retorno index series resolved");
+      indexCache.set(key, { series, fetchedAt: Date.now() });
+      return series;
+    }
+  }
+  // Falha NÃO é cacheada — mesma lição do CDI do BCB, cuja indisponibilidade ficava
+  // guardada por 6h e mantinha o gráfico apagado depois de a fonte já ter voltado.
+  return null;
 }
 
 export function isMaisRetornoConfigured(): boolean {

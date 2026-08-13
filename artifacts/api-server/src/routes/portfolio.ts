@@ -5,6 +5,7 @@ import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries } from "../lib/market-data";
 import { computeCompositionRisk, type RiskPosition } from "../lib/portfolio-risk-metrics";
 import { computeMarketContext } from "../lib/market-context-engine";
+import { fetchIndexSeries, isMaisRetornoConfigured } from "../lib/mais-retorno";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
 import { computeMonthlyTwr } from "../lib/time-weighted-return";
 import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
@@ -851,17 +852,40 @@ router.get("/portfolio/market-context", requireAuth, async (req, res): Promise<v
   // fechamento do dia — um ponto, sem série. Em vez de comparar FII com Ibovespa
   // calado, o app usa o IBOV e DIZ que ele não é o espelho ideal.
   const fiiShare = totalValue > 0 ? (fiiValue / totalValue) * 100 : 0;
-  const benchmarkNote =
-    fiiShare >= FII_HEAVY_THRESHOLD
-      ? `${fiiShare.toFixed(0)}% da sua carteira é FII, e fundo imobiliário não segue o Ibovespa. A régua certa seria o IFIX, que o provedor de cotação não entrega com histórico — então o IBOV aqui é referência de mercado, não espelho da sua carteira.`
+
+  // Carteira de FII merece IFIX. A brapi não entrega série dele, mas a fonte de reserva
+  // entrega — e aí o benchmark deixa de ser aproximação e passa a ser o espelho certo.
+  // Só é buscado quando faz diferença (carteira majoritariamente de FII), porque cada
+  // consulta consome crédito do plano.
+  const ifix =
+    fiiShare >= FII_HEAVY_THRESHOLD && isMaisRetornoConfigured()
+      ? await fetchIndexSeries(
+          "ifix",
+          new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10),
+          todayInAppTimezone(),
+        )
       : null;
 
-  const context = computeMarketContext(
-    positions,
-    series,
-    { label: "IBOV", series: series.get(IBOV_SERIES_TICKER) ?? null, note: benchmarkNote },
-    totalValue,
-  );
+  const benchmark =
+    ifix != null && ifix.length > 0
+      ? {
+          label: "IFIX",
+          // A série de reserva vem só com data e fechamento; `close` e `adjustedClose`
+          // recebem o mesmo valor porque índice não paga provento — não há ajuste a
+          // fazer, ao contrário de ação e FII individuais.
+          series: ifix.map((p) => ({ date: p.date, close: p.value, adjustedClose: p.value, volume: 0 })),
+          note: null,
+        }
+      : {
+          label: "IBOV",
+          series: series.get(IBOV_SERIES_TICKER) ?? null,
+          note:
+            fiiShare >= FII_HEAVY_THRESHOLD
+              ? `${fiiShare.toFixed(0)}% da sua carteira é FII, e fundo imobiliário não segue o Ibovespa. A régua certa seria o IFIX, que não está disponível agora — então o IBOV aqui é referência de mercado, não espelho da sua carteira.`
+              : null,
+        };
+
+  const context = computeMarketContext(positions, series, benchmark, totalValue);
 
   if (context == null) {
     res.json({
