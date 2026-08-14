@@ -1,20 +1,13 @@
 import { useState, type FormEvent } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  useGetAssetOpinion,
-  getGetAssetOpinionQueryKey,
-  useListPriceTargets,
-  getListPriceTargetsQueryKey,
-  useUpsertPriceTarget,
-  useDeletePriceTarget,
-} from "@workspace/api-client-react";
+import { useGetAssetOpinion, getGetAssetOpinionQueryKey } from "@workspace/api-client-react";
+import { usePriceTarget } from "@/hooks/use-price-target";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Search, Check, AlertTriangle, Newspaper, Sparkles, TrendingUp, Coins, LineChart, CalendarClock } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatPercent } from "@/lib/utils";
 
 /**
  * Preço-alvo do usuário para o ticker consultado.
@@ -30,46 +23,27 @@ import { formatCurrency } from "@/lib/utils";
  * fabricar número.
  */
 function PriceTargetBlock({ ticker, currentPrice }: { ticker: string; currentPrice: number }) {
-  const queryClient = useQueryClient();
-  const { data: targets } = useListPriceTargets({ query: { queryKey: getListPriceTargetsQueryKey() } });
-  const existing = targets?.find((t) => t.ticker === ticker);
-
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState("");
   const [source, setSource] = useState("");
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListPriceTargetsQueryKey() });
-
-  // Sem tratamento de erro, uma falha ao salvar não fazia NADA visível: o formulário
-  // continuava aberto e o usuário concluía que o clique não pegou. Descoberto testando
-  // o cenário em que a tabela `price_targets` ainda não existe no banco — o PUT devolve
-  // 500 e a tela ficava muda. Vale para qualquer falha, não só essa.
-  const [error, setError] = useState<string | null>(null);
-  const upsert = useUpsertPriceTarget({
-    mutation: {
-      onMutate: () => setError(null),
-      onSuccess: () => { invalidate(); setIsEditing(false); },
-      onError: () => setError("Não foi possível salvar o preço-alvo. Tente de novo em instantes."),
-    },
-  });
-  const remove = useDeletePriceTarget({
-    mutation: {
-      onSuccess: invalidate,
-      onError: () => setError("Não foi possível remover o preço-alvo."),
-    },
+  // Salvar, remover e reportar erro vivem no hook porque Minha Carteira expõe o mesmo
+  // controle com outra aparência — o que não pode divergir entre as telas é o que
+  // acontece quando o salvamento falha.
+  const { target: existing, error, setError, save: persist, remove, isSaving } = usePriceTarget(ticker, {
+    onSaved: () => setIsEditing(false),
   });
 
   const openEditor = () => {
-    setValue(existing ? String(existing.targetPrice) : "");
+    setValue(existing ? String(existing.targetPrice).replace(".", ",") : "");
     setSource(existing?.source ?? "");
+    setError(null);
     setIsEditing(true);
   };
 
   const save = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const parsed = Number(value.replace(",", "."));
-    if (!Number.isFinite(parsed) || parsed <= 0) return;
-    upsert.mutate({ ticker, data: { targetPrice: parsed, source: source.trim() || null } });
+    persist(value, source);
   };
 
   if (isEditing) {
@@ -88,7 +62,7 @@ function PriceTargetBlock({ ticker, currentPrice }: { ticker: string; currentPri
         </div>
         {error && <p className="mt-3 text-xs text-destructive text-pretty">{error}</p>}
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button type="submit" size="sm" disabled={upsert.isPending}>{upsert.isPending ? "Salvando..." : "Salvar"}</Button>
+          <Button type="submit" size="sm" disabled={isSaving}>{isSaving ? "Salvando..." : "Salvar"}</Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => setIsEditing(false)}>Cancelar</Button>
           {existing && (
             <Button type="button" size="sm" variant="ghost" className="text-destructive"
@@ -124,7 +98,7 @@ function PriceTargetBlock({ ticker, currentPrice }: { ticker: string; currentPri
         </p>
         {upside != null && (
           <p className={`font-mono text-sm font-semibold ${upside >= 0 ? "text-green-600 dark:text-green-500" : "text-destructive"}`}>
-            {upside >= 0 ? "+" : ""}{upside.toFixed(1)}%
+            {upside >= 0 ? "+" : ""}{formatPercent(upside)}
           </p>
         )}
       </div>

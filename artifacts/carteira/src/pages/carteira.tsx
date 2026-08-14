@@ -34,6 +34,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Edit2, Trash2, Banknote } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { categoryLabel, CATEGORY_LABELS } from "@/lib/categories";
+import { PriceTargetControl } from "@/components/price-target-control";
+
+/**
+ * Preço-alvo só faz sentido onde existe cotação que possa divergir dele. Um título
+ * público tem valor de resgate definido em contrato, não alvo de analista — oferecer
+ * o campo ali convidaria a preencher um número que não significa nada.
+ */
+function acceptsPriceTarget(category: string): boolean {
+  return category !== "renda_fixa";
+}
 
 /**
  * Título público carrega DATA-BASE (um dia), cotação de bolsa carrega um INSTANTE.
@@ -539,6 +549,10 @@ export default function Carteira() {
                             {priceMoment(asset)}
                           </div>
                         )}
+                        {acceptsPriceTarget(asset.category) && (
+                          <PriceTargetControl ticker={asset.ticker} currentPrice={asset.currentPrice ?? null}
+                            align="right" className="mt-1 w-full font-sans" />
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-mono">{asset.totalValue ? formatCurrency(asset.totalValue) : '-'}</TableCell>
                       <TableCell className={`text-right font-mono font-medium ${isProfit ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
@@ -639,6 +653,9 @@ export default function Carteira() {
                         <div className={`text-xs ${asset.treasuryBondType ? "text-muted-foreground" : "text-amber-700 dark:text-amber-500"}`}>
                           {priceMoment(asset)}
                         </div>
+                      )}
+                      {acceptsPriceTarget(asset.category) && (
+                        <PriceTargetControl ticker={asset.ticker} currentPrice={asset.currentPrice ?? null} className="mt-1" />
                       )}
                     </div>
                     <div>
