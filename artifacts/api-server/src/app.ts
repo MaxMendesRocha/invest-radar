@@ -5,6 +5,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { errorHandler } from "./middlewares/error-handler";
 
 const app: Express = express();
 
@@ -106,5 +107,9 @@ app.use(
 );
 
 app.use("/api", router);
+
+// Depois das rotas, sempre: o Express só reconhece um handler de erro se ele for
+// registrado por último, e com os quatro parâmetros.
+app.use(errorHandler);
 
 export default app;

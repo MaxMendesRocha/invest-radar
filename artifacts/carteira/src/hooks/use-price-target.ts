@@ -16,6 +16,17 @@ import {
  * diferentes, mesma lógica de salvar, remover e reportar erro — que é justamente o que
  * não deve divergir entre as duas.
  */
+/**
+ * A mensagem do servidor, quando ele tem uma. O genérico do cliente ("tente de novo em
+ * instantes") é o conselho errado para falha que não passa sozinha — schema desatualizado
+ * é o caso que motivou isto: repetir o clique nunca ia resolver.
+ */
+function serverMessage(err: unknown): string | null {
+  const data = (err as { data?: unknown } | null)?.data;
+  const message = (data as { error?: unknown } | null)?.error;
+  return typeof message === "string" && message.trim() !== "" ? message : null;
+}
+
 export function usePriceTarget(ticker: string, options?: { onSaved?: () => void }) {
   const queryClient = useQueryClient();
   const { data: targets } = useListPriceTargets({ query: { queryKey: getListPriceTargetsQueryKey() } });
@@ -33,11 +44,14 @@ export function usePriceTarget(ticker: string, options?: { onSaved?: () => void 
       // Fechar o editor é responsabilidade do onSaved, e só depois do sucesso: fechar
       // otimista esconderia justamente a mensagem de erro que este hook existe para dar.
       onSuccess: () => { invalidate(); options?.onSaved?.(); },
-      onError: () => setError("Não foi possível salvar o preço-alvo. Tente de novo em instantes."),
+      onError: (err) => setError(serverMessage(err) ?? "Não foi possível salvar o preço-alvo. Tente de novo em instantes."),
     },
   });
   const remove = useDeletePriceTarget({
-    mutation: { onSuccess: invalidate, onError: () => setError("Não foi possível remover o preço-alvo.") },
+    mutation: {
+      onSuccess: invalidate,
+      onError: (err) => setError(serverMessage(err) ?? "Não foi possível remover o preço-alvo."),
+    },
   });
 
   /** Aceita vírgula decimal, que é como se digita preço em português. */
