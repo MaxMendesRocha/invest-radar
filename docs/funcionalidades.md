@@ -591,6 +591,10 @@ para decidir nada.
   O alvo é dado de terceiro e aparece rotulado como tal: não entra no score, não entra na
   triagem, e a única coisa que o Radar acrescenta é a divisão. Renda fixa não recebe o campo —
   título público tem valor de resgate em contrato, não alvo de analista.
+- **O deploy não roda migração.** O `railway.json` tem build e start, nada de `db push` — schema
+  novo só chega ao banco quando alguém roda o comando. Quando a tabela ainda não existe, a API
+  responde **503** com "a migração do schema precisa ser aplicada" em vez de um 500 mudo, e a tela
+  mostra essa frase: o custo de não migrar automaticamente é pago em diagnóstico, não em mistério.
 - **Posições antigas em Tesouro** cadastradas antes da identificação por tipo + vencimento
   continuam sem marcação a mercado. Casar texto livre com um título real seria adivinhação.
 - **O fluxo do time-weighted é posicionado no início do subperíodo.** O dado tem o dia do
