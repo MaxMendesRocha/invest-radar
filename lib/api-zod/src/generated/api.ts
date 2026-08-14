@@ -703,8 +703,12 @@ export const GetPortfolioDividendsUpcomingResponseItem = zod.object({
   "label": zod.string(),
   "rate": zod.number(),
   "expectedAmount": zod.number(),
-  "confirmed": zod.boolean()
-})
+  "confirmed": zod.boolean(),
+  "exDate": zod.string().nullable().describe('Data-com (lastDatePrior). Nullable pelo contrato do provider, sem faltar na amostra medida.'),
+  "certainty": zod.enum(['confirmado', 'incerto']),
+  "uncertaintyKind": zod.union([zod.literal('sem_data_compra'),zod.literal('compra_proxima'),zod.literal(null)]).nullable(),
+  "uncertaintyReason": zod.string().nullable()
+}).describe('Só entram eventos aos quais o usuário tem direito — comprado até a data-com (exDate). Antes desta checagem, TODO pagamento futuro do ticker era listado, mesmo sem a compra ter direito a ele; corrigido para usar a mesma regra de \/portfolio\/dividends\/pending.')
 export const GetPortfolioDividendsUpcomingResponse = zod.array(GetPortfolioDividendsUpcomingResponseItem)
 
 
@@ -1058,6 +1062,20 @@ export const GetAssetOpinionResponse = zod.object({
   "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
 }).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
+  "nextDividend": zod.union([zod.object({
+  "paymentDate": zod.string(),
+  "label": zod.string(),
+  "rate": zod.number(),
+  "exDate": zod.string().nullable().describe('Data-com. Nullable pelo contrato do provider, sem faltar na amostra medida.'),
+  "entitledIfBoughtToday": zod.boolean().nullable().describe('Null só no caso (não observado na amostra) de o provento vir sem data-com — aí não há base pra afirmar nada, e a incerteza é dita, não escondida.')
+}).describe('Um provento anunciado e se comprar HOJE dá direito a ele — a data que decide é a data-com (exDate), não a data de pagamento. As duas costumam vir separadas por semanas (até 112 dias na amostra medida de PETR4), e essa distância é exatamente o que confunde quem vê \"paga dia X\" e compra pensando que X é o prazo.'),zod.null()]).optional().describe('O próximo provento anunciado pelo provedor, esteja ou não ao alcance de quem comprar hoje — null quando não há nada anunciado (comum em FII, cujo endpoint só cobre pagamento já liquidado).'),
+  "nextEntitledDividend": zod.union([zod.object({
+  "paymentDate": zod.string(),
+  "label": zod.string(),
+  "rate": zod.number(),
+  "exDate": zod.string().nullable().describe('Data-com. Nullable pelo contrato do provider, sem faltar na amostra medida.'),
+  "entitledIfBoughtToday": zod.boolean().nullable().describe('Null só no caso (não observado na amostra) de o provento vir sem data-com — aí não há base pra afirmar nada, e a incerteza é dita, não escondida.')
+}).describe('Um provento anunciado e se comprar HOJE dá direito a ele — a data que decide é a data-com (exDate), não a data de pagamento. As duas costumam vir separadas por semanas (até 112 dias na amostra medida de PETR4), e essa distância é exatamente o que confunde quem vê \"paga dia X\" e compra pensando que X é o prazo.'),zod.null()]).optional().describe('Presente só quando `nextDividend` existe e `entitledIfBoughtToday` é false: o próximo provento que uma compra hoje efetivamente alcançaria. Null quando o mais próximo já é o certo, ou quando nada mais está anunciado depois dele.'),
   "newsItems": zod.array(zod.string()),
   "opinion": zod.string(),
   "screening": zod.object({

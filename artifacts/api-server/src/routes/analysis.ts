@@ -36,6 +36,8 @@ import { getSectorBenchmark, describeSectorComparison } from "../lib/sector-benc
 import { computeDividendValue, describeDividendValue } from "../lib/dividend-value-engine";
 import { benchmarkGroupFor } from "../lib/fii-engine";
 import { computeFinancialHealth } from "../lib/financial-health-engine";
+import { previewNextDividends } from "../lib/dividend-entitlement";
+import { todayInAppTimezone } from "../lib/local-date";
 
 const router: IRouter = Router();
 
@@ -598,6 +600,16 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     : "Comparação com o setor não disponível (fundamentos não encontrados para este ativo).";
   const newsItems = newsHeadlines.map(formatHeadline);
   const name = fundamentals?.name ?? null;
+
+  // "Se eu comprar hoje, recebo o próximo provento anunciado?" — pergunta binária que
+  // o app já tinha o dado pra responder (lastDatePrior, cobertura de 100% na amostra
+  // medida) e simplesmente não expunha. A data que decide é a data-com, não a data de
+  // pagamento — as duas ficam separadas por semanas, até 112 dias na PETR4 medida.
+  const { nextDividend, nextEntitledDividend } = previewNextDividends(
+    dividendEvents,
+    opinionNow,
+    new Date(todayInAppTimezone()).getTime(),
+  );
   const dividendValue = describeDividendValue(
     computeDividendValue({
       dividendYield: fundamentals?.dividendYield ?? null,
@@ -649,6 +661,8 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     dividendTrend,
     technical,
     dividendFrequency,
+    nextDividend,
+    nextEntitledDividend,
     newsItems,
     opinion: aiOpinion ?? analysis.monitoringRecommendation,
     // Triagem determinística, calculada aqui e não escrita pela IA — mesma divisão de

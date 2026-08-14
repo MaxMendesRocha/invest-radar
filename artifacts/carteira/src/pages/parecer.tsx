@@ -114,6 +114,85 @@ function PriceTargetBlock({ ticker, currentPrice }: { ticker: string; currentPri
   );
 }
 
+/**
+ * "Se eu comprar hoje, recebo o próximo provento?" — pergunta binária que o app já
+ * tinha o dado pra responder (data-com, não data de pagamento) e não expunha em
+ * lugar nenhum. As duas datas ficam separadas por semanas, às vezes meses, e é
+ * comum ver "paga dia X" e comprar achando que X é o prazo — quando o corte real
+ * já passou.
+ */
+function NextDividendNote({ dividendFrequency, nextDividend, nextEntitledDividend }: {
+  dividendFrequency: string | null;
+  nextDividend: { paymentDate: string; label: string; rate: number; exDate: string | null; entitledIfBoughtToday: boolean | null } | null;
+  nextEntitledDividend: { paymentDate: string; label: string; rate: number; exDate: string | null } | null;
+}) {
+  // Sem histórico de pagamento nenhum, a pergunta nem se aplica — mostrar "nada
+  // anunciado" pra um ativo que nunca pagou seria ruído, não informação.
+  if (!dividendFrequency) return null;
+
+  if (!nextDividend) {
+    return (
+      <div className="flex flex-wrap items-start gap-2 text-xs px-3 py-2 rounded-md border bg-muted/40 border-border/50">
+        <CalendarClock className="w-3.5 h-3.5 shrink-0 text-muted-foreground mt-0.5" />
+        <span className="text-muted-foreground text-pretty">
+          Nenhum provento futuro anunciado pelo provedor no momento. Não significa que não vai pagar —
+          {dividendFrequency === "Mensal" || dividendFrequency === "Trimestral" || dividendFrequency === "Semestral" || dividendFrequency === "Anual"
+            ? ` paga ${dividendFrequency.toLowerCase()} historicamente, mas a próxima data-com só existe quando for declarada.`
+            : " o histórico de pagamento é irregular."}
+        </span>
+      </div>
+    );
+  }
+
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString("pt-BR");
+
+  if (nextDividend.entitledIfBoughtToday === true) {
+    return (
+      <div className="flex flex-wrap items-start gap-2 text-xs px-3 py-2 rounded-md border border-green-600/30 bg-green-600/5">
+        <Check className="w-3.5 h-3.5 shrink-0 text-green-600 dark:text-green-500 mt-0.5" />
+        <span className="text-pretty">
+          Comprando hoje, você recebe o próximo provento: {nextDividend.label} de{" "}
+          <span className="font-mono font-medium">{formatCurrency(nextDividend.rate)}</span> em {fmtDate(nextDividend.paymentDate)}.
+        </span>
+      </div>
+    );
+  }
+
+  if (nextDividend.entitledIfBoughtToday === false) {
+    return (
+      <div className="flex flex-wrap items-start gap-2 text-xs px-3 py-2 rounded-md border border-amber-600/30 bg-amber-600/5">
+        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-700 dark:text-amber-500 mt-0.5" />
+        <span className="text-pretty">
+          O provento de <span className="font-mono">{formatCurrency(nextDividend.rate)}</span> em {fmtDate(nextDividend.paymentDate)} já
+          passou da data-com{nextDividend.exDate ? ` (${fmtDate(nextDividend.exDate)})` : ""} — comprando hoje, você não recebe esse.{" "}
+          {nextEntitledDividend ? (
+            <>
+              O próximo que você pegaria é o de{" "}
+              <span className="font-mono font-medium">{formatCurrency(nextEntitledDividend.rate)}</span> em{" "}
+              {fmtDate(nextEntitledDividend.paymentDate)}
+              {nextEntitledDividend.exDate ? ` (comprando até ${fmtDate(nextEntitledDividend.exDate)})` : ""}.
+            </>
+          ) : (
+            "Não há outro anunciado ainda."
+          )}
+        </span>
+      </div>
+    );
+  }
+
+  // entitledIfBoughtToday null: provento sem data-com informada — nunca visto na
+  // amostra medida, mas o campo é nullable e a incerteza é dita, não escondida.
+  return (
+    <div className="flex flex-wrap items-start gap-2 text-xs px-3 py-2 rounded-md border bg-muted/40 border-border/50">
+      <CalendarClock className="w-3.5 h-3.5 shrink-0 text-muted-foreground mt-0.5" />
+      <span className="text-muted-foreground text-pretty">
+        Provento de {formatCurrency(nextDividend.rate)} anunciado para {fmtDate(nextDividend.paymentDate)}, mas o
+        provedor não informou a data-com — não dá para garantir se uma compra hoje dá direito a ele.
+      </span>
+    </div>
+  );
+}
+
 const CROSS_SIGNAL_LABELS: Record<string, string> = {
   golden_cross_recente: "Cruzamento dourado recente",
   death_cross_recente: "Cruzamento da morte recente",
@@ -324,6 +403,12 @@ export default function Parecer() {
                     <span className="font-medium">Paga {opinion.dividendFrequency.toLowerCase()}</span>
                   </div>
                 )}
+
+                <NextDividendNote
+                  dividendFrequency={opinion.dividendFrequency ?? null}
+                  nextDividend={opinion.nextDividend ?? null}
+                  nextEntitledDividend={opinion.nextEntitledDividend ?? null}
+                />
 
                 {opinion.technical && (opinion.technical.rsi14 != null || opinion.technical.crossSignal) && (
                   <div className="flex flex-wrap items-center gap-2 text-xs px-3 py-2 rounded-md border bg-muted/40 border-border/50">

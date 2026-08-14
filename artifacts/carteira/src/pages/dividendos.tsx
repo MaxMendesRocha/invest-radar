@@ -128,7 +128,15 @@ export default function Dividendos() {
     }
     return Array.from(set).sort();
   }, [pendingDividends]);
-  
+
+  const tickersSemDataCompraUpcoming = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of upcomingDividends ?? []) {
+      if (d.uncertaintyKind === "sem_data_compra") set.add(d.ticker);
+    }
+    return Array.from(set).sort();
+  }, [upcomingDividends]);
+
   const [isOpen, setIsOpen] = useState(false);
   const [ticker, setTicker] = useState("");
   const [amount, setAmount] = useState("");
@@ -558,14 +566,40 @@ export default function Dividendos() {
                     <Badge variant={d.confirmed ? "default" : "outline"} className="shrink-0">
                       {d.confirmed ? "Confirmado" : "Previsto"}
                     </Badge>
+                    {/* A lista só chega até aqui pra quem tem direito ao provento — comprou
+                        até a data-com. "incerto" não é sobre o pagamento acontecer, é sobre
+                        o app não ter como confirmar que ESTA compra específica dá direito. */}
+                    {d.certainty === "incerto" && (
+                      <Badge variant="outline" className="shrink-0 border-amber-500/60 text-amber-700 dark:text-amber-500">
+                        Confira
+                      </Badge>
+                    )}
                   </div>
                   <span className="font-mono font-medium text-primary shrink-0">
                     {formatCurrency(d.expectedAmount)}
                   </span>
+                  {d.uncertaintyKind === "compra_proxima" && d.uncertaintyReason && (
+                    <p className="w-full text-[11px] text-amber-700 text-pretty dark:text-amber-500">
+                      {d.uncertaintyReason}
+                    </p>
+                  )}
                 </div>
               ))}
+              {tickersSemDataCompraUpcoming.length > 0 && (
+                <p className="pt-1 text-[11px] text-amber-700 text-pretty dark:text-amber-500">
+                  {tickersSemDataCompraUpcoming.join(", ")} {tickersSemDataCompraUpcoming.length === 1 ? "está" : "estão"} sem
+                  data de compra cadastrada, então o app não consegue confirmar que você tem direito a estes
+                  pagamentos.{" "}
+                  <Link href="/carteira" className="underline underline-offset-2 hover:no-underline">
+                    Preencher em Minha Carteira
+                  </Link>{" "}
+                  resolve para todos de uma vez.
+                </p>
+              )}
               <p className="text-[10px] text-muted-foreground pt-1">
-                Valores estimados com base na quantidade atual do ativo e no provento anunciado pelo provedor de dados — "Previsto" ainda não foi formalizado em ata.
+                Só entram pagamentos aos quais você tem direito pela data-com — comprado depois dela, o
+                provento não aparece aqui. Valores estimados com a quantidade atual do ativo; "Previsto"
+                ainda não foi formalizado em ata.
               </p>
             </div>
           )}

@@ -506,6 +506,21 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   incerteza só para ativo sem data de compra cadastrada, e aí o item é mostrado marcado em vez
   de escondido — a data é opcional em qualquer classe e pode ser preenchida depois, na edição
   do ativo, para quem cadastrou a posição antes de existir o campo.
+- **"Próximos Pagamentos" só lista o que você tem direito a receber.** A mesma regra de
+  data-com acima — antes, TODO pagamento futuro anunciado pelo ticker entrava na lista, mesmo
+  para quem comprou depois do corte e não vai receber nada. A falha veio à tona por uma
+  pergunta direta: "se eu comprar hoje, é possível saber se vou receber o próximo pagamento?"
+  Checando, o app já tinha o dado (a data-com) e simplesmente não cruzava com a data de compra
+  nesta lista específica — cruzava em "Proventos a registrar", só não no que ainda ia pagar.
+  Corrigido para usar a mesma função (`classifyEntitlement`) nos dois lugares.
+- **O Parecer de Ativo responde a pergunta antes de comprar.** Consultando um ticker que
+  ainda não está na carteira, o app mostra o próximo provento anunciado e se **comprar hoje**
+  dá direito a ele — comparando a data de hoje contra a data-com, não contra a data de
+  pagamento, que costumam ficar semanas ou meses separadas (até 112 dias medidos na PETR4).
+  Quando a data-com do mais próximo já passou, mas existe um seguinte que ainda está por vir,
+  os dois aparecem: qual você perde e qual você de fato pegaria. Sem nada anunciado, o app diz
+  isso — não estima uma data futura a partir da cadência histórica, porque a próxima
+  data-com só existe quando a empresa declara.
 - **Provento de FII vem do endpoint de cotação, não do endpoint de FII.** Soa às avessas e é
   deliberado: `/v2/fii/dividends` devolve uma janela móvel de ~12 pagamentos **já liquidados**,
   então o pagamento anunciado e ainda não pago nunca aparecia ali. Como "Proventos anunciados"
