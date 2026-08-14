@@ -1297,11 +1297,26 @@ export interface AllocationOverview {
   items: AllocationItem[];
 }
 
+/**
+ * Quanto comprar, em quantidade, se a fatia inteira da classe for para este ativo. Nunca arredonda para cima: sugerir quantidade que custa mais que a fatia seria mandar gastar dinheiro que o usuário não disse que tem.
+ */
+export interface PurchaseSizing {
+  /** Cotação usada na conta, para o usuário conferir. */
+  unitPrice: number;
+  /** Unidades inteiras em bolsa (mercado fracionário negocia a partir de 1); múltiplos de 0,01 título no Tesouro Direto. Zero é resposta válida — a fatia não alcança uma unidade, ou não atinge o piso de R$ 30 do Tesouro. */
+  units: number;
+  investedAmount: number;
+  /** O que sobra da fatia. Sem isso a soma não fecha na tela. */
+  leftover: number;
+}
+
 export interface AllocationPlanSuggestion {
   ticker: string;
   name: string;
   score: number;
   reason: string;
+  /** Null quando não há cotação real para o ticker. Estimar preço para poder mostrar quantidade seria inventar o número mais fácil de conferir na tela. */
+  sizing?: PurchaseSizing | null;
 }
 
 export interface TreasuryPriceOnDate {
@@ -1337,6 +1352,8 @@ export interface TreasurySuggestion {
   /** Compra mínima — 1% do título, com piso de R$ 30 do Tesouro Direto. */
   minimumInvestment: number;
   reason: string;
+  /** Fração do título que a fatia de renda fixa compra, em múltiplos de 0,01. */
+  sizing?: PurchaseSizing | null;
 }
 
 /**

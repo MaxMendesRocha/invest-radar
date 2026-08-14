@@ -542,7 +542,13 @@ export const GetAllocationPlanResponse = zod.object({
   "ticker": zod.string(),
   "name": zod.string(),
   "score": zod.number(),
-  "reason": zod.string()
+  "reason": zod.string(),
+  "sizing": zod.union([zod.object({
+  "unitPrice": zod.number().describe('Cotação usada na conta, para o usuário conferir.'),
+  "units": zod.number().describe('Unidades inteiras em bolsa (mercado fracionário negocia a partir de 1); múltiplos de 0,01 título no Tesouro Direto. Zero é resposta válida — a fatia não alcança uma unidade, ou não atinge o piso de R$ 30 do Tesouro.'),
+  "investedAmount": zod.number(),
+  "leftover": zod.number().describe('O que sobra da fatia. Sem isso a soma não fecha na tela.')
+}).describe('Quanto comprar, em quantidade, se a fatia inteira da classe for para este ativo. Nunca arredonda para cima: sugerir quantidade que custa mais que a fatia seria mandar gastar dinheiro que o usuário não disse que tem.'),zod.null()]).optional().describe('Null quando não há cotação real para o ticker. Estimar preço para poder mostrar quantidade seria inventar o número mais fácil de conferir na tela.')
 })).describe('Ativos da classe, na mesma ordem da tela de Oportunidades.'),
   "treasurySuggestions": zod.array(zod.object({
   "bondType": zod.string(),
@@ -551,7 +557,13 @@ export const GetAllocationPlanResponse = zod.object({
   "rateLabel": zod.string().describe('Taxa já rotulada conforme a família (\"IPCA + 8,04% a.a.\", \"14,11% a.a.\", \"Selic + 0,04%\"). O número cru significa coisas diferentes em cada uma — no Tesouro Selic é ágio\/deságio sobre a Selic, não o rendimento.'),
   "unitPrice": zod.number().describe('Preço do título inteiro.'),
   "minimumInvestment": zod.number().describe('Compra mínima — 1% do título, com piso de R$ 30 do Tesouro Direto.'),
-  "reason": zod.string()
+  "reason": zod.string(),
+  "sizing": zod.union([zod.object({
+  "unitPrice": zod.number().describe('Cotação usada na conta, para o usuário conferir.'),
+  "units": zod.number().describe('Unidades inteiras em bolsa (mercado fracionário negocia a partir de 1); múltiplos de 0,01 título no Tesouro Direto. Zero é resposta válida — a fatia não alcança uma unidade, ou não atinge o piso de R$ 30 do Tesouro.'),
+  "investedAmount": zod.number(),
+  "leftover": zod.number().describe('O que sobra da fatia. Sem isso a soma não fecha na tela.')
+}).describe('Quanto comprar, em quantidade, se a fatia inteira da classe for para este ativo. Nunca arredonda para cima: sugerir quantidade que custa mais que a fatia seria mandar gastar dinheiro que o usuário não disse que tem.'),zod.null()]).optional().describe('Fração do título que a fatia de renda fixa compra, em múltiplos de 0,01.')
 })).optional().describe('Títulos do Tesouro Direto sugeridos para a fatia de renda fixa. Lista separada de `suggestions` de propósito: título público não tem ticker nem score do Radar, e encaixá-lo naquele formato exigiria inventar os dois.')
 })),
   "deviationBefore": zod.number().optional().describe('Soma dos desvios absolutos (pp) antes do aporte.'),

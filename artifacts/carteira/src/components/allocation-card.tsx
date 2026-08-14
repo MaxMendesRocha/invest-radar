@@ -45,6 +45,52 @@ function maturityYear(iso: string): string {
 /** "89,6" — pt-BR, uma casa. As barras e os textos abaixo falam em pontos percentuais. */
 const decimal = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const integer = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+/** Fração de título do Tesouro: "0,03". Duas casas, que é a granularidade da compra. */
+const fraction = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+type Sizing = { unitPrice: number; units: number; investedAmount: number; leftover: number };
+
+/**
+ * Quantas linhas do item exibem quantidade. Com uma só não há o que confundir — o aviso
+ * de "não é soma" apareceria como ruído.
+ */
+function sizedCount(item: { suggestions: { sizing?: Sizing | null }[]; treasurySuggestions?: { sizing?: Sizing | null }[] | null }): number {
+  const bolsa = item.suggestions.filter((s) => s.sizing).length;
+  const tesouro = (item.treasurySuggestions ?? []).filter((t) => t.sizing).length;
+  return bolsa + tesouro;
+}
+
+/**
+ * A linha que converte reais em quantidade — o passo que faltava entre "R$ 206,86 em
+ * FIIs" e a ordem de compra na corretora.
+ *
+ * `units: 0` não é ausência de resposta, é a resposta: a fatia não paga uma unidade.
+ * Esconder esse caso deixaria o usuário procurando a informação que o app tem.
+ */
+function SizingLine({ sizing, unitLabel }: { sizing: Sizing; unitLabel: "ação" | "cota" | "título" }) {
+  const plural = unitLabel === "ação" ? "ações" : `${unitLabel}s`;
+  const isFractional = unitLabel === "título";
+
+  if (sizing.units === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        A fatia não alcança {isFractional ? "a compra mínima" : `1 ${unitLabel}`} — {formatCurrency(sizing.unitPrice)}
+        {isFractional ? " o título inteiro (mínimo de R$ 30)" : " cada"}.
+      </p>
+    );
+  }
+
+  const quantity = isFractional ? fraction.format(sizing.units) : integer.format(sizing.units);
+  const noun = isFractional ? (sizing.units === 1 ? unitLabel : plural) : sizing.units === 1 ? unitLabel : plural;
+
+  return (
+    <p className="text-xs text-muted-foreground">
+      <span className="font-mono font-medium text-foreground">{quantity} {noun}</span>
+      {" × "}{formatCurrency(sizing.unitPrice)} = {formatCurrency(sizing.investedAmount)}
+      {sizing.leftover > 0 && ` · sobram ${formatCurrency(sizing.leftover)}`}
+    </p>
+  );
+}
 
 /**
  * Uma barra por classe: o preenchimento é o peso atual, o traço é o alvo.
@@ -191,11 +237,16 @@ function ContributionPlan() {
                   <span className="font-mono font-bold">{formatCurrency(item.amount)}</span>
                 </div>
                 {item.suggestions.length > 0 && (
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     {item.suggestions.map((s) => (
-                      <div key={s.ticker} className="text-sm flex gap-2">
-                        <span className="font-mono font-medium">{s.ticker}</span>
-                        <span className="text-muted-foreground truncate" title={s.reason}>{s.name}</span>
+                      <div key={s.ticker}>
+                        <div className="text-sm flex gap-2">
+                          <span className="font-mono font-medium">{s.ticker}</span>
+                          <span className="text-muted-foreground truncate" title={s.reason}>{s.name}</span>
+                        </div>
+                        {s.sizing && (
+                          <SizingLine sizing={s.sizing} unitLabel={item.category === "fiis" ? "cota" : "ação"} />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -212,12 +263,25 @@ function ContributionPlan() {
                         {/* O primeiro é a recomendação; os outros existem para o usuário
                             ver o contraponto, então só o primeiro leva a justificativa. */}
                         {index === 0 && <p className="text-xs text-muted-foreground text-pretty mt-0.5">{t.reason}</p>}
+                        {t.sizing && <div className="mt-0.5"><SizingLine sizing={t.sizing} unitLabel="título" /></div>}
                         <p className="text-xs text-muted-foreground mt-0.5">
                           A partir de {formatCurrency(t.minimumInvestment)} · taxa de {formatShortDate(t.baseDate)}
                         </p>
                       </div>
                     ))}
                   </div>
+                )}
+
+                {/* Sem esta frase as quantidades somam na cabeça de quem lê e o usuário
+                    gasta o triplo da fatia. Cada linha usa a fatia inteira porque o alvo
+                    do app é por classe, não por ticker — ratear entre os candidatos seria
+                    inventar uma política que não existe. Vale para bolsa e para o Tesouro,
+                    por isso a nota é do item e não de cada lista. */}
+                {sizedCount(item) > 1 && (
+                  <p className="text-xs text-muted-foreground text-pretty">
+                    Cada linha usa {formatCurrency(item.amount)} inteiros — são alternativas para a
+                    fatia, não uma soma.
+                  </p>
                 )}
 
                 {item.suggestions.length === 0 && (item.treasurySuggestions?.length ?? 0) === 0 && (

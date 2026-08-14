@@ -27,6 +27,7 @@ import {
 } from "../lib/allocation-engine";
 import { rankOpportunitiesFor } from "../lib/opportunity-ranking";
 import { suggestTreasuryBonds } from "../lib/treasury-engine";
+import { sizeWholeUnits, sizeTreasuryFraction } from "../lib/purchase-sizing";
 import { listTreasuryBondOptions, latestTreasuryBonds, priceOnDate } from "../lib/treasury-identity";
 import type { ProfileClassification } from "../lib/investor-profile-engine";
 import { isoDate, todayInAppTimezone } from "../lib/local-date";
@@ -1072,13 +1073,35 @@ router.get("/portfolio/allocation/plan", requireAuth, async (req, res): Promise<
       })
     : [];
 
-  const items = slices.map((slice) => {
-    const suggestions = ranking.items
-      .filter((item) => item.category === slice.category)
-      .slice(0, 3)
-      .map((item) => ({ ticker: item.ticker, name: item.name, score: item.score, reason: item.reason }));
+  // Os candidatos de bolsa por fatia, antes das cotações: a busca de preço é uma só,
+  // em lote, para todos os tickers do plano — não uma por classe.
+  const candidatesBySlice = new Map(
+    slices.map((slice) => [
+      slice.category,
+      ranking.items.filter((item) => item.category === slice.category).slice(0, 3),
+    ]),
+  );
+  const suggestedTickers = Array.from(candidatesBySlice.values())
+    .flat()
+    .map((item) => ({ ticker: item.ticker, category: "acoes" }));
+  const suggestedPrices = suggestedTickers.length > 0 ? await getPricesFor(suggestedTickers) : new Map();
 
-    const bondsForSlice = slice.category === "renda_fixa" ? treasurySuggestions : [];
+  const items = slices.map((slice) => {
+    const suggestions = (candidatesBySlice.get(slice.category) ?? []).map((item) => ({
+      ticker: item.ticker,
+      name: item.name,
+      score: item.score,
+      reason: item.reason,
+      // A fatia INTEIRA contra cada candidato, e não dividida entre eles: o app tem
+      // alvo por classe, não por ticker, então qualquer rateio interno seria invenção.
+      // Cada linha é uma alternativa — a tela precisa dizer isso, ou somam as três.
+      sizing: sizeWholeUnits(slice.amount, suggestedPrices.get(item.ticker.toUpperCase())?.price ?? null),
+    }));
+
+    const bondsForSlice = (slice.category === "renda_fixa" ? treasurySuggestions : []).map((bond) => ({
+      ...bond,
+      sizing: sizeTreasuryFraction(slice.amount, bond.unitPrice),
+    }));
 
     // Lista vazia tem causas diferentes, e a tela precisa saber qual — deixar todas
     // como "vazio" faria o app dar a mesma explicação para situações que não têm nada

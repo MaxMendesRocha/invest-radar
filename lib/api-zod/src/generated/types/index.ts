@@ -101,6 +101,7 @@ export * from './priceTarget';
 export * from './priceTargetInput';
 export * from './purchaseScreening';
 export * from './purchaseScreeningOutcome';
+export * from './purchaseSizing';
 export * from './riskMonthlyReturn';
 export * from './sale';
 export * from './saleCategory';

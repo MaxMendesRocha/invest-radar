@@ -5,10 +5,13 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { PurchaseSizing } from './purchaseSizing';
 
 export interface AllocationPlanSuggestion {
   ticker: string;
   name: string;
   score: number;
   reason: string;
+  /** Null quando não há cotação real para o ticker. Estimar preço para poder mostrar quantidade seria inventar o número mais fácil de conferir na tela. */
+  sizing?: PurchaseSizing | null;
 }

@@ -2284,6 +2284,29 @@ components:
           items:
             $ref: "#/components/schemas/AllocationItem"
 
+    PurchaseSizing:
+      type: object
+      required: [unitPrice, units, investedAmount, leftover]
+      description: >-
+        Quanto comprar, em quantidade, se a fatia inteira da classe for para este ativo.
+        Nunca arredonda para cima: sugerir quantidade que custa mais que a fatia seria
+        mandar gastar dinheiro que o usuário não disse que tem.
+      properties:
+        unitPrice:
+          type: number
+          description: Cotação usada na conta, para o usuário conferir.
+        units:
+          type: number
+          description: >-
+            Unidades inteiras em bolsa (mercado fracionário negocia a partir de 1);
+            múltiplos de 0,01 título no Tesouro Direto. Zero é resposta válida — a
+            fatia não alcança uma unidade, ou não atinge o piso de R$ 30 do Tesouro.
+        investedAmount:
+          type: number
+        leftover:
+          type: number
+          description: O que sobra da fatia. Sem isso a soma não fecha na tela.
+
     AllocationPlanSuggestion:
       type: object
       required: [ticker, name, score, reason]
@@ -2296,6 +2319,13 @@ components:
           type: number
         reason:
           type: string
+        sizing:
+          oneOf:
+            - $ref: "#/components/schemas/PurchaseSizing"
+            - type: "null"
+          description: >-
+            Null quando não há cotação real para o ticker. Estimar preço para poder
+            mostrar quantidade seria inventar o número mais fácil de conferir na tela.
 
     TreasuryPriceOnDate:
       type: object
@@ -2366,6 +2396,12 @@ components:
           description: Compra mínima — 1% do título, com piso de R$ 30 do Tesouro Direto.
         reason:
           type: string
+        sizing:
+          oneOf:
+            - $ref: "#/components/schemas/PurchaseSizing"
+            - type: "null"
+          description: >-
+            Fração do título que a fatia de renda fixa compra, em múltiplos de 0,01.
 
     AllocationPlanItem:
       type: object

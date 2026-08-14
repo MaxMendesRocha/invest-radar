@@ -316,6 +316,17 @@ Fatias abaixo de um piso são absorvidas pelas demais: sugerir aplicar oito reai
 seria ruído, não orientação. O piso é R$ 50 — ou 10% do aporte, quando o aporte é pequeno demais
 para que R$ 50 faça sentido como fatia mínima.
 
+**De reais para quantidade.** O plano parava no valor por classe e listava os candidatos, deixando
+a divisão por conta do usuário. Agora cada candidato mostra quantas ações, cotas ou frações de
+título a fatia compra, com a cotação usada e o que sobra — bolsa em unidades inteiras (o mercado
+fracionário negocia a partir de 1), Tesouro em múltiplos de 0,01 título respeitando o piso de R$ 30.
+Nada arredonda para cima, e sem cotação real a linha simplesmente não aparece.
+
+A fatia inteira é medida contra **cada** candidato, não rateada entre eles, e a tela diz isso: o
+alvo do app é por classe, não por ticker, então dividir entre os três seria inventar uma política
+que não existe. Quando a fatia não paga uma unidade, o app diz isso em vez de omitir a linha —
+é informação que ele tem.
+
 ---
 
 ## Perfil declarado contra perfil revelado
