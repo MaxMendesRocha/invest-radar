@@ -5,6 +5,7 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { PurchaseSizing } from './purchaseSizing';
 
 export interface TreasurySuggestion {
   bondType: string;
@@ -18,4 +19,6 @@ export interface TreasurySuggestion {
   /** Compra mínima — 1% do título, com piso de R$ 30 do Tesouro Direto. */
   minimumInvestment: number;
   reason: string;
+  /** Fração do título que a fatia de renda fixa compra, em múltiplos de 0,01. */
+  sizing?: PurchaseSizing | null;
 }
