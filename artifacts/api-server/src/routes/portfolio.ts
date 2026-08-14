@@ -28,6 +28,7 @@ import {
 import { rankOpportunitiesFor } from "../lib/opportunity-ranking";
 import { suggestTreasuryBonds } from "../lib/treasury-engine";
 import { sizeWholeUnits, sizeTreasuryFraction } from "../lib/purchase-sizing";
+import { classifyEntitlement, type EntitlementCertainty, type EntitlementUncertaintyKind } from "../lib/dividend-entitlement";
 import { listTreasuryBondOptions, latestTreasuryBonds, priceOnDate } from "../lib/treasury-identity";
 import type { ProfileClassification } from "../lib/investor-profile-engine";
 import { isoDate, todayInAppTimezone } from "../lib/local-date";
@@ -342,18 +343,33 @@ router.get("/portfolio/health", requireAuth, async (req, res): Promise<void> => 
 // a brapi já tem a aprovação em ata registrada é um valor formalizado; quando vem null
 // é só um cronograma projetado (ou, no caso de FIIs, um campo que a brapi não rastreia
 // nesse endpoint — nunca tratado como confirmado nesse caso, por segurança).
+//
+// ATÉ AQUI, TODO evento futuro era listado, sem checar se o USUÁRIO tem direito a ele.
+// Quem comprou depois da data-com via aqui um pagamento que nunca vai receber — o
+// mesmo cruzamento que /pending já faz para o passado, só que ausente no futuro. A
+// falha veio à tona quando o usuário perguntou se dava pra saber, antes de comprar,
+// se o próximo pagamento seria dele: checando, o app JÁ tinha o dado (lastDatePrior)
+// e simplesmente não o usava aqui. Agora usa a mesma regra de classifyEntitlement.
 router.get("/portfolio/dividends/upcoming", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
   const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
 
   const now = Date.now();
-  const upcoming: { ticker: string; paymentDate: string; label: string; rate: number; expectedAmount: number; confirmed: boolean }[] = [];
+  const upcoming: {
+    ticker: string; paymentDate: string; label: string; rate: number; expectedAmount: number; confirmed: boolean;
+    exDate: string | null; certainty: EntitlementCertainty; uncertaintyKind: EntitlementUncertaintyKind; uncertaintyReason: string | null;
+  }[] = [];
 
   for (const a of assets) {
+    if (!QUOTED_CATEGORIES.has(a.category)) continue;
     const qty = parseFloat(a.quantity);
-    const events = dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [];
-    for (const event of events) {
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const purchasedAt = a.purchaseDate ? new Date(a.purchaseDate).getTime() : null;
+
+    for (const event of dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? []) {
       if (new Date(event.paymentDate).getTime() <= now) continue;
+      const entitlement = classifyEntitlement(purchasedAt, event);
+      if (!entitlement.entitled) continue;
       upcoming.push({
         ticker: a.ticker,
         paymentDate: event.paymentDate,
@@ -361,6 +377,10 @@ router.get("/portfolio/dividends/upcoming", requireAuth, async (req, res): Promi
         rate: event.rate,
         expectedAmount: Math.round(event.rate * qty * 100) / 100,
         confirmed: event.approvedOn !== null,
+        exDate: event.lastDatePrior,
+        certainty: entitlement.certainty,
+        uncertaintyKind: entitlement.uncertaintyKind,
+        uncertaintyReason: entitlement.uncertaintyReason,
       });
     }
   }
@@ -370,18 +390,6 @@ router.get("/portfolio/dividends/upcoming", requireAuth, async (req, res): Promi
 });
 
 const PENDING_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
-
-/**
- * Folga usada SÓ quando o evento vem sem data-com — situação que não apareceu em
- * nenhum dos 1.100 eventos medidos, mas o campo é nullable no contrato.
- *
- * Este número já foi o critério principal, por eu ter afirmado que o provider não
- * entregava data-com. Entrega: é o `lastDatePrior`, presente nos dois endpoints
- * (ações e FII) com cobertura de 100% na amostra. E a folga estava errada no sentido
- * perigoso — PETR4 paga até 112 dias depois da data-com, então quem comprasse 60 dias
- * antes do pagamento era marcado como "confirmado" sem ter direito nenhum.
- */
-const EX_DATE_UNCERTAINTY_MS = 45 * 24 * 60 * 60 * 1000;
 
 /**
  * Proventos que JÁ FORAM PAGOS e ainda não têm lançamento correspondente.
@@ -431,12 +439,12 @@ router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promis
     exDate: string | null;
     quantity: number;
     suggestedAmount: number;
-    certainty: "confirmado" | "incerto";
+    certainty: EntitlementCertainty;
     // Separa os dois tipos porque eles pedem apresentações diferentes: "sem data de
     // compra" é uma propriedade do ATIVO e se repetiria idêntica em todas as linhas
     // dele (na conta de teste, a mesma frase 20 vezes); "compra próxima" é do EVENTO e
     // muda de linha para linha.
-    uncertaintyKind: "sem_data_compra" | "compra_proxima" | null;
+    uncertaintyKind: EntitlementUncertaintyKind;
     uncertaintyReason: string | null;
   }[] = [];
 
@@ -457,30 +465,8 @@ router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promis
         registeredCount.set(key, alreadyRegistered - 1);
         continue;
       }
-      const exDateAt = event.lastDatePrior ? new Date(event.lastDatePrior).getTime() : null;
-
-      // Com data-com e data de compra, o direito é DETERMINADO, não inferido: quem
-      // comprou até a data-com recebe, quem comprou depois não. Descartar aqui é
-      // certeza, não suposição.
-      if (purchasedAt != null && exDateAt != null && purchasedAt > exDateAt) continue;
-      // Sem data-com, sobra a checagem grosseira: comprar depois do próprio pagamento
-      // é impossível ter direito em qualquer regime.
-      if (purchasedAt != null && exDateAt == null && purchasedAt > paidAt) continue;
-
-      let certainty: "confirmado" | "incerto" = "confirmado";
-      let uncertaintyKind: "sem_data_compra" | "compra_proxima" | null = null;
-      let uncertaintyReason: string | null = null;
-      if (purchasedAt == null) {
-        certainty = "incerto";
-        uncertaintyKind = "sem_data_compra";
-        uncertaintyReason = null; // agregado por ticker na tela, não repetido por linha
-      } else if (exDateAt == null && paidAt - purchasedAt < EX_DATE_UNCERTAINTY_MS) {
-        // Só cai aqui evento sem data-com. Com ela, o caso acima já resolveu.
-        const days = Math.max(0, Math.round((paidAt - purchasedAt) / (24 * 60 * 60 * 1000)));
-        certainty = "incerto";
-        uncertaintyKind = "compra_proxima";
-        uncertaintyReason = `Comprado ${days} ${days === 1 ? "dia" : "dias"} antes do pagamento, e o provedor não informou a data-com deste provento.`;
-      }
+      const entitlement = classifyEntitlement(purchasedAt, event);
+      if (!entitlement.entitled) continue;
 
       pending.push({
         ticker: a.ticker,
@@ -490,9 +476,9 @@ router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promis
         exDate: event.lastDatePrior,
         quantity: qty,
         suggestedAmount: Math.round(event.rate * qty * 100) / 100,
-        certainty,
-        uncertaintyKind,
-        uncertaintyReason,
+        certainty: entitlement.certainty,
+        uncertaintyKind: entitlement.uncertaintyKind,
+        uncertaintyReason: entitlement.uncertaintyReason,
       });
     }
   }

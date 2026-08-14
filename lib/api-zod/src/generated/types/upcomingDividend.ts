@@ -5,7 +5,12 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { UpcomingDividendCertainty } from './upcomingDividendCertainty';
+import type { UpcomingDividendUncertaintyKind } from './upcomingDividendUncertaintyKind';
 
+/**
+ * Só entram eventos aos quais o usuário tem direito — comprado até a data-com (exDate). Antes desta checagem, TODO pagamento futuro do ticker era listado, mesmo sem a compra ter direito a ele; corrigido para usar a mesma regra de /portfolio/dividends/pending.
+ */
 export interface UpcomingDividend {
   ticker: string;
   paymentDate: string;
@@ -13,4 +18,14 @@ export interface UpcomingDividend {
   rate: number;
   expectedAmount: number;
   confirmed: boolean;
+  /**
+     * Data-com (lastDatePrior). Nullable pelo contrato do provider, sem faltar na amostra medida.
+     * @nullable
+     */
+  exDate: string | null;
+  certainty: UpcomingDividendCertainty;
+  /** @nullable */
+  uncertaintyKind: UpcomingDividendUncertaintyKind;
+  /** @nullable */
+  uncertaintyReason: string | null;
 }

@@ -8,6 +8,7 @@
 import type { AssetOpinionDividendFrequency } from './assetOpinionDividendFrequency';
 import type { AssetOpinionDividendTrend } from './assetOpinionDividendTrend';
 import type { AssetOpinionScoreClassification } from './assetOpinionScoreClassification';
+import type { DividendEntitlementPreview } from './dividendEntitlementPreview';
 import type { PurchaseScreening } from './purchaseScreening';
 import type { TechnicalIndicators } from './technicalIndicators';
 
@@ -42,6 +43,10 @@ export interface AssetOpinion {
      * @nullable
      */
   dividendFrequency?: AssetOpinionDividendFrequency;
+  /** O próximo provento anunciado pelo provedor, esteja ou não ao alcance de quem comprar hoje — null quando não há nada anunciado (comum em FII, cujo endpoint só cobre pagamento já liquidado). */
+  nextDividend?: DividendEntitlementPreview | null;
+  /** Presente só quando `nextDividend` existe e `entitledIfBoughtToday` é false: o próximo provento que uma compra hoje efetivamente alcançaria. Null quando o mais próximo já é o certo, ou quando nada mais está anunciado depois dele. */
+  nextEntitledDividend?: DividendEntitlementPreview | null;
   newsItems: string[];
   opinion: string;
   screening: PurchaseScreening;

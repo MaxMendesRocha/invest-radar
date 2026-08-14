@@ -507,6 +507,28 @@ export interface PortfolioHealth {
   aiDiagnosis?: string | null;
 }
 
+export type UpcomingDividendCertainty = typeof UpcomingDividendCertainty[keyof typeof UpcomingDividendCertainty];
+
+
+export const UpcomingDividendCertainty = {
+  confirmado: 'confirmado',
+  incerto: 'incerto',
+} as const;
+
+/**
+ * @nullable
+ */
+export type UpcomingDividendUncertaintyKind = typeof UpcomingDividendUncertaintyKind[keyof typeof UpcomingDividendUncertaintyKind] | null;
+
+
+export const UpcomingDividendUncertaintyKind = {
+  sem_data_compra: 'sem_data_compra',
+  compra_proxima: 'compra_proxima',
+} as const;
+
+/**
+ * Só entram eventos aos quais o usuário tem direito — comprado até a data-com (exDate). Antes desta checagem, TODO pagamento futuro do ticker era listado, mesmo sem a compra ter direito a ele; corrigido para usar a mesma regra de /portfolio/dividends/pending.
+ */
 export interface UpcomingDividend {
   ticker: string;
   paymentDate: string;
@@ -514,6 +536,16 @@ export interface UpcomingDividend {
   rate: number;
   expectedAmount: number;
   confirmed: boolean;
+  /**
+     * Data-com (lastDatePrior). Nullable pelo contrato do provider, sem faltar na amostra medida.
+     * @nullable
+     */
+  exDate: string | null;
+  certainty: UpcomingDividendCertainty;
+  /** @nullable */
+  uncertaintyKind: UpcomingDividendUncertaintyKind;
+  /** @nullable */
+  uncertaintyReason: string | null;
 }
 
 export type DividendProjectionAssetCategory = typeof DividendProjectionAssetCategory[keyof typeof DividendProjectionAssetCategory];
@@ -1123,6 +1155,25 @@ export interface PurchaseScreening {
   riskCount: number;
 }
 
+/**
+ * Um provento anunciado e se comprar HOJE dá direito a ele — a data que decide é a data-com (exDate), não a data de pagamento. As duas costumam vir separadas por semanas (até 112 dias na amostra medida de PETR4), e essa distância é exatamente o que confunde quem vê "paga dia X" e compra pensando que X é o prazo.
+ */
+export interface DividendEntitlementPreview {
+  paymentDate: string;
+  label: string;
+  rate: number;
+  /**
+     * Data-com. Nullable pelo contrato do provider, sem faltar na amostra medida.
+     * @nullable
+     */
+  exDate: string | null;
+  /**
+     * Null só no caso (não observado na amostra) de o provento vir sem data-com — aí não há base pra afirmar nada, e a incerteza é dita, não escondida.
+     * @nullable
+     */
+  entitledIfBoughtToday: boolean | null;
+}
+
 export type AssetOpinionScoreClassification = typeof AssetOpinionScoreClassification[keyof typeof AssetOpinionScoreClassification];
 
 
@@ -1190,6 +1241,10 @@ export interface AssetOpinion {
      * @nullable
      */
   dividendFrequency?: AssetOpinionDividendFrequency;
+  /** O próximo provento anunciado pelo provedor, esteja ou não ao alcance de quem comprar hoje — null quando não há nada anunciado (comum em FII, cujo endpoint só cobre pagamento já liquidado). */
+  nextDividend?: DividendEntitlementPreview | null;
+  /** Presente só quando `nextDividend` existe e `entitledIfBoughtToday` é false: o próximo provento que uma compra hoje efetivamente alcançaria. Null quando o mais próximo já é o certo, ou quando nada mais está anunciado depois dele. */
+  nextEntitledDividend?: DividendEntitlementPreview | null;
   newsItems: string[];
   opinion: string;
   screening: PurchaseScreening;
