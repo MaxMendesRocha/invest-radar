@@ -4,10 +4,12 @@ import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
+import { loginRateLimiter, registerRateLimiter } from "../middlewares/rate-limit";
+import { regenerateSession } from "../lib/session";
 
 const router: IRouter = Router();
 
-router.post("/auth/register", async (req, res): Promise<void> => {
+router.post("/auth/register", registerRateLimiter, async (req, res): Promise<void> => {
   const parsed = RegisterBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -25,13 +27,15 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const passwordHash = await bcrypt.hash(password, 10);
   const [user] = await db.insert(usersTable).values({ name, email, passwordHash }).returning();
 
+  // ID de sessão novo antes de autenticar — ver o comentário em lib/session.ts.
+  await regenerateSession(req);
   req.session.userId = user.id;
   res.status(201).json({
     user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt },
   });
 });
 
-router.post("/auth/login", async (req, res): Promise<void> => {
+router.post("/auth/login", loginRateLimiter, async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -46,6 +50,12 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
+  // ID de sessão novo antes de autenticar: sem isto, um ID de sessão fixado por um
+  // atacante ANTES do login (ex. vítima abre um link com sessão pré-definida)
+  // continuava o mesmo depois — e viraria uma sessão autenticada que o atacante já
+  // conhecia. `regenerate()` reatribui `req.session`; por isso o `userId` é setado
+  // DEPOIS do await, na referência nova, nunca antes.
+  await regenerateSession(req);
   req.session.userId = user.id;
   res.json({
     user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt },
