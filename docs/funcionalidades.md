@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 44 endpoints · 14 motores determinísticos · 5 pontos de IA · 10 telas · 4 fontes externas.
+**Superfície atual:** 44 endpoints · 14 motores determinísticos · 6 pontos de IA · 10 telas · 4 fontes externas.
 
 ---
 
@@ -414,7 +414,7 @@ lado otimista, dizendo que basta menos do que de fato basta. A escolha é errar 
 
 ## Onde a IA entra — e o que ela não decide
 
-Cinco pontos, todos em `claude-haiku-4-5-20251001`. Os prompts exatos estão em
+Seis pontos, todos em `claude-haiku-4-5-20251001`. Os prompts exatos estão em
 [`analises-ia.md`](./analises-ia.md).
 
 | Ponto | Recebe | Devolve | Decide |
@@ -422,10 +422,11 @@ Cinco pontos, todos em `claude-haiku-4-5-20251001`. Os prompts exatos estão em
 | **Parecer de ativo** | Score, positivos, riscos, notícias, macro, imposto, concentração, técnico, DuPont, saúde financeira | 2–6 frases de leitura cruzada | **nada** |
 | **Parecer pré-compra** | O mesmo conjunto, sem posição | 2–6 frases | **nada** |
 | **Diagnóstico da carteira** | Score de saúde e as 5 dimensões, composição, macro | 3–6 frases interpretando sem repetir os números | **nada** |
+| **Narrativa de mercado** | Janelas de variação, atribuição por contribuição, manchetes reais, macro | 2–4 frases, com permissão de dizer "não sei" | **nada** |
 | **Texto das oportunidades** | Score, fundamentos, segmento do FII | Motivo, positivos, riscos, horizonte | **nada** |
 | **Impacto de notícia** | A manchete | Positivo / neutro / negativo | só o rótulo |
 
-### As três defesas
+### As quatro defesas
 
 1. **O prompt proíbe explicitamente** inventar dado fora da lista recebida e propor score
    diferente do calculado.
@@ -434,6 +435,13 @@ Cinco pontos, todos em `claude-haiku-4-5-20251001`. Os prompts exatos estão em
    quebrar o processamento.
 3. **Sem chave de API, nada quebra.** Todas as funções retornam `null` e as telas usam o texto
    determinístico. A ausência da IA degrada a prosa, não a função.
+4. **As duas garantias mais frágeis têm teste de regressão contra a API real.**
+   `harness/ai-guardrails-check.mts` roda os quatro prompts mais arriscados (parecer de ativo,
+   parecer pré-compra, diagnóstico da carteira, narrativa de mercado) com cenários fixos —
+   inclusive o caso que já falhou uma vez (ver abaixo) — e verifica que a IA não emenda uma causa
+   inventada quando não sabe, e que nenhum score fora dos fornecidos aparece na saída. Não é um
+   gate de CI, é um spot-check pra rodar depois de editar qualquer um desses quatro prompts; sem
+   ele, a garantia (2) do parágrafo anterior nunca era verificada de novo depois da primeira vez.
 
 O enum de nível de risco é o exemplo mais claro da separação: é derivado do beta real por
 comparação numérica direta. A IA escreve o texto *em volta* dele, mas nunca o escolhe.
@@ -566,7 +574,10 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   refletir um movimento mais amplo do mercado de fundos imobiliários", hipótese que nenhum dado
   sustentava; o prompt passou a proibir nominalmente esse tipo de emenda e afirmações sobre setor
   ou classe que não estejam medidos. O texto vem depois dos números e nunca no lugar deles: sem
-  `ANTHROPIC_API_KEY` o campo é null e o card fica inteiro.
+  `ANTHROPIC_API_KEY` o campo é null e o card fica inteiro. Esse teste foi feito à mão, uma vez, e
+  não teria pego uma regressão se alguém editasse o prompt depois — `harness/ai-guardrails-check.mts`
+  fecha essa lacuna rodando o mesmo cenário (manchetes vazias, queda real) contra a API de verdade
+  e falhando se a especulação voltar.
 - **A carteira entra no comparativo com aporte neutralizado.** Retorno sobre custo se move
   quando entra dinheiro novo mesmo sem preço nenhum ter mudado: R$ 100 valendo R$ 110 estão
   +10%, e um aporte de R$ 100 ao preço de mercado derruba isso para +5% sem que nada tenha
