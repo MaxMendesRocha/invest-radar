@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import pinoHttp from "pino-http";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
@@ -14,6 +15,13 @@ const app: Express = express();
 // express-session silently refuses to set the "secure" cookie at all (not just the
 // attribute), and login never persists. This tells Express to honor X-Forwarded-Proto.
 app.set("trust proxy", 1);
+
+// Cabeçalhos de segurança padrão (HSTS, X-Content-Type-Options, remove X-Powered-By,
+// etc.) antes de qualquer outra coisa — se aplicam a toda resposta, sucesso ou erro.
+// O CSP default é inofensivo aqui: esta API nunca serve HTML (sem express.static, sem
+// res.render, só JSON em todas as rotas — inclusive o errorHandler), e CSP não regula
+// nada sobre uma resposta que o navegador não vai renderizar como documento.
+app.use(helmet());
 
 app.use(
   pinoHttp({

@@ -991,7 +991,10 @@ components:
           type: string
         password:
           type: string
-          minLength: 6
+          # NIST 800-63B: comprimento importa mais que regra de complexidade — 8 é o piso
+          # recomendado, sem exigir maiúscula/símbolo/número, que empurra pra padrões
+          # previsíveis ("Senha123!") sem ganho real de entropia.
+          minLength: 8
 
     UserLoginInput:
       type: object
