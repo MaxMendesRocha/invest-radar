@@ -5,6 +5,7 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { AssetCorrelationSummary } from './assetCorrelationSummary';
 import type { CompositionRisk } from './compositionRisk';
 
 export interface PortfolioRiskMetrics {
@@ -12,4 +13,5 @@ export interface PortfolioRiskMetrics {
   /** @nullable */
   reason: string | null;
   metrics: CompositionRisk | null;
+  correlation: AssetCorrelationSummary | null;
 }

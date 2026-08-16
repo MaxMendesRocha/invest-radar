@@ -535,6 +535,43 @@ export default function Dashboard() {
                     mostrada.
                   </p>
                 )}
+
+                {/* Setor (visto em Saúde do Portfólio) é um INDÍCIO de correlação, não a
+                    correlação em si — dois ativos de setores diferentes podem se mover
+                    quase juntos na prática, e o proxy de setor não pega isso. Esta é a
+                    medição direta sobre retorno diário real, nos mesmos pregões acima.
+                    Ausente (não um vazio explicado) quando há menos de 2 ativos cotados
+                    cobertos — não é uma lacuna de dado, é a pergunta não se aplicando. */}
+                {risk.correlation && (
+                  <div className="mt-4 border-t pt-4">
+                    <p className="text-sm font-medium">Correlação entre os ativos cotados</p>
+                    <p className="mt-1 text-xs text-muted-foreground text-pretty">
+                      Quanto os retornos diários andaram juntos nos mesmos {risk.correlation.tradingDays} pregões.
+                    </p>
+                    {risk.correlation.highlyCorrelatedCount > 0 ? (
+                      <div className="mt-2 space-y-1.5">
+                        {risk.correlation.pairs
+                          .filter((p) => p.correlation >= 0.7)
+                          .map((p) => (
+                            <p key={`${p.tickerA}-${p.tickerB}`} className="text-sm text-pretty">
+                              <span className="font-mono font-medium">{p.tickerA}</span> e{" "}
+                              <span className="font-mono font-medium">{p.tickerB}</span> se movem quase juntos —
+                              correlação de <span className="font-mono">{p.correlation.toFixed(2).replace(".", ",")}</span>,
+                              somando {p.combinedWeightPercent.toFixed(0)}% do valor medido. Setores diferentes não
+                              significam risco diferente aqui.
+                            </p>
+                          ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-muted-foreground text-pretty">
+                        Nenhum par se move junto o bastante para preocupar — o mais correlacionado é{" "}
+                        <span className="font-mono font-medium">{risk.correlation.pairs[0].tickerA}</span>/
+                        <span className="font-mono font-medium">{risk.correlation.pairs[0].tickerB}</span>, em{" "}
+                        <span className="font-mono">{risk.correlation.pairs[0].correlation.toFixed(2).replace(".", ",")}</span>.
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </CardContent>

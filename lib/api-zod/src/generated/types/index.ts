@@ -27,6 +27,8 @@ export * from './assetAnalysisScoreClassification';
 export * from './assetAnalysisStatus';
 export * from './assetAnalysisStatusReason';
 export * from './assetCategory';
+export * from './assetCorrelationPair';
+export * from './assetCorrelationSummary';
 export * from './assetDividendFrequency';
 export * from './assetInput';
 export * from './assetInputCategory';

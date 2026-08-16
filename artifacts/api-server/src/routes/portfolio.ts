@@ -4,6 +4,7 @@ import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries } from "../lib/market-data";
 import { computeCompositionRisk, type RiskPosition } from "../lib/portfolio-risk-metrics";
+import { computeAssetCorrelations } from "../lib/correlation-engine";
 import { computeMarketContext } from "../lib/market-context-engine";
 import { fetchIndexSeries, isMaisRetornoConfigured } from "../lib/mais-retorno";
 import { synthesizeMarketNarrative } from "../lib/market-context-ai";
@@ -775,7 +776,7 @@ router.get("/portfolio/risk-metrics", requireAuth, async (req, res): Promise<voi
   }
 
   if (quotedTickers.length === 0) {
-    res.json({ available: false, reason: "Nenhum ativo de bolsa na carteira para medir oscilação.", metrics: null });
+    res.json({ available: false, reason: "Nenhum ativo de bolsa na carteira para medir oscilação.", metrics: null, correlation: null });
     return;
   }
 
@@ -789,16 +790,23 @@ router.get("/portfolio/risk-metrics", requireAuth, async (req, res): Promise<voi
     totalValue,
   );
 
+  // Mesma série já buscada acima, sem chamada extra ao provedor — só reaproveitada
+  // por outra lente. Disponibilidade independente de `metrics`: correlação exige um
+  // PAR coberto (1 ativo cotado só não tem par pra medir, mas mede volatilidade
+  // normalmente), então pode vir null com `metrics` presente, ou vice-versa.
+  const correlation = computeAssetCorrelations(positions, series, totalValue);
+
   if (metrics == null) {
     res.json({
       available: false,
       reason: "Ainda não há pregões suficientes em comum entre os ativos da carteira para medir oscilação.",
       metrics: null,
+      correlation,
     });
     return;
   }
 
-  res.json({ available: true, reason: null, metrics });
+  res.json({ available: true, reason: null, metrics, correlation });
 });
 
 /** Quanto do valor precisa estar em FII para o IBOV deixar de ser a régua certa. */

@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 44 endpoints · 14 motores determinísticos · 6 pontos de IA · 10 telas · 4 fontes externas.
+**Superfície atual:** 50 endpoints · 17 motores determinísticos · 6 pontos de IA · 13 telas · 4 fontes externas.
 
 ---
 
@@ -616,9 +616,17 @@ para decidir nada.
   replica. Avaliar exigiria olhar através do índice. Aparecem na carteira e na alocação, sem análise.
 - **Notícias e macro não entram no score.** Valem 20% cada na fórmula original, mas não há fonte
   estruturada. Ficam fora da média; o peso é redistribuído entre o que existe.
-- **Correlação entre ativos não é calculada.** A diversificação é medida por dispersão entre setores
-  e tickers; duas ações do mesmo setor que andam juntas contam como diversificação. Calcular
-  correlação real é possível com as séries já em cache — próximo passo natural.
+- **A nota de diversificação ainda não usa correlação real, mas o dado já existe ao lado dela.**
+  `/portfolio/health` continua medindo diversificação por dispersão de setor (`spreadScore`) —
+  setor é um PROXY de correlação, não a correlação em si: duas ações de setores diferentes que na
+  prática se movem quase juntas passam no proxy. `/portfolio/risk-metrics` agora também devolve
+  `correlation` — Pearson real sobre retorno diário, mesma série e mesmas regras de
+  `portfolio-risk-metrics.ts` (`adjustedClose`, datas comuns a todos os ativos, piso de 60
+  pregões), sem custo de rede extra por reaproveitar a série já buscada para a oscilação. O card
+  "Oscilação da carteira atual" mostra os pares que mais se movem juntos quando algum passa de
+  0,7. Trocar a nota de diversificação por este número exigiria a mesma medição que decidiu NÃO
+  dobrar saúde financeira no score do Radar (seção "O Score do Radar", acima) — não foi feita
+  aqui, então por ora o dado é aditivo: aparece ao lado do que já existe, não decide nada.
 - **Retorno potencial é heurística.** Não há fonte de preço-alvo de analista em plano nenhum
   (`targetMeanPrice` dá 403 na v1 e na v2), então o número das Oportunidades combina score e
   yield reais, documentado como estimativa interna e não previsão. Quem tem a informação por

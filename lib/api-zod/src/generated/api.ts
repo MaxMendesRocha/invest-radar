@@ -659,7 +659,23 @@ export const GetPortfolioRiskMetricsResponse = zod.object({
   "monthsAboveBenchmark": zod.number().nullable(),
   "coveragePercent": zod.number(),
   "uncovered": zod.array(zod.string())
-}),zod.null()])
+}),zod.null()]),
+  "correlation": zod.union([zod.object({
+  "pairs": zod.array(zod.object({
+  "tickerA": zod.string(),
+  "tickerB": zod.string(),
+  "correlation": zod.number().describe('Pearson sobre retornos diários reais (adjustedClose), não sobre preço bruto. -1 a 1.'),
+  "combinedWeightPercent": zod.number().describe('% do valor COBERTO (não do total da carteira) que as duas posições juntas representam.')
+})).describe('Os pares mais correlacionados POSITIVAMENTE, até 5 — ordenado do mais positivo pro menos, não por valor absoluto: correlação bem negativa é um hedge natural entre os dois ativos, o oposto de um problema, então não entra na mesma lista de \"pares que escondem concentração\".'),
+  "averageCorrelation": zod.number().describe('Média entre TODOS os pares medidos, não só os exibidos em `pairs`.'),
+  "highlyCorrelatedCount": zod.number().describe('Pares com correlação >= 0,7 (positiva). Não conta anti-correlação.'),
+  "totalPairs": zod.number(),
+  "tradingDays": zod.number(),
+  "fromDate": zod.coerce.date(),
+  "toDate": zod.coerce.date(),
+  "coveragePercent": zod.number(),
+  "uncovered": zod.array(zod.string())
+}).describe('Correlação real entre pares de ativos da carteira. Aditivo à diversificação por setor já calculada em \/portfolio\/health — setor é um PROXY de correlação, não a correlação em si; este número é a medição direta sobre retornos diários reais. Não substitui nem altera a nota de diversificação.'),zod.null()])
 })
 
 
