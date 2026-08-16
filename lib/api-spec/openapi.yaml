@@ -1715,7 +1715,7 @@ components:
     # somam nem se substituem.
     PortfolioRiskMetrics:
       type: object
-      required: [available, reason, metrics]
+      required: [available, reason, metrics, correlation]
       properties:
         available:
           type: boolean
@@ -1727,6 +1727,71 @@ components:
           oneOf:
             - $ref: "#/components/schemas/CompositionRisk"
             - type: "null"
+        # Disponibilidade independente de `metrics`: correlação exige um PAR de
+        # ativos cotados cobertos, enquanto volatilidade da composição funciona com
+        # um só. Null quando há menos de dois, ou pregões em comum insuficientes.
+        correlation:
+          oneOf:
+            - $ref: "#/components/schemas/AssetCorrelationSummary"
+            - type: "null"
+
+    AssetCorrelationPair:
+      type: object
+      required: [tickerA, tickerB, correlation, combinedWeightPercent]
+      properties:
+        tickerA:
+          type: string
+        tickerB:
+          type: string
+        correlation:
+          type: number
+          description: Pearson sobre retornos diários reais (adjustedClose), não sobre preço bruto. -1 a 1.
+        combinedWeightPercent:
+          type: number
+          description: "% do valor COBERTO (não do total da carteira) que as duas posições juntas representam."
+
+    AssetCorrelationSummary:
+      type: object
+      required:
+        [pairs, averageCorrelation, highlyCorrelatedCount, totalPairs, tradingDays, fromDate, toDate,
+         coveragePercent, uncovered]
+      description: >-
+        Correlação real entre pares de ativos da carteira. Aditivo à diversificação
+        por setor já calculada em /portfolio/health — setor é um PROXY de
+        correlação, não a correlação em si; este número é a medição direta sobre
+        retornos diários reais. Não substitui nem altera a nota de diversificação.
+      properties:
+        pairs:
+          type: array
+          description: >-
+            Os pares mais correlacionados POSITIVAMENTE, até 5 — ordenado do mais
+            positivo pro menos, não por valor absoluto: correlação bem negativa é um
+            hedge natural entre os dois ativos, o oposto de um problema, então não
+            entra na mesma lista de "pares que escondem concentração".
+          items:
+            $ref: "#/components/schemas/AssetCorrelationPair"
+        averageCorrelation:
+          type: number
+          description: Média entre TODOS os pares medidos, não só os exibidos em `pairs`.
+        highlyCorrelatedCount:
+          type: integer
+          description: "Pares com correlação >= 0,7 (positiva). Não conta anti-correlação."
+        totalPairs:
+          type: integer
+        tradingDays:
+          type: integer
+        fromDate:
+          type: string
+          format: date
+        toDate:
+          type: string
+          format: date
+        coveragePercent:
+          type: number
+        uncovered:
+          type: array
+          items:
+            type: string
 
     CompositionRisk:
       type: object

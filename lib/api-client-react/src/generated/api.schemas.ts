@@ -773,11 +773,39 @@ export interface CompositionRisk {
   uncovered: string[];
 }
 
+export interface AssetCorrelationPair {
+  tickerA: string;
+  tickerB: string;
+  /** Pearson sobre retornos diários reais (adjustedClose), não sobre preço bruto. -1 a 1. */
+  correlation: number;
+  /** % do valor COBERTO (não do total da carteira) que as duas posições juntas representam. */
+  combinedWeightPercent: number;
+}
+
+/**
+ * Correlação real entre pares de ativos da carteira. Aditivo à diversificação por setor já calculada em /portfolio/health — setor é um PROXY de correlação, não a correlação em si; este número é a medição direta sobre retornos diários reais. Não substitui nem altera a nota de diversificação.
+ */
+export interface AssetCorrelationSummary {
+  /** Os pares mais correlacionados POSITIVAMENTE, até 5 — ordenado do mais positivo pro menos, não por valor absoluto: correlação bem negativa é um hedge natural entre os dois ativos, o oposto de um problema, então não entra na mesma lista de "pares que escondem concentração". */
+  pairs: AssetCorrelationPair[];
+  /** Média entre TODOS os pares medidos, não só os exibidos em `pairs`. */
+  averageCorrelation: number;
+  /** Pares com correlação >= 0,7 (positiva). Não conta anti-correlação. */
+  highlyCorrelatedCount: number;
+  totalPairs: number;
+  tradingDays: number;
+  fromDate: string;
+  toDate: string;
+  coveragePercent: number;
+  uncovered: string[];
+}
+
 export interface PortfolioRiskMetrics {
   available: boolean;
   /** @nullable */
   reason: string | null;
   metrics: CompositionRisk | null;
+  correlation: AssetCorrelationSummary | null;
 }
 
 export type AlertType = typeof AlertType[keyof typeof AlertType];
