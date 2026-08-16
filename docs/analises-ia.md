@@ -309,6 +309,83 @@ Manchete: "{título da manchete}"
 
 ---
 
+## 6. Narrativa de mercado ("por que a carteira caiu")
+
+**Arquivo:** `artifacts/api-server/src/lib/market-context-ai.ts` — `synthesizeMarketNarrative`
+**Onde aparece:** card "Contexto de Mercado" no Dashboard, abaixo dos números de variação/atribuição
+**Disparado por:** `GET /portfolio/market-context`
+**Cache:** 6h, por janelas arredondadas + atribuição arredondada + manchetes + data de referência (`asOf`)
+
+Este é o ponto de IA mais arriscado do app: perguntar "por que o mercado caiu" é convite a
+inventar causa, porque existe sempre uma narrativa macro plausível para qualquer movimento, em
+qualquer direção. A primeira versão do prompt falhou nisso — ver o histórico abaixo — e por isso
+este é o único ponto com teste de regressão automatizado contra a API real
+(`harness/ai-guardrails-check.mts`), não só verificação manual.
+
+### Dados de entrada
+- Variação da carteira e do benchmark em 3 janelas (1 dia, 1 semana, 1 mês)
+- Benchmark usado (IBOV ou IFIX, conforme composição — ver `market-context-engine.ts`)
+- Atribuição por CONTRIBUIÇÃO (peso × variação), não por variação bruta, dos ativos que mais
+  pesaram no período
+- Manchetes REAIS já buscadas e classificadas por impacto para os ativos da carteira — nunca uma
+  manchete genérica de mercado
+- Cenário macro (Selic, tendência, IPCA 12m, juro real, IGP-M 12m)
+
+### Prompt
+
+```
+Você escreve para um investidor pessoa física, em português do Brasil, explicando o que
+aconteceu com a carteira dele no período recente. Os números abaixo já foram calculados e
+NÃO devem ser recalculados nem contestados.
+
+Variação por janela — {janela}: carteira {%}, {benchmark} {%} | ...
+Benchmark usado: {benchmarkLabel}. {"A carteira foi MELHOR/PIOR ou igual que o X no período de Y."}
+Atribuição em {N} pregões (total {%}): {ticker} pesa {%}, variou {%}, contribuiu {pp}pp; ...
+Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%, juro real {juroReal}%, IGP-M 12m {igpm}%
+
+Manchetes recentes dos ativos desta carteira:
+{- [ticker · impacto] título, ou "(nenhuma manchete recente encontrada para os ativos desta carteira)"}
+
+REGRA MAIS IMPORTANTE: só atribua causa ao movimento se as manchetes acima sustentarem essa
+causa. Se elas não explicarem o que aconteceu, diga isso com todas as letras — algo como "as
+notícias disponíveis não explicam esse movimento" — E PARE AÍ. Não emende hipótese própria
+depois de admitir que não sabe: nada de "parece refletir", "provavelmente ligado a", "deve ser
+um movimento mais amplo do setor", "reflete o cenário de juros". Frases assim são chute com
+cara de conclusão, e são exatamente o que esta regra existe para impedir.
+
+NÃO invente contexto macroeconômico, eventos, decisões de política monetária, cenário
+eleitoral, movimento de mercado externo, nem comportamento de um SETOR ou CLASSE de ativo que
+não esteja medido nos dados acima — você não recebeu índice setorial nenhum, então não afirme
+nada sobre "o mercado de FIIs", "o setor elétrico" ou equivalentes. Existe sempre uma
+narrativa plausível para qualquer queda, e inventá-la é pior do que não explicar.
+
+Comece pelo que mais importa: se a carteira caiu MENOS que o mercado, isso é o fato principal e
+deve vir primeiro — quatro ativos no vermelho assustam mais do que deveriam quando o índice caiu
+mais. Depois, aponte qual ativo realmente moveu o resultado, usando a CONTRIBUIÇÃO e não a
+variação: um ativo que caiu muito mas pesa pouco não é o responsável, e vale dizer isso quando
+for o caso.
+
+Não recomende compra nem venda. Não repita os números literalmente — interprete. Se o movimento
+for pequeno em dinheiro, pode dizer que é ruído.
+
+Formato de saída: texto plano, sem markdown, 2 a 4 frases.
+```
+
+### O bug que motivou o teste de regressão
+A primeira versão, testada à mão contra uma carteira concentrada em FII sem manchete
+correspondente, admitiu não saber e emendou "isso parece refletir um movimento mais amplo do
+mercado de fundos imobiliários" — hipótese que nenhum dado media. O parágrafo "REGRA MAIS
+IMPORTANTE" acima foi escrito depois disso, nomeando as construções banidas. Verificado uma vez
+à mão; `harness/ai-guardrails-check.mts` roda o mesmo cenário (manchetes vazias, queda real)
+contra a API de verdade e falha se qualquer uma das construções banidas — ou paráfrase próxima —
+reaparecer.
+
+### Fallback sem IA
+O campo de narrativa retorna `null` — o card mostra os números (janelas, atribuição,
+benchmark) sem o parágrafo de texto por cima.
+
+---
+
 ## Resumo de custo/cadência
 
 | Ponto | Quando roda | Cache |
@@ -318,6 +395,7 @@ Manchete: "{título da manchete}"
 | Diagnóstico da carteira | 1x por carteira, ao abrir Saúde do Portfólio (se score/composição mudou) | 24h |
 | Descrição de oportunidades | 1x por ativo qualificado, só no job semanal (~170 tickers varridos, só os com score ≥ 60 chamam IA) | sem cache (persiste até a próxima regeneração) |
 | Classificação de notícia | 1x por manchete nova | 24h |
+| Narrativa de mercado | 1x por carteira, ao abrir o Dashboard (se janelas/atribuição/manchetes mudaram) | 6h |
 
 ## Motores determinísticos que alimentam os prompts
 
