@@ -41,6 +41,7 @@ Modelo usado em todos os pontos: `claude-haiku-4-5-20251001`.
 - Decomposição DuPont do ROE em 5 fatores (`analysis-engine.ts`)
 - Saúde financeira: cobertura do dividendo por fluxo de caixa livre, conversão de lucro em caixa, dívida líquida/EBITDA, liquidez corrente, margem EBITDA (`financial-health-engine.ts`)
 - Perfil do FII — segmento papel/tijolo/híbrido/FoF, segmento de atuação, gestão, P/VP, DY 12m, patrimônio líquido, número de cotistas (com a ressalva de que mede alcance, não qualidade de gestão) (`fii-engine.ts`). Linha ausente do prompt quando o ativo não é FII
+- Sensibilidade a juro do segmento de FII — cruza o segmento com a tendência REAL de Selic (`macro-data.ts`): renda sobe/desce com o juro pra papel, preço reage mais que renda pra tijolo, sem direção afirmada pra híbrido/FoF (a proporção real não é exposta pela fonte de dados) (`describeFiiInterestRateSensitivity`, `fii-engine.ts`). Linha ausente sem os dois insumos
 - Comparação com pares do setor: P/L, ROE e DY contra a média real do setor (`sector-benchmarks.ts`)
 
 ### Prompt (montado dinamicamente — texto-base abaixo, com as linhas de IR/concentração/dividendo/técnico substituídas pelos dados reais de cada ativo)
@@ -68,6 +69,7 @@ Retorno ajustado ao risco (1 ano, CDI como taxa livre de risco): {Sharpe/Sortino
 Decomposição DuPont do ROE: {carga tributária x carga de juros x margem EBIT x giro de ativos x alavancagem, com o fator dominante identificado}
 Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FCL, conversão de lucro em caixa, liquidez corrente, margem EBITDA, dívida líquida/EBITDA — com ressalva de não-comparabilidade em setor financeiro}
 {Perfil do FII: segmento e o que ele implica de risco, patrimônio, cotistas — linha ausente quando não é FII}
+{Sensibilidade a juro do segmento: como o ciclo ATUAL de Selic (alta/queda/estável, medido em macro-data.ts) afeta este FII — renda pra papel, preço pra tijolo, sem direção pra híbrido/FoF — linha ausente sem os dois insumos}
 Comparação com pares do setor: {P/L, ROE e DY vs. média real do setor, com tamanho da amostra}
 
 Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos
@@ -129,6 +131,7 @@ Texto determinístico genérico citando o primeiro risco calculado (`buildRecomm
 - Decomposição DuPont do ROE
 - Saúde financeira (caixa, liquidez, alavancagem)
 - Perfil do FII, quando aplicável
+- Sensibilidade a juro do segmento de FII (segmento × tendência real de Selic), quando aplicável
 - Comparação com pares do setor
 - Notícias recentes classificadas
 - Cenário macro (Selic, tendência, IPCA 12m, juro real, IGP-M 12m)
@@ -151,6 +154,7 @@ Retorno ajustado ao risco (1 ano, CDI como taxa livre de risco): {Sharpe/Sortino
 Decomposição DuPont do ROE: {5 fatores, com o dominante identificado}
 Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FCL, conversão de caixa, liquidez, alavancagem}
 {Perfil do FII: segmento, implicação de risco, patrimônio, cotistas — ausente quando não é FII}
+{Sensibilidade a juro do segmento: renda pra papel, preço pra tijolo, sem direção pra híbrido/FoF — ausente sem os dois insumos}
 Comparação com pares do setor: {múltiplos vs. média do setor}
 Notícias recentes classificadas: {notícias}
 Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%, juro real {juroReal}% (Selic JÁ descontada a inflação — é o piso sem risco que o ativo precisa

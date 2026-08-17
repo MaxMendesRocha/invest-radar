@@ -148,3 +148,54 @@ export function evalFiiEligibility(avgDailyVolumeBrl: number | null, equity: num
   }
   return { eligible: true, reason: null };
 }
+
+export type SelicTrend = "alta" | "queda" | "estavel";
+
+/**
+ * Como o ciclo de juro atual afeta ESTE segmento — o lado que faltava no
+ * SEGMENT_CONTEXT acima. Aquele já dizia que papel acompanha juro e tijolo é mais
+ * estável; isto diz o que "acompanha" significa quando a Selic está subindo, caindo
+ * ou parada, cruzando com a tendência REAL medida em macro-data.ts.
+ *
+ * Dois canais diferentes, e a literatura (BTG, B3, brapi — ver docs/analises-ia.md
+ * pro histórico da pesquisa) é consistente sobre qual pesa mais em cada segmento:
+ *
+ * - **Papel**: efeito é na RENDA. Maioria dos CRIs indexada a CDI/IPCA+, então a
+ *   renda sobe com a Selic e encolhe quando ela cai — quase em tempo real. O efeito
+ *   no PREÇO da cota depende de quanto do CRI é prefixado (sofre com Selic subindo,
+ *   igual um título prefixado) vs. pós-fixado (não sofre) — proporção que a brapi
+ *   não expõe por fundo, então não afirmamos direção de preço para papel, só de
+ *   renda, que é o que está de fato medido.
+ * - **Tijolo**: efeito é no PREÇO. Aluguel é contratado e reajustado por
+ *   IGP-M/IPCA anual, então a renda não segue a Selic de perto. O preço da cota
+ *   funciona como um ativo de longa duração: sobe quando a Selic cai (ou o mercado
+ *   passa a esperar corte — a reprecificação costuma vir ANTES do corte de fato) e
+ *   comprime quando a Selic sobe, porque o mercado desconta o aluguel futuro a uma
+ *   taxa maior.
+ * - **Híbrido e FoF**: dependem da proporção real entre papel e tijolo (híbrido) ou
+ *   dos fundos que compõem a carteira (FoF), dado que a brapi não expõe por fundo —
+ *   por isso não recebem leitura direcional, só a ressalva de que o efeito é misto.
+ *
+ * Retorna string vazia sem os dois insumos (segmento e tendência), pro chamador não
+ * incluir a linha em vez de poluir o prompt com "não disponível".
+ */
+export function describeFiiInterestRateSensitivity(segment: FiiSegment | null, selicTrend: SelicTrend | null): string {
+  if (!segment || !selicTrend) return "";
+
+  if (segment === "papel") {
+    if (selicTrend === "alta") return "Ciclo de Selic em alta: a renda deste FII de papel tende a subir, acompanhando CDI/IPCA+ dos CRIs da carteira.";
+    if (selicTrend === "queda") return "Ciclo de Selic em queda: a renda deste FII de papel tende a encolher, acompanhando CDI/IPCA+ dos CRIs da carteira — o yield atual pode não se repetir.";
+    return "Selic estável: a renda deste FII de papel tende a ficar perto do nível atual, sem pressão de alta nem de queda vinda do ciclo de juro.";
+  }
+
+  if (segment === "tijolo") {
+    if (selicTrend === "alta") return "Ciclo de Selic em alta: a cota deste FII de tijolo tende a sentir mais no preço do que na renda — o mercado desconta o aluguel futuro a uma taxa maior, mesmo com o aluguel contratado intacto.";
+    if (selicTrend === "queda") return "Ciclo de Selic em queda: a cota deste FII de tijolo tende a se beneficiar mais no preço do que na renda — o mercado costuma reprecificar antes mesmo do corte se completar, buscando retorno maior que a renda fixa em queda.";
+    return "Selic estável: sem o ciclo de juro empurrando a cota deste FII de tijolo para cima ou para baixo, o preço tende a acompanhar mais o próprio mercado imobiliário (vacância, renegociação de contratos) do que o juro.";
+  }
+
+  // híbrido e FoF: proporção real não é exposta pela fonte de dados — dizer uma
+  // direção aqui seria inventar precisão que não se tem.
+  const kind = segment === "hibrido" ? "híbrido" : "de fundos (FoF)";
+  return `FII ${kind}: o efeito do ciclo de juro atual depende da proporção real entre papel e tijolo na carteira, que não é possível medir por aqui — não dá para afirmar se o efeito dominante é de renda (papel) ou de preço (tijolo).`;
+}
