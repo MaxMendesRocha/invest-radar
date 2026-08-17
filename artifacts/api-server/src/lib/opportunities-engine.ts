@@ -1,12 +1,12 @@
 import { db, opportunitiesTable, sectorBenchmarksTable, type InsertOpportunity, type InsertSectorBenchmark } from "@workspace/db";
-import { getFundamentals, getDividendEvents, getFiiProfiles, sumLast12Months, classifyDividendFrequency, type Fundamentals, type FiiProfile } from "./market-data";
+import { getFundamentals, getDividendEvents, getFiiProfiles, getTechnicalSeries, sumLast12Months, classifyDividendFrequency, type Fundamentals, type FiiProfile } from "./market-data";
 import { analyzeFundamentals, analyzeFii } from "./analysis-engine";
 import { getMacroSnapshot } from "./macro-data";
 import { computeFinancialHealth } from "./financial-health-engine";
 import { classifySustainabilityOf } from "./dividend-value-engine";
 import { fetchTickerUniverse, type UniverseEntry } from "./ticker-universe";
 import { describeOpportunity } from "./opportunities-ai";
-import { benchmarkGroupFor } from "./fii-engine";
+import { benchmarkGroupFor, averageDailyVolumeValue, evalFiiEligibility } from "./fii-engine";
 import { logger } from "./logger";
 import type { JobDefinition } from "./scheduler";
 
@@ -129,14 +129,20 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
   // dividendEvents em paralelo com fundamentals — o payout ratio avaliado dentro de
   // analyzeFundamentals precisa do DPS real dos últimos 12 meses, mesma fonte já usada
   // pra dividendTrend no Parecer de Ativo e em POST /analysis/generate.
-  const [fundamentalsByTicker, dividendEventsByTicker, fiiProfileByTicker, macro] = await Promise.all([
+  const fiiTickers = universe.filter((u) => u.category === "fiis").map((u) => u.ticker);
+
+  const [fundamentalsByTicker, dividendEventsByTicker, fiiProfileByTicker, macro, fiiSeriesByTicker] = await Promise.all([
     getFundamentals(universe.map((u) => u.ticker)),
     getDividendEvents(universe.map((u) => ({ ticker: u.ticker, category: u.category }))),
     // Em lote (?symbols=A,B,C), uma chamada só — o segmento é o que permite comparar
     // FII contra os pares certos em vez de contra todos os FIIs juntos.
-    getFiiProfiles(universe.filter((u) => u.category === "fiis").map((u) => u.ticker)),
+    getFiiProfiles(fiiTickers),
     // Selic: referência contra a qual o rendimento de FII é lido (ver analyzeFii).
     getMacroSnapshot(),
+    // Só pros FIIs do universo, não pro universo inteiro — é a mesma série (1 ano,
+    // cacheada 24h) que technical-engine.ts já usa noutro lugar, aqui reaproveitada
+    // pra medir liquidez de negociação (ver evalFiiEligibility em fii-engine.ts).
+    getTechnicalSeries(fiiTickers),
   ]);
   const now = Date.now();
 
@@ -159,6 +165,19 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
           }, 0, undefined, now)
         : analyzeFundamentals(fundamentals, dps12m);
     if (!analysis.available || analysis.score < MIN_OPPORTUNITY_SCORE) return null;
+
+    // Elegibilidade de FII: liquidez de negociação e patrimônio, pisos medidos contra
+    // o universo real (ver evalFiiEligibility). Score bom não basta — um FII com
+    // fundamentos excelentes mas negociado a menos de R$700 mil/dia é uma sugestão
+    // que a pessoa não consegue montar posição relevante sem mover o próprio preço.
+    // Só se aplica a FII: o critério de liquidez pedido foi especificamente para FII,
+    // e ação/ETF/BDR já usam bolsa suficientemente líquida por natureza do universo.
+    if (entry.category === "fiis") {
+      const avgDailyVolumeBrl = averageDailyVolumeValue(fiiSeriesByTicker.get(entry.ticker) ?? []);
+      const eligibility = evalFiiEligibility(avgDailyVolumeBrl, fiiProfileByTicker.get(entry.ticker)?.equity ?? null);
+      if (!eligibility.eligible) return null;
+    }
+
     return { entry, fundamentals, analysis };
   }).filter((c): c is { entry: UniverseEntry; fundamentals: Fundamentals; analysis: ReturnType<typeof analyzeFundamentals> } => c != null);
 

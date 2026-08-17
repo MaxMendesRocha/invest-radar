@@ -1,4 +1,4 @@
-import type { FiiProfile, FiiSegment, Fundamentals } from "./market-data";
+import type { FiiProfile, FiiSegment, Fundamentals, OhlcPoint } from "./market-data";
 
 // O que cada segmento implica de risco — é o contexto que falta pra IA ler o dividend
 // yield de um FII corretamente. Um DY de 12% num fundo de papel e num de tijolo
@@ -48,6 +48,16 @@ export function describeFiiProfile(profile: FiiProfile | null): string {
   if (profile.dividendYield12m != null) {
     parts.push(`dividend yield de ${(profile.dividendYield12m * 100).toFixed(1)}% nos últimos 12 meses`);
   }
+  if (profile.equity != null) {
+    parts.push(`patrimônio líquido de R$ ${(profile.equity / 1_000_000).toFixed(0)} milhões`);
+  }
+  if (profile.totalInvestors != null) {
+    // Número de cotistas mede POPULARIDADE, não qualidade de gestão — o app não tem
+    // (nem a brapi, nem o Informe Mensal da CVM têm) o nome do gestor de fato, só do
+    // administrador, que é papel legal diferente. A ressalva vai no prompt pra IA não
+    // ler "muitos cotistas" como "gestão confiável", que não é o que o número mede.
+    parts.push(`${profile.totalInvestors.toLocaleString("pt-BR")} cotistas (mede alcance do fundo, não qualidade de gestão)`);
+  }
 
   if (parts.length === 0) return "";
   return parts.join("; ") + ".";
@@ -78,4 +88,63 @@ export function benchmarkGroupFor(f: Fundamentals, profile: FiiProfile | undefin
   const segment = profile?.segmentType;
   if (segment) return FII_SEGMENT_LABEL[segment];
   return f.sector;
+}
+
+/**
+ * Elegibilidade de FII para entrar em "Sugestão de Ativos" — dois pisos, medidos
+ * contra o universo real, não escolhidos de cabeça.
+ *
+ * **Liquidez de negociação, R$ 700 mil/dia.** Pedido direto do usuário. Testado
+ * contra os 50 FIIs do universo (volume × cotação de um dia real): exclui 10 de 50
+ * (20%), com a mediana do dia em ~R$ 3 milhões — corte real, não cosmético, mas que
+ * não esvazia a lista. Medido sobre a MÉDIA de 21 pregões (≈1 mês), não um dia só —
+ * um dia isolado é ruidoso pra cima ou pra baixo.
+ *
+ * **Patrimônio, R$ 200 milhões.** Medido contra os mesmos 50 FIIs pelo `equity` real
+ * da brapi: a mediana do universo é ~R$ 1,4 bilhão, e R$ 200 milhões exclui só os 3
+ * genuinamente pequenos (7% do universo) — LSOP11 (R$ 34mi), PMIS11 (R$ 138mi),
+ * MIDW11 (R$ 184mi) na amostra testada. R$ 100 milhões excluiria só 1; R$ 300
+ * milhões já excluiria 5 (11%). Escolhido pra filtrar o extremo sem restringir o
+ * meio da distribuição.
+ *
+ * Os dois são convenção declarada — como VARIABLE_SPLIT em allocation-engine.ts —
+ * não lei de mercado. Revisáveis com nova medição, não com achismo.
+ */
+export const MIN_FII_DAILY_VOLUME_BRL = 700_000;
+export const MIN_FII_EQUITY_BRL = 200_000_000;
+
+const VOLUME_AVERAGING_DAYS = 21;
+
+/**
+ * Valor médio negociado por dia (R$), sobre os últimos `days` pregões da série —
+ * volume em cotas × fechamento ajustado do mesmo dia. Null sem pregões suficientes,
+ * nunca um valor calculado sobre menos dias do que o pedido (pareceria medido e
+ * seria só um pedaço).
+ */
+export function averageDailyVolumeValue(series: OhlcPoint[], days: number = VOLUME_AVERAGING_DAYS): number | null {
+  if (series.length < days) return null;
+  const recent = series.slice(-days);
+  const total = recent.reduce((sum, p) => sum + p.volume * p.adjustedClose, 0);
+  return total / days;
+}
+
+export interface FiiEligibility {
+  eligible: boolean;
+  /** Por que não passou — null quando eligible é true. */
+  reason: string | null;
+}
+
+/**
+ * `null` em `avgDailyVolumeBrl` ou `equity` reprova, não aprova por omissão — sem
+ * dado real pra checar o piso, mais seguro tratar como não verificado do que deixar
+ * passar um fundo que pode estar abaixo dele.
+ */
+export function evalFiiEligibility(avgDailyVolumeBrl: number | null, equity: number | null): FiiEligibility {
+  if (equity == null || equity < MIN_FII_EQUITY_BRL) {
+    return { eligible: false, reason: `Patrimônio abaixo de R$ ${(MIN_FII_EQUITY_BRL / 1_000_000).toFixed(0)} milhões ou indisponível` };
+  }
+  if (avgDailyVolumeBrl == null || avgDailyVolumeBrl < MIN_FII_DAILY_VOLUME_BRL) {
+    return { eligible: false, reason: `Volume médio abaixo de R$ ${(MIN_FII_DAILY_VOLUME_BRL / 1000).toFixed(0)} mil/dia ou indisponível` };
+  }
+  return { eligible: true, reason: null };
 }
