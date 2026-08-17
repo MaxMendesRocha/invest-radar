@@ -42,6 +42,7 @@ Modelo usado em todos os pontos: `claude-haiku-4-5-20251001`.
 - Saúde financeira: cobertura do dividendo por fluxo de caixa livre, conversão de lucro em caixa, dívida líquida/EBITDA, liquidez corrente, margem EBITDA (`financial-health-engine.ts`)
 - Perfil do FII — segmento papel/tijolo/híbrido/FoF, segmento de atuação, gestão, P/VP, DY 12m, patrimônio líquido, número de cotistas (com a ressalva de que mede alcance, não qualidade de gestão) (`fii-engine.ts`). Linha ausente do prompt quando o ativo não é FII
 - Sensibilidade a juro do segmento de FII — cruza o segmento com a tendência REAL de Selic (`macro-data.ts`): renda sobe/desce com o juro pra papel, preço reage mais que renda pra tijolo, sem direção afirmada pra híbrido/FoF (a proporção real não é exposta pela fonte de dados) (`describeFiiInterestRateSensitivity`, `fii-engine.ts`). Linha ausente sem os dois insumos
+- Composição real da carteira do FII e taxa de administração real — % em imóveis diretos, % em CRI/recebíveis estruturados e % em outros ativos financeiros, mais a taxa de administração mensal/anualizada, direto do Informe Mensal da CVM (`describeFiiCvmComposition`, `fii-engine.ts` + `cvm-data.ts`). É o dado que resolve, com número real, o que a linha de sensibilidade a juro acima se recusa a afirmar por segmento pra híbrido/FoF — um FII rotulado híbrido pode ter 80%+ em imóveis diretos na prática. Linha ausente sem CNPJ do fundo (via `FiiProfile.cnpj`, brapi) ou sem o fundo no informe mais recente da CVM
 - Comparação com pares do setor: P/L, ROE e DY contra a média real do setor (`sector-benchmarks.ts`)
 
 ### Prompt (montado dinamicamente — texto-base abaixo, com as linhas de IR/concentração/dividendo/técnico substituídas pelos dados reais de cada ativo)
@@ -70,6 +71,7 @@ Decomposição DuPont do ROE: {carga tributária x carga de juros x margem EBIT 
 Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FCL, conversão de lucro em caixa, liquidez corrente, margem EBITDA, dívida líquida/EBITDA — com ressalva de não-comparabilidade em setor financeiro}
 {Perfil do FII: segmento e o que ele implica de risco, patrimônio, cotistas — linha ausente quando não é FII}
 {Sensibilidade a juro do segmento: como o ciclo ATUAL de Selic (alta/queda/estável, medido em macro-data.ts) afeta este FII — renda pra papel, preço pra tijolo, sem direção pra híbrido/FoF — linha ausente sem os dois insumos}
+{Composição real da carteira (CVM, referência mm/aaaa): % imóveis diretos, % CRI/recebíveis, % outros ativos, mais taxa de administração mensal/anualizada quando disponível — linha ausente sem CNPJ ou sem o fundo no informe da CVM}
 Comparação com pares do setor: {P/L, ROE e DY vs. média real do setor, com tamanho da amostra}
 
 Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos
@@ -97,8 +99,11 @@ caixa do que gerou — isso pesa MAIS que um payout ratio contábil confortável
 e lucro não paga dividendo, caixa paga. Respeite a ressalva de comparabilidade quando ela aparecer.
 Se houver linha de perfil de FII, use o segmento pra qualificar o yield: yield alto em fundo de papel
 reflete juro alto e encolhe no ciclo de queda, em fundo de tijolo reflete aluguel contratado, e FoF
-carrega taxa em duas camadas. Use a comparação com o setor como contexto, nunca como sinal
-automático — mais barato que o setor pode ser desconto justificado, não vantagem.
+carrega taxa em duas camadas. Se houver linha de composição real (CVM), qualifique o segmento com os
+percentuais reais — um FII híbrido com 80%+ em imóveis diretos se comporta mais como tijolo na
+prática — e trate a taxa de administração real como um custo concreto sobre o yield líquido. Use a
+comparação com o setor como contexto, nunca como sinal automático — mais barato que o setor pode ser
+desconto justificado, não vantagem.
 NÃO invente nenhum dado que não esteja listado acima. NÃO proponha um score ou status diferente do
 informado — a decisão de score é sempre do motor determinístico, você só interpreta. NÃO trate o
 valor de IR como exato — é uma estimativa isolada, deixe isso implícito no texto sem precisar repetir
@@ -132,6 +137,7 @@ Texto determinístico genérico citando o primeiro risco calculado (`buildRecomm
 - Saúde financeira (caixa, liquidez, alavancagem)
 - Perfil do FII, quando aplicável
 - Sensibilidade a juro do segmento de FII (segmento × tendência real de Selic), quando aplicável
+- Composição real da carteira do FII e taxa de administração real, via CVM (`describeFiiCvmComposition`), quando aplicável
 - Comparação com pares do setor
 - Notícias recentes classificadas
 - Cenário macro (Selic, tendência, IPCA 12m, juro real, IGP-M 12m)
@@ -155,6 +161,7 @@ Decomposição DuPont do ROE: {5 fatores, com o dominante identificado}
 Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FCL, conversão de caixa, liquidez, alavancagem}
 {Perfil do FII: segmento, implicação de risco, patrimônio, cotistas — ausente quando não é FII}
 {Sensibilidade a juro do segmento: renda pra papel, preço pra tijolo, sem direção pra híbrido/FoF — ausente sem os dois insumos}
+{Composição real da carteira (CVM): % imóveis diretos, % CRI/recebíveis, % outros ativos, taxa de administração real — ausente sem CNPJ ou sem o fundo no informe da CVM}
 Comparação com pares do setor: {múltiplos vs. média do setor}
 Notícias recentes classificadas: {notícias}
 Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%, juro real {juroReal}% (Selic JÁ descontada a inflação — é o piso sem risco que o ativo precisa
@@ -418,6 +425,7 @@ insumo, nunca um valor estimado.
 | `technical-engine.ts` | SMA20/50/200, RSI14, MACD, Bollinger, cruzamento de médias |
 | `risk-metrics-engine.ts` | Sharpe, Sortino e Treynor, com CDI acumulado (nominal) como taxa livre de risco |
 | `financial-health-engine.ts` | Cobertura do dividendo por fluxo de caixa livre, conversão de lucro em caixa, dívida líquida/EBITDA, liquidez corrente, margem EBITDA |
-| `fii-engine.ts` | Perfil do FII: segmento (papel/tijolo/híbrido/FoF) e o risco que cada um implica; patrimônio, cotistas e elegibilidade de liquidez/patrimônio pra Oportunidades |
+| `fii-engine.ts` | Perfil do FII: segmento (papel/tijolo/híbrido/FoF) e o risco que cada um implica; patrimônio, cotistas e elegibilidade de liquidez/patrimônio pra Oportunidades; sensibilidade a juro por segmento; texto de composição real + taxa de administração real (a partir de `cvm-data.ts`) |
+| `cvm-data.ts` | Composição real da carteira (% imóveis diretos / % CRI e recebíveis / % outros) e taxa de administração real, por FII, direto do Informe Mensal Estruturado da CVM (dado público, sem chave) — cruzado pelo CNPJ real vindo da brapi |
 | `sector-benchmarks.ts` | Médias reais do setor (P/L, P/VP, ROE, DY, margem), calculadas no job semanal de Oportunidades |
 | `tax-engine.ts` / `monthly-tax-engine.ts` | IR estimado por venda e consolidação mensal por categoria |

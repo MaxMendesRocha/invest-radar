@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 50 endpoints · 17 motores determinísticos · 6 pontos de IA · 13 telas · 4 fontes externas.
+**Superfície atual:** 50 endpoints · 17 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
 
 ---
 
@@ -46,6 +46,7 @@ flowchart LR
     F2["api.bcb.gov.br<br/>Selic · IPCA · IGP-M · CDI"]
     F3["tesourotransparente<br/>PU diário dos títulos"]
     F4["InfoMoney RSS<br/>manchetes por ativo"]
+    F5["dados.cvm.gov.br<br/>composição real de FII · taxa de adm."]
   end
 
   subgraph M["MOTORES — 100% determinístico"]
@@ -83,6 +84,7 @@ depende da IA para existir.**
 | `api.bcb.gov.br` | Selic, IPCA, IGP-M, CDI, dólar | Séries oficiais do Banco Central. A Selic é a referência contra a qual o rendimento de FII é lido, e o CDI é a taxa livre de risco do Sharpe |
 | `tesourotransparente` | PU diário de todos os títulos do Tesouro Direto | Descoberto via CKAN — o endpoint JSON amplamente citado em tutoriais responde `410 Gone`. Ingestão incremental e de memória constante |
 | InfoMoney RSS | Manchetes recentes por ativo | Só título e link. A classificação de impacto é o único ponto em que a IA toca notícia |
+| `dados.cvm.gov.br` | Composição real da carteira de FII (% imóveis diretos, % CRI/recebíveis, % outros) e taxa de administração real | Informe Mensal Estruturado, dado público sem chave, cruzado com a brapi pelo CNPJ real do fundo. Diferente do investidor10.com.br (descartado por Termos de Uso), este é o próprio administrador prestando conta à CVM |
 | `maisretorno.com` (opcional) | IFIX e CDI com histórico, dados D-1 | Entra só onde as outras fontes são cegas: o IFIX, que a brapi não devolve com série, e o CDI quando o BCB não responde. Sem `MAIS_RETORNO_TOKEN` o app funciona igual a antes — nada depende dela |
 
 ---
@@ -277,6 +279,30 @@ antes mesmo do ciclo de corte se completar, enquanto o aluguel contratado segue 
 FoF **não recebem direção nenhuma**: a fonte de dados não expõe a proporção real entre papel e
 tijolo na carteira desses fundos, e a régua entrega texto vazio (nenhuma linha aparece no prompt)
 em vez de arriscar um palpite sem base.
+
+### A composição real que o rótulo de segmento não mostra
+
+`segmentType` (papel/tijolo/híbrido/FoF, via brapi) é uma **classificação**, não uma proporção. Dois
+fundos híbridos podem estar em pontos opostos do espectro papel-tijolo e carregar o mesmo rótulo. O
+Informe Mensal Estruturado da CVM (`dados.cvm.gov.br`, dado público, sem chave e sem restrição de
+uso — a mesma fonte que qualquer administrador de FII é obrigado a alimentar todo mês) resolve isso
+com número real: `getFiiCvmData` (`cvm-data.ts`) baixa o arquivo do ano, cruza pelo CNPJ real vindo
+da brapi (`FiiProfile.cnpj`) e devolve três frações da carteira investida — **imóveis e direitos
+reais diretos**, **CRI e recebíveis estruturados equivalentes** (papel) e **outros ativos
+financeiros** (cotas de outros fundos, ações, SPEs) — mais a **taxa de administração real** cobrada
+naquele mês sobre o patrimônio.
+
+`Acoes_Sociedades_Atividades_FII` (cotas de SPE) fica de propósito fora dos dois primeiros grupos:
+uma SPE pode deter imóvel ou papel, e o arquivo da CVM não diz qual — forçar numa categoria seria
+inventar uma composição que a fonte não afirma, então cai em "outros" por diferença do total
+reportado. Em um teste real (17/08), o MCRE11 — rotulado híbrido — apareceu com só 18% em imóveis
+diretos e 48% em CRI, e a IA usou isso pra descrever o fundo como "mais próximo de um fundo de
+crédito do que de tijolo, na prática" — exatamente o tipo de leitura que `describeFiiInterestRateSensitivity`
+acima se recusa a fazer só com o rótulo de segmento, porque agora existe o número real por trás dele.
+
+`describeFiiCvmComposition` (`fii-engine.ts`) devolve string vazia sem CNPJ do fundo ou sem o fundo
+no informe mais recente da CVM — nunca mostra 0% de taxa de administração quando o dado simplesmente
+não veio preenchido, o que seria dizer "gestão gratuita" sem base.
 
 ---
 

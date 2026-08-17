@@ -1,3 +1,4 @@
+import type { FiiCvmData } from "./cvm-data";
 import type { FiiProfile, FiiSegment, Fundamentals, OhlcPoint } from "./market-data";
 
 // O que cada segmento implica de risco — é o contexto que falta pra IA ler o dividend
@@ -198,4 +199,41 @@ export function describeFiiInterestRateSensitivity(segment: FiiSegment | null, s
   // direção aqui seria inventar precisão que não se tem.
   const kind = segment === "hibrido" ? "híbrido" : "de fundos (FoF)";
   return `FII ${kind}: o efeito do ciclo de juro atual depende da proporção real entre papel e tijolo na carteira, que não é possível medir por aqui — não dá para afirmar se o efeito dominante é de renda (papel) ou de preço (tijolo).`;
+}
+
+/**
+ * Composição real da carteira do FII e taxa de administração real, direto do Informe
+ * Mensal da CVM (ver cvm-data.ts) — não o rótulo de segmento (papel/tijolo/híbrido/
+ * FoF) da brapi, que é uma classificação, não uma proporção.
+ *
+ * O ganho maior é justamente nos casos que `describeFiiInterestRateSensitivity` acima
+ * se recusa a dar direção — híbrido e FoF — porque não temos a proporção real entre
+ * papel e tijolo. Este dado É essa proporção. Mesmo assim a função não tenta refazer
+ * aquela leitura de direção: cruzar composição com ciclo de juro exigiria uma segunda
+ * calibração (quanto de "70% tijolo" already é "efeito dominante de preço"?) que não
+ * foi medida contra casos reais — melhor entregar o número cru pra IA context do que
+ * arriscar uma nova regra não validada.
+ *
+ * `null` sem dado (fundo fora do informe mais recente, CNPJ não encontrado, ou a CVM
+ * fora do ar) devolve string vazia, mesmo padrão das outras describe* daqui.
+ */
+export function describeFiiCvmComposition(cvmData: FiiCvmData | null): string {
+  if (!cvmData) return "";
+
+  const [ano, mes] = cvmData.dataReferencia.split("-");
+  const referencia = ano && mes ? `${mes}/${ano}` : cvmData.dataReferencia;
+
+  const parts: string[] = [
+    `${(cvmData.imoveisDiretosPct * 100).toFixed(0)}% em imóveis e direitos reais diretos`,
+    `${(cvmData.recebiveisEstruturadosPct * 100).toFixed(0)}% em CRI e recebíveis estruturados`,
+    `${(cvmData.outrosAtivosPct * 100).toFixed(0)}% em outros ativos financeiros (cotas de outros fundos, ações, SPEs)`,
+  ];
+
+  let taxaPart = "";
+  if (cvmData.taxaAdministracaoMensalPct != null) {
+    const anualizada = cvmData.taxaAdministracaoMensalPct * 12; // aproximação simples (sem juros compostos) só pra dar noção de ordem de grandeza anual — o dado oficial é o mensal
+    taxaPart = ` Taxa de administração de ${(cvmData.taxaAdministracaoMensalPct * 100).toFixed(2)}% ao mês sobre o patrimônio (~${(anualizada * 100).toFixed(1)}% ao ano).`;
+  }
+
+  return `Composição real da carteira (CVM, referência ${referencia}): ${parts.join(", ")}.${taxaPart}`;
 }

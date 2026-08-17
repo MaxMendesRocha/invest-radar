@@ -570,6 +570,7 @@ export interface FiiProfile {
   dividendYield12m: number | null; // decimal
   equity: number | null; // patrimônio líquido em R$ — o endpoint já entrega, só não era capturado
   totalInvestors: number | null; // nº de cotistas — proxy de popularidade, NUNCA de qualidade de gestão (ver fii-engine.ts)
+  cnpj: string | null; // dígitos, sem pontuação — chave pra cruzar com o Informe Mensal da CVM (ver cvm-data.ts)
 }
 
 interface BrapiFiiIndicator {
@@ -581,6 +582,7 @@ interface BrapiFiiIndicator {
   dividendYield12m?: number | null;
   equity?: number | null;
   totalInvestors?: number | null;
+  cnpj?: string | null;
 }
 
 // Empírico: 45 tickers numa chamada só falha, 10 passa.
@@ -656,6 +658,7 @@ export async function getFiiProfiles(tickers: string[]): Promise<Map<string, Fii
           dividendYield12m: item.dividendYield12m ?? null,
           equity: item.equity ?? null,
           totalInvestors: item.totalInvestors ?? null,
+          cnpj: item.cnpj ?? null,
         };
         fiiProfileCache.set(ticker, { profile, fetchedAt: now });
         fresh.set(ticker, profile);

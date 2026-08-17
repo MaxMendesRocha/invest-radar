@@ -35,6 +35,7 @@ import { computeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "../lib/ris
 import { getSectorBenchmark, describeSectorComparison } from "../lib/sector-benchmarks";
 import { computeDividendValue, describeDividendValue } from "../lib/dividend-value-engine";
 import { benchmarkGroupFor } from "../lib/fii-engine";
+import { getFiiCvmData } from "../lib/cvm-data";
 import { computeFinancialHealth } from "../lib/financial-health-engine";
 import { previewNextDividends } from "../lib/dividend-entitlement";
 import { todayInAppTimezone } from "../lib/local-date";
@@ -592,6 +593,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
   const duPont = fundamentals ? computeDuPontBreakdown(fundamentals) : null;
   const financialHealth = fundamentals ? computeFinancialHealth(fundamentals, dps12m) : null;
   const fiiProfile = (await getFiiProfiles([ticker])).get(ticker) ?? null;
+  const fiiCvmData = await getFiiCvmData(fiiProfile?.cnpj ?? null);
   const sectorBenchmark = await getSectorBenchmark(
     fundamentals ? benchmarkGroupFor(fundamentals, fiiProfile ?? undefined) : null,
   );
@@ -640,6 +642,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     financialHealth,
     sector: fundamentals?.sector ?? null,
     fiiProfile,
+    fiiCvmData,
     sectorComparison,
     dividendValue,
     newsItems,
@@ -797,6 +800,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
       const financialHealth = assetFundamentals
         ? computeFinancialHealth(assetFundamentals, dps12mByTicker.get(analysis.ticker) ?? null)
         : null;
+      const fiiCvmData = await getFiiCvmData(fiiProfileByTicker.get(analysis.ticker)?.cnpj ?? null);
       const sectorBenchmark = await getSectorBenchmark(
         assetFundamentals
           ? benchmarkGroupFor(assetFundamentals, fiiProfileByTicker.get(analysis.ticker) ?? undefined)
@@ -836,6 +840,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         financialHealth,
         sector: assetFundamentals?.sector ?? null,
         fiiProfile: fiiProfileByTicker.get(analysis.ticker) ?? null,
+        fiiCvmData,
         sectorComparison,
         dividendValue,
       });
