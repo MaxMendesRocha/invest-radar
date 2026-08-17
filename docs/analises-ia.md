@@ -40,7 +40,7 @@ Modelo usado em todos os pontos: `claude-haiku-4-5-20251001`.
 - Retorno ajustado ao risco: Sharpe, Sortino e Treynor, com CDI acumulado (nominal) como taxa livre de risco (`risk-metrics-engine.ts`)
 - Decomposição DuPont do ROE em 5 fatores (`analysis-engine.ts`)
 - Saúde financeira: cobertura do dividendo por fluxo de caixa livre, conversão de lucro em caixa, dívida líquida/EBITDA, liquidez corrente, margem EBITDA (`financial-health-engine.ts`)
-- Perfil do FII — segmento papel/tijolo/híbrido/FoF, segmento de atuação, gestão, P/VP, DY 12m (`fii-engine.ts`). Linha ausente do prompt quando o ativo não é FII
+- Perfil do FII — segmento papel/tijolo/híbrido/FoF, segmento de atuação, gestão, P/VP, DY 12m, patrimônio líquido, número de cotistas (com a ressalva de que mede alcance, não qualidade de gestão) (`fii-engine.ts`). Linha ausente do prompt quando o ativo não é FII
 - Comparação com pares do setor: P/L, ROE e DY contra a média real do setor (`sector-benchmarks.ts`)
 
 ### Prompt (montado dinamicamente — texto-base abaixo, com as linhas de IR/concentração/dividendo/técnico substituídas pelos dados reais de cada ativo)
@@ -67,7 +67,7 @@ Indicadores técnicos (candles reais, 1 ano): {resumo técnico}
 Retorno ajustado ao risco (1 ano, CDI como taxa livre de risco): {Sharpe/Sortino/Treynor, retorno e volatilidade anualizados}
 Decomposição DuPont do ROE: {carga tributária x carga de juros x margem EBIT x giro de ativos x alavancagem, com o fator dominante identificado}
 Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FCL, conversão de lucro em caixa, liquidez corrente, margem EBITDA, dívida líquida/EBITDA — com ressalva de não-comparabilidade em setor financeiro}
-{Perfil do FII: segmento e o que ele implica de risco — linha ausente quando não é FII}
+{Perfil do FII: segmento e o que ele implica de risco, patrimônio, cotistas — linha ausente quando não é FII}
 Comparação com pares do setor: {P/L, ROE e DY vs. média real do setor, com tamanho da amostra}
 
 Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos
@@ -150,7 +150,7 @@ Indicadores técnicos (candles reais, 1 ano): {resumo técnico}
 Retorno ajustado ao risco (1 ano, CDI como taxa livre de risco): {Sharpe/Sortino/Treynor}
 Decomposição DuPont do ROE: {5 fatores, com o dominante identificado}
 Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FCL, conversão de caixa, liquidez, alavancagem}
-{Perfil do FII: segmento e implicação de risco — ausente quando não é FII}
+{Perfil do FII: segmento, implicação de risco, patrimônio, cotistas — ausente quando não é FII}
 Comparação com pares do setor: {múltiplos vs. média do setor}
 Notícias recentes classificadas: {notícias}
 Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%, juro real {juroReal}% (Selic JÁ descontada a inflação — é o piso sem risco que o ativo precisa
@@ -240,6 +240,12 @@ Formato de saída: texto plano, sem markdown, 3-6 frases.
 **Onde aparece:** tela "Oportunidades", card de cada ativo sugerido
 **Disparado por:** `regenerateOpportunities()` (job semanal do scheduler, ou disparo manual via `POST /internal/opportunities/regenerate`) — roda uma vez por ativo qualificado (score ≥ 60) no universo de ~170 tickers, nunca em tempo real por request de usuário
 **Cache:** nenhum (o resultado fica persistido na tabela `opportunities` até a próxima regeneração)
+
+**Pré-filtro específico de FII** (antes da IA ser chamada, determinístico): volume médio negociado
+≥ R$ 700 mil/dia (21 pregões) e patrimônio líquido ≥ R$ 200 milhões (`evalFiiEligibility` em
+`fii-engine.ts` — pisos medidos contra o universo real, ver "O que acontece sozinho" em
+`funcionalidades.md`). Um FII que não passa nesses dois nem chega a ser candidato — a IA nunca vê
+nem escreve sobre ele nesta lista.
 
 ### Dados de entrada
 - Score do Radar e classificação
@@ -408,6 +414,6 @@ insumo, nunca um valor estimado.
 | `technical-engine.ts` | SMA20/50/200, RSI14, MACD, Bollinger, cruzamento de médias |
 | `risk-metrics-engine.ts` | Sharpe, Sortino e Treynor, com CDI acumulado (nominal) como taxa livre de risco |
 | `financial-health-engine.ts` | Cobertura do dividendo por fluxo de caixa livre, conversão de lucro em caixa, dívida líquida/EBITDA, liquidez corrente, margem EBITDA |
-| `fii-engine.ts` | Perfil do FII: segmento (papel/tijolo/híbrido/FoF) e o risco que cada um implica |
+| `fii-engine.ts` | Perfil do FII: segmento (papel/tijolo/híbrido/FoF) e o risco que cada um implica; patrimônio, cotistas e elegibilidade de liquidez/patrimônio pra Oportunidades |
 | `sector-benchmarks.ts` | Médias reais do setor (P/L, P/VP, ROE, DY, margem), calculadas no job semanal de Oportunidades |
 | `tax-engine.ts` / `monthly-tax-engine.ts` | IR estimado por venda e consolidação mensal por categoria |

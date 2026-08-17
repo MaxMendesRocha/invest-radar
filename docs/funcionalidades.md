@@ -477,6 +477,16 @@ apropriado e substitui a tabela inteira em transação, para não existir a jane
 vazia. Universo vazio significa provedor fora do ar: nesse caso aborta sem tocar na tabela,
 mantendo a última rodada boa.
 
+**FII precisa passar em dois pisos além do score** (`evalFiiEligibility`, `fii-engine.ts`): volume
+médio negociado ≥ R$ 700 mil/dia (média de 21 pregões, não um dia isolado — dia único é ruidoso pra
+cima ou pra baixo) e patrimônio líquido ≥ R$ 200 milhões. Os dois foram medidos contra os 50 FIIs
+reais do universo antes de virar constante: R$ 700 mil exclui 20% da amostra num dia real testado,
+com a mediana do dia em ~R$ 3 milhões; R$ 200 milhões exclui só os 3 fundos genuinamente pequenos
+(7%) contra uma mediana de patrimônio de ~R$ 1,4 bilhão. Fundamentos bons não bastam — um FII com
+score ótimo mas negociado a R$ 400 mil/dia é uma sugestão que ninguém consegue montar posição
+relevante sem mover o próprio preço. `equity` ausente ou volume sem 21 pregões reprova por
+omissão, nunca aprova sem checar.
+
 A passada de resgate existe porque ordenar por valor de mercado é cego para quem não tem esse dado:
 o provedor devolve valor de mercado nulo para *units* — BPAC11, SANB11, TAEE11, KLBN11, ENGI11,
 ALUP11, SAPR11, IGTI11, BRBI11 —, e um valor nulo nunca alcança o corte do topo N, em nenhuma
