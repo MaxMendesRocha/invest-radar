@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 50 endpoints · 17 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
+**Superfície atual:** 50 endpoints · 18 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
 
 ---
 
@@ -451,6 +451,36 @@ lado otimista, dizendo que basta menos do que de fato basta. A escolha é errar 
 
 ---
 
+## Número Mágico — e por que ele nunca pede pra concentrar
+
+**Número mágico** (`magic-number-engine.ts`) é quantas cotas de UM ativo faltam pra ele se
+autossustentar: o dividendo médio real que a posição paga já compra mais uma cota dela mesma, no
+preço atual.
+
+```
+número mágico = preço atual ÷ (soma real dos proventos pagos nos últimos 12 meses ÷ 12)
+```
+
+Não é uma meta fixa — preço e dividendo mudam todo mês, então o número recalcula a cada consulta.
+Sem provento real pago nos últimos 12 meses (a maioria das ações de crescimento, por exemplo), a
+tela mostra "—", nunca um número estimado.
+
+**O risco que motivou a segunda parte da conta**: perseguir o número mágico de um ativo isolado
+empurra a aportar cada vez mais nele mesmo, o que pode furar o teto de concentração do perfil
+(`concentrationLimitsFor`, a mesma régua de "Status: dois 'Vender'" acima) — só que hoje aquela régua
+só **alerta depois** de já ter concentrado. Número Mágico aplica o mesmo teto **pra frente**, como
+plano: calcula quantas cotas dá pra comprar agora sem estourar a faixa "Atenção" do perfil e, se o
+número mágico pedir mais do que isso, não empurra o aporte além — mostra só o que é seguro comprar
+hoje, e diz que o resto depende do patrimônio total crescer com aportes em **outros** ativos, não de
+reforçar mais este. Concentração é uma razão (posição ÷ patrimônio total); crescer o denominador
+libera espaço no numerador sem violar o limite. Mais devagar, mas nunca sugerindo concentração por
+debaixo dos panos.
+
+Quando a posição já está no teto ou acima dele, a tela mostra isso com todas as letras em vez de
+sugerir zero cotas em silêncio — o app diz por que não é seguro comprar mais nela agora.
+
+---
+
 ## Onde a IA entra — e o que ela não decide
 
 Seis pontos, todos em `claude-haiku-4-5-20251001`. Os prompts exatos estão em
@@ -497,7 +527,7 @@ comparação numérica direta. A IA escreve o texto *em volta* dele, mas nunca o
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
 | **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Triagem "atende / não atende ao corte", análise completa de qualquer ticker sem exigir posição, range de 52 semanas, tendência de proventos, comparação setorial |
 | **Oportunidades** | O que existe lá fora? | Universo de ~180 tickers varrido semanalmente, reordenado pelo nível de risco compatível com o perfil |
-| **Dividendos** | Quanto recebo, e caminho para a meta? | Total acumulado, yield on cost, histórico de 12 meses, proventos anunciados, progresso da meta |
+| **Dividendos** | Quanto recebo, e caminho para a meta? | Total acumulado, yield on cost, histórico de 12 meses, proventos anunciados, progresso da meta, número mágico por ativo com plano seguro de concentração |
 | **Operações Encerradas** | Quanto ganhei, e quanto devo? | Vendas com resultado realizado e consolidação mensal de IR com compensação de prejuízo |
 | **Saúde do Portfólio** | A estrutura está boa? | Score em cinco pilares — diversificação 25%, concentração 25%, risco 20%, dividendos 15%, crescimento 15% — mais diagnóstico da IA |
 | **Configurações** | Quem sou eu como investidor? | Questionário de perfil, leitura do perfil revelado, política de alocação |

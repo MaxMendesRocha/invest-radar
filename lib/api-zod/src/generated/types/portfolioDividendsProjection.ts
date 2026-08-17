@@ -11,6 +11,8 @@ import type { DividendProjectionMonth } from './dividendProjectionMonth';
 export interface PortfolioDividendsProjection {
   projectedAnnualIncome: number;
   projectedMonthlyAverage: number;
+  /** Teto "Atenção" de concentração por ativo, conforme o perfil do usuário (concentrationLimitsFor, analysis-engine.ts) — o limite usado pro plano seguro de número mágico de cada ativo em byAsset. */
+  concentrationCeilingPercent: number;
   byAsset: DividendProjectionAsset[];
   byMonth: DividendProjectionMonth[];
 }
