@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 51 endpoints · 18 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
+**Superfície atual:** 52 endpoints · 18 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
 
 ---
 
@@ -619,6 +619,12 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   incerteza só para ativo sem data de compra cadastrada, e aí o item é mostrado marcado em vez
   de escondido — a data é opcional em qualquer classe e pode ser preenchida depois, na edição
   do ativo, para quem cadastrou a posição antes de existir o campo.
+  Sem lançamento, o item continua pendente por até 365 dias e depois expira sozinho — mas quem
+  não quer esperar, ou decide que aquele provento específico não vai virar lançamento (valor
+  errado, duplicado, já contabilizado por fora), pode **dispensar**. Diferente de registrar,
+  dispensar não cria transação nenhuma — só some da lista (`dividend_dismissals`, chave
+  ticker+data), sem tocar no total acumulado, no yield ou no cálculo de IR. A distinção importa:
+  marcar como "já registrado" sem criar a transação de verdade mentiria no histórico financeiro.
 - **"Próximos Pagamentos" só lista o que você tem direito a receber.** A mesma regra de
   data-com acima — antes, TODO pagamento futuro anunciado pelo ticker entrava na lista, mesmo
   para quem comprou depois do corte e não vai receber nada. A falha veio à tona por uma

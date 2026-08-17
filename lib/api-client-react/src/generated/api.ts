@@ -31,6 +31,7 @@ import type {
   AssetUpdate,
   AuthResponse,
   BenchmarkComparison,
+  DismissPendingDividendInput,
   ErrorResponse,
   EvolutionPoint,
   GetAllocationPlanParams,
@@ -2522,6 +2523,77 @@ export function useGetPortfolioDividendsPending<TData = Awaited<ReturnType<typeo
 
 
 
+
+export const getDismissPendingDividendUrl = () => {
+
+
+
+
+  return `/api/portfolio/dividends/pending/dismiss`
+}
+
+/**
+ * @summary Marca um provento pendente como dispensado — some da lista de pendentes SEM criar transação. Diferente de "Registrar": não entra no total acumulado, no yield nem no cálculo de IR, é só "pare de me lembrar deste".
+ */
+export const dismissPendingDividend = async (dismissPendingDividendInput: DismissPendingDividendInput, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDismissPendingDividendUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(dismissPendingDividendInput)
+  }
+);}
+
+
+
+
+
+export const getDismissPendingDividendMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissPendingDividend>>, TError,{data: BodyType<DismissPendingDividendInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissPendingDividend>>, TError,{data: BodyType<DismissPendingDividendInput>}, TContext> => {
+
+const mutationKey = ['dismissPendingDividend'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissPendingDividend>>, {data: BodyType<DismissPendingDividendInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  dismissPendingDividend(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissPendingDividendMutationResult = NonNullable<Awaited<ReturnType<typeof dismissPendingDividend>>>
+    export type DismissPendingDividendMutationBody = BodyType<DismissPendingDividendInput>
+    export type DismissPendingDividendMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Marca um provento pendente como dispensado — some da lista de pendentes SEM criar transação. Diferente de "Registrar": não entra no total acumulado, no yield nem no cálculo de IR, é só "pare de me lembrar deste".
+ */
+export const useDismissPendingDividend = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissPendingDividend>>, TError,{data: BodyType<DismissPendingDividendInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof dismissPendingDividend>>,
+        TError,
+        {data: BodyType<DismissPendingDividendInput>},
+        TContext
+      > => {
+      return useMutation(getDismissPendingDividendMutationOptions(options));
+    }
 
 export const getGetPortfolioDividendsProjectionUrl = () => {
 

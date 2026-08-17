@@ -8,6 +8,7 @@ import {
   useGetPortfolioDividendsProjection,
   useGetPortfolioDividendsPending,
   getGetPortfolioDividendsPendingQueryKey,
+  useDismissPendingDividend,
   getListTransactionsQueryKey,
   getGetPortfolioSummaryQueryKey
 } from "@workspace/api-client-react";
@@ -190,6 +191,10 @@ export default function Dividendos() {
   
   const createTx = useCreateTransaction();
   const deleteTx = useDeleteTransaction();
+  const dismissPending = useDismissPendingDividend();
+  // Qual linha está sendo dispensada, mesma lógica de registeringKey — desabilita só
+  // o botão dela, não a lista toda.
+  const [dismissingKey, setDismissingKey] = useState<string | null>(null);
 
   const resetForm = () => {
     setTicker("");
@@ -226,6 +231,27 @@ export default function Dividendos() {
       toast({ title: "Não foi possível registrar", description: "Tente de novo em instantes.", variant: "destructive" });
     } finally {
       setRegisteringKey(null);
+    }
+  };
+
+  /**
+   * Dispensa um provento pendente SEM registrar — diferente de handleRegisterPending,
+   * não cria transação nenhuma, só some da lista (ver dividend-dismissals no schema).
+   * Pra quando o usuário decide que não vai lançar aquele provento específico (valor
+   * errado, duplicado, já contabilizado por fora) e não quer esperar até expirar
+   * sozinho (365 dias).
+   */
+  const handleDismissPending = async (item: { ticker: string; paymentDate: string }) => {
+    const key = `${item.ticker}-${item.paymentDate}`;
+    setDismissingKey(key);
+    try {
+      await dismissPending.mutateAsync({ data: { ticker: item.ticker, paymentDate: item.paymentDate } });
+      await queryClient.invalidateQueries({ queryKey: getGetPortfolioDividendsPendingQueryKey() });
+      toast({ title: "Provento dispensado", description: `${item.ticker} não vai mais aparecer como pendente.` });
+    } catch {
+      toast({ title: "Não foi possível dispensar", description: "Tente de novo em instantes.", variant: "destructive" });
+    } finally {
+      setDismissingKey(null);
     }
   };
 
@@ -550,8 +576,18 @@ export default function Dividendos() {
                                 <span className="font-mono">{formatCurrency(d.suggestedAmount)}</span>
                                 <Button
                                   size="sm"
+                                  variant="ghost"
+                                  className="text-muted-foreground hover:text-destructive"
+                                  disabled={dismissingKey === key || registeringKey === key}
+                                  onClick={() => handleDismissPending(d)}
+                                  title="Dispensar — some da lista sem registrar transação"
+                                >
+                                  {dismissingKey === key ? "..." : "Dispensar"}
+                                </Button>
+                                <Button
+                                  size="sm"
                                   variant="outline"
-                                  disabled={registeringKey === key}
+                                  disabled={registeringKey === key || dismissingKey === key}
                                   onClick={() => handleRegisterPending(d)}
                                 >
                                   {registeringKey === key ? "..." : "Registrar"}

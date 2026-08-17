@@ -723,6 +723,12 @@ export interface PendingDividend {
   uncertaintyReason: string | null;
 }
 
+export interface DismissPendingDividendInput {
+  ticker: string;
+  /** Mesma data do evento pendente (paymentDate em PendingDividend), formato YYYY-MM-DD. */
+  paymentDate: string;
+}
+
 export interface BenchmarkPoint {
   label: string;
   portfolio: number;

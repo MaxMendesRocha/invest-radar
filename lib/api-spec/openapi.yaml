@@ -659,6 +659,24 @@ paths:
                 items:
                   $ref: "#/components/schemas/PendingDividend"
 
+  /portfolio/dividends/pending/dismiss:
+    post:
+      operationId: dismissPendingDividend
+      tags: [portfolio]
+      summary: >-
+        Marca um provento pendente como dispensado — some da lista de pendentes SEM
+        criar transação. Diferente de "Registrar": não entra no total acumulado, no
+        yield nem no cálculo de IR, é só "pare de me lembrar deste".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DismissPendingDividendInput"
+      responses:
+        "204":
+          description: Dispensado
+
   /portfolio/dividends/projection:
     get:
       operationId: getPortfolioDividendsProjection
@@ -1632,6 +1650,16 @@ components:
           enum: [sem_data_compra, compra_proxima, null]
         uncertaintyReason:
           type: ["string", "null"]
+
+    DismissPendingDividendInput:
+      type: object
+      required: [ticker, paymentDate]
+      properties:
+        ticker:
+          type: string
+        paymentDate:
+          type: string
+          description: Mesma data do evento pendente (paymentDate em PendingDividend), formato YYYY-MM-DD.
 
     BenchmarkPoint:
       type: object
