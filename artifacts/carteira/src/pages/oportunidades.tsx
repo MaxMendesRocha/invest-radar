@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import {
   useListOpportunities,
   getListOpportunitiesQueryKey,
@@ -8,6 +9,8 @@ import {
 import { formatCurrency, formatPercent, formatShortDateTime } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { categoryLabel } from "@/lib/categories";
 import { Lightbulb, TrendingUp, ShieldAlert, ArrowRight, Target, RefreshCw, AlertTriangle } from "lucide-react";
 
 // Mesmo motivo do card de Indicadores Oficiais: o ponto do formato en-US colide com
@@ -31,8 +34,20 @@ export default function Oportunidades() {
   const { data: profile } = useGetInvestorProfile({ query: { queryKey: getGetInvestorProfileQueryKey(), retry: false } });
   const { data: nextRefresh } = useGetOpportunitiesNextRefresh();
 
-  const items = opportunities?.items ?? [];
+  const allItems = opportunities?.items ?? [];
   const orderedBy = opportunities?.orderedBy;
+
+  // Categorias PRESENTES na varredura atual, na mesma ordem em que aparecem na
+  // lista já ranqueada — não uma lista fixa. Uma varredura sem BDR aprovado, por
+  // exemplo, não deve oferecer um botão de filtro que sempre daria lista vazia.
+  const categories = useMemo(() => {
+    const seen = new Set<string>();
+    for (const opp of allItems) seen.add(opp.category);
+    return Array.from(seen);
+  }, [allItems]);
+
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const items = categoryFilter ? allItems.filter((opp) => opp.category === categoryFilter) : allItems;
 
   return (
     <div className="space-y-6">
@@ -73,6 +88,33 @@ export default function Oportunidades() {
         )}
       </div>
 
+      {/* Some com 1 categoria só: filtrar entre uma opção não é filtro, é ruído.
+          "Todas" não entra na contagem — ela não é uma categoria, é a ausência de
+          filtro. */}
+      {categories.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={categoryFilter === null ? "default" : "outline"}
+            onClick={() => setCategoryFilter(null)}
+          >
+            Todas
+          </Button>
+          {categories.map((category) => (
+            <Button
+              key={category}
+              type="button"
+              size="sm"
+              variant={categoryFilter === category ? "default" : "outline"}
+              onClick={() => setCategoryFilter(category)}
+            >
+              {categoryLabel(category)}
+            </Button>
+          ))}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {isLoading ? (
           Array(6).fill(0).map((_, i) => (
@@ -81,7 +123,11 @@ export default function Oportunidades() {
         ) : items.length === 0 ? (
           <div className="col-span-full py-12 text-center text-muted-foreground">
             <Lightbulb className="w-12 h-12 mx-auto mb-4 opacity-20" />
-            <p>Nenhuma oportunidade detectada no momento.</p>
+            {categoryFilter ? (
+              <p>Nenhuma oportunidade em {categoryLabel(categoryFilter)} na varredura atual.</p>
+            ) : (
+              <p>Nenhuma oportunidade detectada no momento.</p>
+            )}
           </div>
         ) : (
           items.map((opp, idx) => (
@@ -95,7 +141,7 @@ export default function Oportunidades() {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <CardTitle className="text-2xl font-mono">{opp.ticker}</CardTitle>
-                    <Badge variant="outline" className="text-[10px]">{opp.category}</Badge>
+                    <Badge variant="outline" className="text-[10px]">{categoryLabel(opp.category)}</Badge>
                   </div>
                   <p className="text-sm text-muted-foreground font-medium break-words">{opp.name}</p>
                 </div>
