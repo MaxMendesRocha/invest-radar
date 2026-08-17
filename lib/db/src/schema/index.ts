@@ -16,3 +16,4 @@ export * from "./job-runs";
 export * from "./sales";
 export * from "./sector-benchmarks";
 export * from "./price-targets";
+export * from "./dividend-dismissals";

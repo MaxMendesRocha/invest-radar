@@ -760,6 +760,17 @@ export const GetPortfolioDividendsPendingResponse = zod.array(GetPortfolioDivide
 
 
 /**
+ * @summary Marca um provento pendente como dispensado — some da lista de pendentes SEM criar transação. Diferente de "Registrar": não entra no total acumulado, no yield nem no cálculo de IR, é só "pare de me lembrar deste".
+ */
+export const DismissPendingDividendBody = zod.object({
+  "ticker": zod.string(),
+  "paymentDate": zod.string().describe('Mesma data do evento pendente (paymentDate em PendingDividend), formato YYYY-MM-DD.')
+})
+
+export const DismissPendingDividendResponse = zod.void()
+
+
+/**
  * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price, magic number and concentration-safe purchase plan per asset, and monthly distribution
  */
 export const GetPortfolioDividendsProjectionResponse = zod.object({

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable, salesTable } from "@workspace/db";
+import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable, salesTable, dividendDismissalsTable } from "@workspace/db";
 import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries } from "../lib/market-data";
@@ -16,7 +16,7 @@ import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/ana
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { computeIncomeGoalProgress } from "../lib/income-goal-engine";
-import { UpsertIncomeGoalBody, UpsertAllocationBody, GetAllocationPlanQueryParams, GetTreasuryPriceOnDateQueryParams } from "@workspace/api-zod";
+import { UpsertIncomeGoalBody, UpsertAllocationBody, GetAllocationPlanQueryParams, GetTreasuryPriceOnDateQueryParams, DismissPendingDividendBody } from "@workspace/api-zod";
 import {
   ALLOCATION_CATEGORIES,
   defaultPolicyFor,
@@ -407,10 +407,14 @@ const PENDING_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
  */
 router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
-  const [dividendEventsByTicker, existingTransactions] = await Promise.all([
+  const [dividendEventsByTicker, existingTransactions, dismissals] = await Promise.all([
     getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category }))),
     db.select().from(transactionsTable).where(eq(transactionsTable.userId, req.session.userId!)),
+    db.select().from(dividendDismissalsTable).where(eq(dividendDismissalsTable.userId, req.session.userId!)),
   ]);
+  // Mesma chave ticker+data usada contra transações — "dispensado" e "registrado" são
+  // dois jeitos diferentes de um provento sair da lista de pendentes.
+  const dismissedKeys = new Set(dismissals.map((d) => `${d.ticker.toUpperCase()}|${d.paymentDate}`));
 
   // Correspondência por ticker + data, CONTANDO em vez de marcar presença. Dois
   // motivos, os dois encontrados testando:
@@ -468,6 +472,7 @@ router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promis
         registeredCount.set(key, alreadyRegistered - 1);
         continue;
       }
+      if (dismissedKeys.has(key)) continue;
       const entitlement = classifyEntitlement(purchasedAt, event);
       if (!entitlement.entitled) continue;
 
@@ -489,6 +494,29 @@ router.get("/portfolio/dividends/pending", requireAuth, async (req, res): Promis
   // Mais recentes primeiro: é o que o usuário provavelmente acabou de receber.
   pending.sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
   res.json(pending);
+});
+
+/**
+ * Dispensa um provento pendente SEM criar transação — diferente de "Registrar", não
+ * entra no total acumulado, no yield nem no cálculo de IR. Existe pra quando o usuário
+ * decide que não vai lançar aquele provento (valor errado, duplicado, já contabilizado
+ * por fora) e não quer que ele volte a aparecer como pendente pelos próximos 365 dias
+ * (PENDING_WINDOW_MS acima), que é quanto tempo levaria pra expirar sozinho.
+ *
+ * `onConflictDoNothing` porque dispensar duas vezes o mesmo ticker+data é inofensivo —
+ * o índice único (userId, ticker, paymentDate) já impediria duplicata, então tratamos
+ * como sucesso em vez de erro.
+ */
+router.post("/portfolio/dividends/pending/dismiss", requireAuth, async (req, res): Promise<void> => {
+  const parsed = DismissPendingDividendBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  await db.insert(dividendDismissalsTable)
+    .values({ userId: req.session.userId!, ticker: parsed.data.ticker.toUpperCase(), paymentDate: isoDate(parsed.data.paymentDate) })
+    .onConflictDoNothing();
+  res.sendStatus(204);
 });
 
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
