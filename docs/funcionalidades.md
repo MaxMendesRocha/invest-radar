@@ -265,6 +265,19 @@ A queda do HGLG11 é honesta e vale explicar: não é um fundo ruim, é que com 
 fixa paga mais que os 9,0% dele. A aplicação passou a dizer isso em vez de esconder atrás de uma
 nota alta.
 
+### Segmento de FII contra o ciclo de juro — vira texto, nunca nota
+
+`describeFiiInterestRateSensitivity` (`fii-engine.ts`) cruza o segmento do fundo com a tendência
+real da Selic (`macro-data.ts`, série 432 do BCB) e alimenta o texto do parecer de ativo e do
+parecer pré-compra — nunca o score, que continua vindo só da régua de FII acima. O mecanismo é
+diferente por segmento: FII de papel sente no **canal de renda** — a distribuição sobe ou desce
+acompanhando CDI/IPCA+ dos CRIs da carteira, junto com a Selic. FII de tijolo sente mais no **canal
+de preço** — o mercado reprecifica a cota pela taxa de desconto do aluguel futuro, muitas vezes
+antes mesmo do ciclo de corte se completar, enquanto o aluguel contratado segue intacto. Híbrido e
+FoF **não recebem direção nenhuma**: a fonte de dados não expõe a proporção real entre papel e
+tijolo na carteira desses fundos, e a régua entrega texto vazio (nenhuma linha aparece no prompt)
+em vez de arriscar um palpite sem base.
+
 ---
 
 ## Status: dois "Vender" que pedem coisas opostas

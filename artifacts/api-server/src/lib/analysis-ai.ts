@@ -7,7 +7,7 @@ import { describeTechnicalIndicators, type TechnicalIndicators } from "./technic
 import { describeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "./risk-metrics-engine";
 import { describeDuPontBreakdown, DEFAULT_CONCENTRATION_LIMITS, type ConcentrationLimits, type DuPontBreakdown } from "./analysis-engine";
 import { describeFinancialHealth, type FinancialHealth } from "./financial-health-engine";
-import { describeFiiProfile } from "./fii-engine";
+import { describeFiiProfile, describeFiiInterestRateSensitivity } from "./fii-engine";
 import type { FiiProfile } from "./market-data";
 
 const RECOMMENDATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // score/status não mudam mais de uma vez por dia
@@ -74,6 +74,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
   const duPontLine = describeDuPontBreakdown(duPont);
   const financialHealthLine = financialHealth ? describeFinancialHealth(financialHealth, sector) : "Métricas de caixa e liquidez não disponíveis para este ativo.";
   const fiiProfileLine = describeFiiProfile(fiiProfile);
+  const fiiRateSensitivityLine = describeFiiInterestRateSensitivity(fiiProfile?.segmentType ?? null, macro.selicTrend);
 
   return (
     `Você é um analista financeiro sênior atuando como consultor pessoal do dono desta carteira — ` +
@@ -94,6 +95,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `Decomposição DuPont do ROE: ${duPontLine}\n` +
     `Saúde financeira (caixa, liquidez, alavancagem): ${financialHealthLine}\n` +
     (fiiProfileLine ? `Perfil do FII: ${fiiProfileLine}\n` : "") +
+    (fiiRateSensitivityLine ? `${fiiRateSensitivityLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n` +
     `${dividendValue}\n\n` +
     `Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos ` +
