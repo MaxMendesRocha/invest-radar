@@ -7,8 +7,9 @@ import { describeTechnicalIndicators, type TechnicalIndicators } from "./technic
 import { describeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "./risk-metrics-engine";
 import { describeDuPontBreakdown, DEFAULT_CONCENTRATION_LIMITS, type ConcentrationLimits, type DuPontBreakdown } from "./analysis-engine";
 import { describeFinancialHealth, type FinancialHealth } from "./financial-health-engine";
-import { describeFiiProfile, describeFiiInterestRateSensitivity } from "./fii-engine";
+import { describeFiiProfile, describeFiiInterestRateSensitivity, describeFiiCvmComposition } from "./fii-engine";
 import type { FiiProfile } from "./market-data";
+import type { FiiCvmData } from "./cvm-data";
 
 const RECOMMENDATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // score/status não mudam mais de uma vez por dia
 
@@ -31,6 +32,7 @@ export interface AssetRecommendationInput {
   financialHealth: FinancialHealth | null; // métricas de caixa/liquidez (financial-health-engine.ts) — null se o provider não trouxer nada
   sector: string | null; // usado só pra ressalva de comparabilidade em setor financeiro (ver describeFinancialHealth)
   fiiProfile: FiiProfile | null; // só pra FIIs — null pra qualquer outra categoria (ver getFiiProfiles)
+  fiiCvmData: FiiCvmData | null; // composição real + taxa de administração real, via CVM (ver cvm-data.ts) — null pra qualquer outra categoria ou fundo fora do informe mais recente
   sectorComparison: string;
   dividendValue: string; // já formatado pelo chamador via describeDividendValue (dividend-value-engine.ts) // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts) — precisa do Fundamentals bruto, que esse módulo não importa só por isso
 }
@@ -49,7 +51,7 @@ const recommendationCache = new Map<string, { text: string; fetchedAt: number }>
 
 
 function buildPrompt(input: AssetRecommendationInput): string {
-  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, sectorComparison, dividendValue } = input;
+  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, sectorComparison, dividendValue } = input;
 
   const taxLine = tax
     ? tax.exempt
@@ -75,6 +77,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
   const financialHealthLine = financialHealth ? describeFinancialHealth(financialHealth, sector) : "Métricas de caixa e liquidez não disponíveis para este ativo.";
   const fiiProfileLine = describeFiiProfile(fiiProfile);
   const fiiRateSensitivityLine = describeFiiInterestRateSensitivity(fiiProfile?.segmentType ?? null, macro.selicTrend);
+  const fiiCvmCompositionLine = describeFiiCvmComposition(fiiCvmData);
 
   return (
     `Você é um analista financeiro sênior atuando como consultor pessoal do dono desta carteira — ` +
@@ -96,6 +99,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `Saúde financeira (caixa, liquidez, alavancagem): ${financialHealthLine}\n` +
     (fiiProfileLine ? `Perfil do FII: ${fiiProfileLine}\n` : "") +
     (fiiRateSensitivityLine ? `${fiiRateSensitivityLine}\n` : "") +
+    (fiiCvmCompositionLine ? `${fiiCvmCompositionLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n` +
     `${dividendValue}\n\n` +
     `Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos ` +
@@ -106,7 +110,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `competitiva do negócio (moat) quando fizer sentido, e não só citar os números soltos. Use a ` +
     `decomposição DuPont pra qualificar o ROE, não só repeti-lo — um ROE alto puxado majoritariamente por ` +
     `alavancagem é um sinal de qualidade bem diferente de um ROE alto puxado por margem operacional forte, ` +
-    `mesmo com o mesmo número final. Use a saúde financeira como o teste mais duro de sustentabilidade de dividendo: cobertura por fluxo de caixa livre abaixo de 1x significa que a empresa distribuiu mais caixa do que gerou no período — isso pesa MAIS que um payout ratio contábil confortável, porque payout usa lucro e lucro não paga dividendo, caixa paga. Dívida líquida alta sobre EBITDA agrava esse quadro (empresa alavancada corta dividendo antes de deixar de pagar credor). Respeite a ressalva de comparabilidade quando ela aparecer. Se houver linha de perfil de FII, use o segmento pra qualificar o yield em vez de tratá-lo como número solto: yield alto em fundo de papel costuma refletir juro alto e encolhe no ciclo de queda, enquanto em fundo de tijolo reflete aluguel contratado; FoF carrega taxa em duas camadas. Use a comparação com o setor como contexto, nunca como sinal ` +
+    `mesmo com o mesmo número final. Use a saúde financeira como o teste mais duro de sustentabilidade de dividendo: cobertura por fluxo de caixa livre abaixo de 1x significa que a empresa distribuiu mais caixa do que gerou no período — isso pesa MAIS que um payout ratio contábil confortável, porque payout usa lucro e lucro não paga dividendo, caixa paga. Dívida líquida alta sobre EBITDA agrava esse quadro (empresa alavancada corta dividendo antes de deixar de pagar credor). Respeite a ressalva de comparabilidade quando ela aparecer. Se houver linha de perfil de FII, use o segmento pra qualificar o yield em vez de tratá-lo como número solto: yield alto em fundo de papel costuma refletir juro alto e encolhe no ciclo de queda, enquanto em fundo de tijolo reflete aluguel contratado; FoF carrega taxa em duas camadas. Se houver linha de composição real da carteira (dado da CVM), use os percentuais pra qualificar o segmento com números reais em vez de só a categoria — por exemplo, um FII rotulado híbrido mas com 80%+ em imóveis diretos se comporta mais como tijolo na prática, e a taxa de administração real (quando disponível) é um custo concreto que corrói o yield líquido do cotista. Use a comparação com o setor como contexto, nunca como sinal ` +
     `automático — um múltiplo mais barato que a média do setor pode ser uma oportunidade real ou um ` +
     `desconto justificado por fundamentos piores; interprete à luz dos outros dados, não trate ` +
     `"mais barato que o setor" como sinônimo de "melhor". Mas pese o ` +
