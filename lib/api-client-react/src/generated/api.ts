@@ -57,6 +57,7 @@ import type {
   Sale,
   SellAssetInput,
   SuccessResponse,
+  TickerValidation,
   Transaction,
   TransactionInput,
   TreasuryBondOption,
@@ -64,7 +65,8 @@ import type {
   UpcomingDividend,
   User,
   UserLoginInput,
-  UserRegisterInput
+  UserRegisterInput,
+  ValidateTickerParams
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -608,6 +610,90 @@ export const useCreateAsset = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getCreateAssetMutationOptions(options));
     }
+
+export const getValidateTickerUrl = (params: ValidateTickerParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/assets/validate-ticker?${stringifiedParams}` : `/api/assets/validate-ticker`
+}
+
+/**
+ * @summary Confere se um ticker tem cotação real antes de cadastrar/editar uma posição — pensado pra pegar erro de digitação (ex. "DVF11" em vez de "DVFF11") antes dele virar uma posição fantasma sem preço, sem se confundir com uma consolidação que falhou por diferença de categoria.
+ */
+export const validateTicker = async (params: ValidateTickerParams, options?: RequestInit): Promise<TickerValidation> => {
+
+  return customFetch<TickerValidation>(getValidateTickerUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getValidateTickerQueryKey = (params?: ValidateTickerParams,) => {
+    return [
+    `/api/assets/validate-ticker`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getValidateTickerQueryOptions = <TData = Awaited<ReturnType<typeof validateTicker>>, TError = ErrorType<unknown>>(params: ValidateTickerParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof validateTicker>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getValidateTickerQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof validateTicker>>> = ({ signal }) => validateTicker(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof validateTicker>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ValidateTickerQueryResult = NonNullable<Awaited<ReturnType<typeof validateTicker>>>
+export type ValidateTickerQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Confere se um ticker tem cotação real antes de cadastrar/editar uma posição — pensado pra pegar erro de digitação (ex. "DVF11" em vez de "DVFF11") antes dele virar uma posição fantasma sem preço, sem se confundir com uma consolidação que falhou por diferença de categoria.
+ */
+
+export function useValidateTicker<TData = Awaited<ReturnType<typeof validateTicker>>, TError = ErrorType<unknown>>(
+ params: ValidateTickerParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof validateTicker>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getValidateTickerQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetAssetUrl = (id: number,) => {
 

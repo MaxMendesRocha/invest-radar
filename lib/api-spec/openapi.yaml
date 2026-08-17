@@ -173,6 +173,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /assets/validate-ticker:
+    get:
+      operationId: validateTicker
+      tags: [assets]
+      summary: >-
+        Confere se um ticker tem cotação real antes de cadastrar/editar uma posição —
+        pensado pra pegar erro de digitação (ex. "DVF11" em vez de "DVFF11") antes dele
+        virar uma posição fantasma sem preço, sem se confundir com uma consolidação
+        que falhou por diferença de categoria.
+      parameters:
+        - name: ticker
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Resultado da checagem
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TickerValidation"
+
   /assets/{id}:
     get:
       operationId: getAsset
@@ -1064,6 +1087,17 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    TickerValidation:
+      type: object
+      required: [valid, name]
+      properties:
+        valid:
+          type: boolean
+          description: true quando o ticker tem cotação real disponível agora (brapi.dev).
+        name:
+          type: ["string", "null"]
+          description: Nome do ativo, quando encontrado — usado pra confirmar visualmente que é o papel certo, não só validar a string.
 
     AssetInput:
       type: object

@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db, assetsTable, salesTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
-import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams, SellAssetParams, SellAssetBody } from "@workspace/api-zod";
+import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams, SellAssetParams, SellAssetBody, ValidateTickerQueryParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getDividendEvents, getDividendEventsForTicker, classifyDividendFrequency, type DividendFrequency, type PricePoint } from "../lib/market-data";
+import { getPricesFor, getDividendEvents, getDividendEventsForTicker, classifyDividendFrequency, getQuotes, type DividendFrequency, type PricePoint } from "../lib/market-data";
 import { canonicalTickerFor, findTreasuryBond } from "../lib/treasury-identity";
 import { estimateCapitalGainsTax } from "../lib/tax-engine";
 import { computeMonthlyTaxSummary } from "../lib/monthly-tax-engine";
@@ -73,6 +73,24 @@ router.get("/assets", requireAuth, async (req, res): Promise<void> => {
     prices.get(a.ticker.toUpperCase()) ?? null,
     classifyDividendFrequency(dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [], now),
   )));
+});
+
+/**
+ * Confere se um ticker tem cotação real ANTES de virar posição — pra pegar erro de
+ * digitação ("DVF11" em vez de "DVFF11") no formulário, não depois que já criou uma
+ * posição fantasma sem preço. `getQuotes` é o mesmo lookup real usado em todo o app
+ * (market-data.ts), então "válido" aqui significa exatamente o que decide se as
+ * outras telas conseguem mostrar cotação pra esse ticker.
+ */
+router.get("/assets/validate-ticker", requireAuth, async (req, res): Promise<void> => {
+  const params = ValidateTickerQueryParams.safeParse(req.query);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const quotes = await getQuotes([params.data.ticker]);
+  const quote = quotes.get(params.data.ticker.toUpperCase()) ?? null;
+  res.json({ valid: quote != null, name: quote?.name ?? null });
 });
 
 router.post("/assets", requireAuth, async (req, res): Promise<void> => {
