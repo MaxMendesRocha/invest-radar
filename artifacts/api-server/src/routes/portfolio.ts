@@ -34,6 +34,8 @@ import { listTreasuryBondOptions, latestTreasuryBonds, priceOnDate } from "../li
 import type { ProfileClassification } from "../lib/investor-profile-engine";
 import { isoDate, todayInAppTimezone } from "../lib/local-date";
 import { computeDistributionQuality, type DistributionQuality } from "../lib/distribution-quality-engine";
+import { computeMagicNumber, planSafePurchaseTowardMagicNumber } from "../lib/magic-number-engine";
+import { concentrationLimitsFor } from "../lib/analysis-engine";
 
 const router: IRouter = Router();
 
@@ -505,13 +507,28 @@ router.get("/portfolio/dividends/projection", requireAuth, async (req, res): Pro
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
   const prices = await getPricesFor(assets);
   const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
+  const [profile] = await db.select().from(investorProfilesTable).where(eq(investorProfilesTable.userId, req.session.userId!));
   const now = Date.now();
+
+  // Patrimônio TOTAL da carteira (todas as classes, não só as cotadas) — base da razão
+  // de concentração usada no plano seguro de número mágico abaixo. Mesmo cálculo de
+  // routes/analysis.ts (POST /analysis/generate): preço real quando disponível, custo
+  // médio como piso quando o provider falha pra um ativo específico.
+  let totalPatrimony = 0;
+  for (const a of assets) {
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
+    totalPatrimony += parseFloat(a.quantity) * price;
+  }
+  const concentrationCeilingPercent = concentrationLimitsFor(profile?.classification ?? null).high;
 
   const byAsset: {
     ticker: string; category: string; quantity: number;
     dps12m: number | null; projectedAnnualIncome: number | null;
     quality: DistributionQuality | null;
     dyOnPrice: number | null; dyOnCost: number | null;
+    magicNumberUnits: number | null; unitsRemaining: number | null;
+    safeUnitsToAddNow: number | null; unitsBeyondSafeCeiling: number | null;
+    alreadyAtOrOverCeiling: boolean | null;
   }[] = [];
   const byMonthMap = new Map<string, number>();
   let projectedAnnualIncome = 0;
@@ -527,6 +544,13 @@ router.get("/portfolio/dividends/projection", requireAuth, async (req, res): Pro
     const assetAnnualIncome = dps12m != null ? dps12m * qty : null;
     if (assetAnnualIncome != null) projectedAnnualIncome += assetAnnualIncome;
 
+    // Número mágico + plano seguro de concentração — null em cascata sem preço real
+    // ou sem provento real pago (magic-number-engine.ts nunca estima nenhum dos dois).
+    const magicNumber = currentPrice != null && dps12m != null && dps12m > 0
+      ? computeMagicNumber(currentPrice, dps12m / 12, qty)
+      : null;
+    const safePlan = magicNumber ? planSafePurchaseTowardMagicNumber(magicNumber, totalPatrimony, concentrationCeilingPercent) : null;
+
     byAsset.push({
       ticker: a.ticker,
       category: a.category,
@@ -540,6 +564,11 @@ router.get("/portfolio/dividends/projection", requireAuth, async (req, res): Pro
       projectedAnnualIncome: assetAnnualIncome != null ? Math.round(assetAnnualIncome * 100) / 100 : null,
       dyOnPrice: dps12m != null && currentPrice ? Math.round((dps12m / currentPrice) * 10000) / 100 : null,
       dyOnCost: dps12m != null && averagePrice > 0 ? Math.round((dps12m / averagePrice) * 10000) / 100 : null,
+      magicNumberUnits: magicNumber?.magicNumberUnits ?? null,
+      unitsRemaining: magicNumber?.unitsRemaining ?? null,
+      safeUnitsToAddNow: safePlan?.safeUnitsToAddNow ?? null,
+      unitsBeyondSafeCeiling: safePlan?.unitsBeyondSafeCeiling ?? null,
+      alreadyAtOrOverCeiling: safePlan?.alreadyAtOrOverCeiling ?? null,
     });
 
     for (const event of events) {
@@ -559,6 +588,7 @@ router.get("/portfolio/dividends/projection", requireAuth, async (req, res): Pro
   res.json({
     projectedAnnualIncome: Math.round(projectedAnnualIncome * 100) / 100,
     projectedMonthlyAverage: Math.round((projectedAnnualIncome / 12) * 100) / 100,
+    concentrationCeilingPercent,
     byAsset,
     byMonth,
   });

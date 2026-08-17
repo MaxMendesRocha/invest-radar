@@ -747,11 +747,12 @@ export const GetPortfolioDividendsPendingResponse = zod.array(GetPortfolioDivide
 
 
 /**
- * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price per asset and monthly distribution
+ * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price, magic number and concentration-safe purchase plan per asset, and monthly distribution
  */
 export const GetPortfolioDividendsProjectionResponse = zod.object({
   "projectedAnnualIncome": zod.number(),
   "projectedMonthlyAverage": zod.number(),
+  "concentrationCeilingPercent": zod.number().describe('Teto \"Atenção\" de concentração por ativo, conforme o perfil do usuário (concentrationLimitsFor, analysis-engine.ts) — o limite usado pro plano seguro de número mágico de cada ativo em byAsset.'),
   "byAsset": zod.array(zod.object({
   "ticker": zod.string(),
   "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs']),
@@ -768,7 +769,12 @@ export const GetPortfolioDividendsProjectionResponse = zod.object({
   "trendWindow": zod.union([zod.literal('6m'),zod.literal('12m'),zod.literal(null)]).nullable(),
   "classification": zod.enum(['Consistente', 'Atencao', 'Irregular', 'SemHistorico'])
 }),zod.null()]),
-  "dyOnCost": zod.number().nullable().describe('dps12m \/ preço médio de compra, em %.')
+  "dyOnCost": zod.number().nullable().describe('dps12m \/ preço médio de compra, em %.'),
+  "magicNumberUnits": zod.number().nullable().describe('Cotas necessárias pra essa posição se autossustentar (preço atual ÷ dividendo médio real mensal), arredondado pra cima. Null sem dps12m ou sem preço real — nunca estimado.'),
+  "unitsRemaining": zod.number().nullable().describe('Cotas que ainda faltam pro número mágico. Zero quando já atingiu ou passou. Null junto com magicNumberUnits.'),
+  "safeUnitsToAddNow": zod.number().nullable().describe('Cotas que dá pra comprar AGORA sem estourar o teto \"Atenção\" de concentração do perfil do usuário (ver concentrationCeilingPercent abaixo). Null junto com magicNumberUnits.'),
+  "unitsBeyondSafeCeiling": zod.number().nullable().describe('Cotas que faltam além do que é seguro comprar agora — dependem do patrimônio total crescer (aporte em OUTROS ativos), não de reforçar mais este. Null junto com magicNumberUnits.'),
+  "alreadyAtOrOverCeiling": zod.boolean().nullable().describe('true quando a posição já está no teto de concentração ou acima — não é seguro aportar mais nela agora, mesmo faltando pouco pro número mágico.')
 })),
   "byMonth": zod.array(zod.object({
   "month": zod.string().describe('Formato YYYY-MM'),

@@ -2446,7 +2446,7 @@ export const getGetPortfolioDividendsProjectionUrl = () => {
 }
 
 /**
- * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price per asset and monthly distribution
+ * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price, magic number and concentration-safe purchase plan per asset, and monthly distribution
  */
 export const getPortfolioDividendsProjection = async ( options?: RequestInit): Promise<PortfolioDividendsProjection> => {
 
@@ -2493,7 +2493,7 @@ export type GetPortfolioDividendsProjectionQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price per asset and monthly distribution
+ * @summary Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price, magic number and concentration-safe purchase plan per asset, and monthly distribution
  */
 
 export function useGetPortfolioDividendsProjection<TData = Awaited<ReturnType<typeof getPortfolioDividendsProjection>>, TError = ErrorType<unknown>>(

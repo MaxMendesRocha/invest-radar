@@ -71,6 +71,48 @@ function QualityBadge({ quality }: { quality: { classification: string; cadence:
   );
 }
 
+interface MagicNumberInfo {
+  magicNumberUnits: number | null;
+  unitsRemaining: number | null;
+  safeUnitsToAddNow: number | null;
+  unitsBeyondSafeCeiling: number | null;
+  alreadyAtOrOverCeiling: boolean | null;
+}
+
+/**
+ * Número mágico: quantas cotas faltam pra esse ativo se autossustentar (dividendo
+ * médio real já compraria mais uma cota dele mesmo). Nunca sugere aporte que
+ * estoure o teto de concentração do perfil — a mesma régua de analysis-engine.ts
+ * usada pra alertar concentração, só que aplicada PRA FRENTE, como plano.
+ */
+function MagicNumberCell({ a }: { a: MagicNumberInfo }) {
+  if (a.magicNumberUnits == null || a.unitsRemaining == null) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  if (a.unitsRemaining === 0) {
+    return (
+      <span className="inline-flex flex-col items-start gap-0.5">
+        <Badge variant="outline" className="border-emerald-600/60 text-emerald-700 dark:text-emerald-500 shrink-0">Atingido</Badge>
+        <span className="text-[10px] text-muted-foreground">{a.magicNumberUnits} cotas no total</span>
+      </span>
+    );
+  }
+
+  const reachesGoalNow = a.unitsBeyondSafeCeiling === 0;
+  return (
+    <span className="inline-flex flex-col items-start gap-0.5">
+      <span className="font-mono text-sm">Faltam {a.unitsRemaining}</span>
+      {reachesGoalNow ? (
+        <span className="text-[10px] text-emerald-700 dark:text-emerald-500">cabe no seu perfil agora</span>
+      ) : a.alreadyAtOrOverCeiling ? (
+        <span className="text-[10px] text-destructive">posição no teto — aguarde a carteira crescer</span>
+      ) : (
+        <span className="text-[10px] text-amber-700 dark:text-amber-500">{a.safeUnitsToAddNow} agora, resto após a carteira crescer</span>
+      )}
+    </span>
+  );
+}
+
 export default function Dividendos() {
   const { data: summary } = useGetPortfolioSummary({ query: { queryKey: getGetPortfolioSummaryQueryKey() } });
   const { data: transactions, isLoading } = useListTransactions({ query: { queryKey: getListTransactionsQueryKey() } });
@@ -356,6 +398,7 @@ export default function Dividendos() {
                         <TableHead className="text-right">DY no Preço</TableHead>
                         <TableHead className="text-right">DY no Custo</TableHead>
                         <TableHead className="text-right">Renda Anual</TableHead>
+                        <TableHead className="text-right">Número Mágico</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -372,6 +415,7 @@ export default function Dividendos() {
                           <TableCell className="text-right font-mono">
                             {a.projectedAnnualIncome == null ? "—" : formatCurrency(a.projectedAnnualIncome)}
                           </TableCell>
+                          <TableCell className="text-right"><MagicNumberCell a={a} /></TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -406,6 +450,10 @@ export default function Dividendos() {
                             <div className="font-mono">{a.dyOnCost == null ? "—" : formatPercent(a.dyOnCost)}</div>
                           </div>
                         </div>
+                        <div className="pt-1 border-t border-border/50">
+                          <div className="text-xs text-muted-foreground mb-1">Número Mágico</div>
+                          <MagicNumberCell a={a} />
+                        </div>
                       </CardContent>
                     </Card>
                   ))}
@@ -414,6 +462,14 @@ export default function Dividendos() {
 
               <p className="text-[10px] text-muted-foreground">
                 Projeção baseada em proventos reais pagos nos últimos 12 meses pelos ativos que você tem hoje, aplicados à quantidade atual — não é garantia de pagamento futuro. Ativos sem histórico suficiente aparecem como "Sem histórico" e não entram na soma.
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                <strong className="text-foreground">Número Mágico</strong>: quantas cotas faltam pra essa posição se
+                autossustentar (o dividendo médio real dela já compraria mais uma cota, no preço atual). Recalcula a
+                cada consulta — preço e dividendo mudam, não é uma meta fixa. Nunca sugere comprar além do teto de
+                concentração do seu perfil ({projection.concentrationCeilingPercent}% da carteira) — quando o número
+                mágico pede mais do que isso, o app mostra só o que é seguro comprar agora, e o resto fica pra quando
+                a carteira crescer em outros ativos, não pra reforçar mais este.
               </p>
             </div>
           )}

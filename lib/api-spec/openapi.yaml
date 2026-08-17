@@ -640,7 +640,7 @@ paths:
     get:
       operationId: getPortfolioDividendsProjection
       tags: [portfolio]
-      summary: Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price per asset and monthly distribution
+      summary: Projected annual/monthly passive income from real dividend history, plus DY-on-cost/DY-on-price, magic number and concentration-safe purchase plan per asset, and monthly distribution
       responses:
         "200":
           description: Dividend income projection
@@ -1451,7 +1451,7 @@ components:
 
     DividendProjectionAsset:
       type: object
-      required: [ticker, category, quantity, dps12m, projectedAnnualIncome, dyOnPrice, dyOnCost, quality]
+      required: [ticker, category, quantity, dps12m, projectedAnnualIncome, dyOnPrice, dyOnCost, quality, magicNumberUnits, unitsRemaining, safeUnitsToAddNow, unitsBeyondSafeCeiling, alreadyAtOrOverCeiling]
       properties:
         ticker:
           type: string
@@ -1478,6 +1478,30 @@ components:
         dyOnCost:
           type: ["number", "null"]
           description: dps12m / preço médio de compra, em %.
+        magicNumberUnits:
+          type: ["integer", "null"]
+          description: >-
+            Cotas necessárias pra essa posição se autossustentar (preço atual ÷
+            dividendo médio real mensal), arredondado pra cima. Null sem dps12m ou
+            sem preço real — nunca estimado.
+        unitsRemaining:
+          type: ["integer", "null"]
+          description: Cotas que ainda faltam pro número mágico. Zero quando já atingiu ou passou. Null junto com magicNumberUnits.
+        safeUnitsToAddNow:
+          type: ["integer", "null"]
+          description: >-
+            Cotas que dá pra comprar AGORA sem estourar o teto "Atenção" de
+            concentração do perfil do usuário (ver concentrationCeilingPercent
+            abaixo). Null junto com magicNumberUnits.
+        unitsBeyondSafeCeiling:
+          type: ["integer", "null"]
+          description: >-
+            Cotas que faltam além do que é seguro comprar agora — dependem do
+            patrimônio total crescer (aporte em OUTROS ativos), não de reforçar mais
+            este. Null junto com magicNumberUnits.
+        alreadyAtOrOverCeiling:
+          type: ["boolean", "null"]
+          description: true quando a posição já está no teto de concentração ou acima — não é seguro aportar mais nela agora, mesmo faltando pouco pro número mágico.
 
     DividendProjectionMonth:
       type: object
@@ -1492,12 +1516,18 @@ components:
 
     PortfolioDividendsProjection:
       type: object
-      required: [projectedAnnualIncome, projectedMonthlyAverage, byAsset, byMonth]
+      required: [projectedAnnualIncome, projectedMonthlyAverage, byAsset, byMonth, concentrationCeilingPercent]
       properties:
         projectedAnnualIncome:
           type: number
         projectedMonthlyAverage:
           type: number
+        concentrationCeilingPercent:
+          type: number
+          description: >-
+            Teto "Atenção" de concentração por ativo, conforme o perfil do usuário
+            (concentrationLimitsFor, analysis-engine.ts) — o limite usado pro plano
+            seguro de número mágico de cada ativo em byAsset.
         byAsset:
           type: array
           items:

@@ -33,4 +33,29 @@ export interface DividendProjectionAsset {
      * @nullable
      */
   dyOnCost: number | null;
+  /**
+     * Cotas necessárias pra essa posição se autossustentar (preço atual ÷ dividendo médio real mensal), arredondado pra cima. Null sem dps12m ou sem preço real — nunca estimado.
+     * @nullable
+     */
+  magicNumberUnits: number | null;
+  /**
+     * Cotas que ainda faltam pro número mágico. Zero quando já atingiu ou passou. Null junto com magicNumberUnits.
+     * @nullable
+     */
+  unitsRemaining: number | null;
+  /**
+     * Cotas que dá pra comprar AGORA sem estourar o teto "Atenção" de concentração do perfil do usuário (ver concentrationCeilingPercent abaixo). Null junto com magicNumberUnits.
+     * @nullable
+     */
+  safeUnitsToAddNow: number | null;
+  /**
+     * Cotas que faltam além do que é seguro comprar agora — dependem do patrimônio total crescer (aporte em OUTROS ativos), não de reforçar mais este. Null junto com magicNumberUnits.
+     * @nullable
+     */
+  unitsBeyondSafeCeiling: number | null;
+  /**
+     * true quando a posição já está no teto de concentração ou acima — não é seguro aportar mais nela agora, mesmo faltando pouco pro número mágico.
+     * @nullable
+     */
+  alreadyAtOrOverCeiling: boolean | null;
 }
