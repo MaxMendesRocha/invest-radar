@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 50 endpoints · 18 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
+**Superfície atual:** 51 endpoints · 18 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
 
 ---
 
@@ -401,6 +401,32 @@ são leituras paralelas, para não contar o mesmo fundamento duas vezes.
 | **Qualidade da distribuição** | histórico real de proventos | Cadência do ativo (mensal/trimestral/…), regularidade **normalizada por essa cadência** e direção da distribuição. Neutro entre classes de propósito: a régua de FII mede "pagou em N dos últimos 12 meses", o que reprovaria qualquer ação — um FII mensal 12/12 e uma ação trimestral 4/4 valem o mesmo aqui, e quem cai é quem falha na própria cadência | Sem provento em 12 meses, não há veredito. Renda fixa fica fora: o app não rastreia cupom como evento |
 | **Prêmio de dividendo** | yield × mediana do grupo | Ordena ativos entre si para "onde vai o próximo aporte". Yield puro premiaria armadilha; Gordon não se sustenta com 12 meses de histórico | — |
 | **Benchmark setorial** | mediana do setor, amostra ≥ 3 | Compara P/L, P/VP, ROE, yield e margem contra a **mediana** — não a média. Com amostra pequena um extremo distorce | Setor com menos de 3 ativos fica fora da tabela |
+
+---
+
+## Cadastro de ativo: consolidação e validação de ticker
+
+Comprar mais de um ticker que já está na carteira **consolida na mesma linha** em vez de criar uma
+posição nova — soma a quantidade e recalcula o preço médio ponderado, igual a qualquer corretora
+faria (`POST /assets`, `routes/assets.ts`). A consolidação exige ticker **e** categoria idênticos à
+posição existente; ticker sozinho não basta, porque o mesmo papel jamais deveria ter preço médio
+misturado entre categorias diferentes.
+
+Essa exigência de igualdade exata tem um lado frágil: um erro de digitação no ticker ("DVF11" em vez
+de "DVFF11", por exemplo) não dá erro nenhum — vira uma posição de verdade, só que sem cotação, sem
+provento, sem nada, e nunca se junta com a posição correta porque as strings são diferentes. A pessoa
+só percebe quando repara em dois cards do "mesmo" ativo, um deles preso em "Em breve" com cotação
+sempre em branco.
+
+**Validação de ticker** (`GET /assets/validate-ticker`) existe pra pegar isso ANTES de virar posição.
+No formulário de cadastro, 500ms depois de parar de digitar, o app confere se o ticker tem cotação
+real (mesmo `getQuotes` que qualquer outra tela usa) e mostra o nome do ativo encontrado — ou um aviso
+de que nada foi encontrado. Tentar salvar com um ticker não encontrado não bloqueia pra sempre (o
+ticker pode ser real e só ainda não coberto pela fonte de dados): o primeiro clique avisa e não
+salva, o segundo, com o mesmo ticker, prossegue. Só roda para categorias cotadas — Tesouro Direto já
+tem sua própria validação por família+vencimento (`findTreasuryBond`), e renda fixa privada não tem
+ticker de mercado pra checar. No formulário de edição o ticker vem travado (não digitável), então o
+risco de digitação só existe no cadastro.
 
 ---
 

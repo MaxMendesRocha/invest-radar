@@ -144,6 +144,19 @@ export const CreateAssetResponse = zod.object({
 
 
 /**
+ * @summary Confere se um ticker tem cotação real antes de cadastrar/editar uma posição — pensado pra pegar erro de digitação (ex. "DVF11" em vez de "DVFF11") antes dele virar uma posição fantasma sem preço, sem se confundir com uma consolidação que falhou por diferença de categoria.
+ */
+export const ValidateTickerQueryParams = zod.object({
+  "ticker": zod.coerce.string()
+})
+
+export const ValidateTickerResponse = zod.object({
+  "valid": zod.boolean().describe('true quando o ticker tem cotação real disponível agora (brapi.dev).'),
+  "name": zod.string().nullable().describe('Nome do ativo, quando encontrado — usado pra confirmar visualmente que é o papel certo, não só validar a string.')
+})
+
+
+/**
  * @summary Get single asset
  */
 export const GetAssetParams = zod.object({

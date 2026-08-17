@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useListAssets,
   useCreateAsset,
@@ -10,6 +10,8 @@ import {
   getListTreasuryBondsQueryKey,
   useGetTreasuryPriceOnDate,
   getGetTreasuryPriceOnDateQueryKey,
+  useValidateTicker,
+  getValidateTickerQueryKey,
   getListAssetsQueryKey,
   getListAssetAnalysesQueryKey,
   getListSalesQueryKey,
@@ -31,7 +33,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Edit2, Trash2, Banknote } from "lucide-react";
+import { Plus, Edit2, Trash2, Banknote, CircleCheck, TriangleAlert, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { categoryLabel, CATEGORY_LABELS } from "@/lib/categories";
 import { PriceTargetControl } from "@/components/price-target-control";
@@ -55,7 +57,35 @@ function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: stri
   return asset.treasuryBondType ? formatShortDate(asset.priceAsOf.slice(0, 10)) : formatShortDateTime(asset.priceAsOf);
 }
 
-
+/**
+ * Feedback do ticker digitado no cadastro — pega erro de digitação ANTES de virar
+ * posição fantasma sem cotação (ver GET /assets/validate-ticker). `result` só chega
+ * não-nulo quando a checagem já terminou pro ticker atual; enquanto isso,
+ * `isChecking` cobre tanto o debounce quanto a busca em si, pra não piscar "não
+ * encontrado" no meio da digitação.
+ */
+function TickerValidationFeedback({ isChecking, result }: { isChecking: boolean; result: { valid: boolean; name: string | null } | null }) {
+  if (isChecking) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="w-3 h-3 animate-spin" /> Conferindo ticker…
+      </p>
+    );
+  }
+  if (!result) return null;
+  if (result.valid) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-500">
+        <CircleCheck className="w-3.5 h-3.5 shrink-0" /> {result.name ?? "Ticker encontrado"}
+      </p>
+    );
+  }
+  return (
+    <p className="flex items-center gap-1.5 text-xs text-destructive">
+      <TriangleAlert className="w-3.5 h-3.5 shrink-0" /> Nenhuma cotação encontrada — confira a digitação.
+    </p>
+  );
+}
 
 export default function Carteira() {
   const { data: assets, isLoading } = useListAssets({ query: { queryKey: getListAssetsQueryKey() } });
@@ -87,6 +117,46 @@ export default function Carteira() {
   // não faz sentido carregar a lista do Tesouro para quem cadastra uma ação.
   const { data: treasuryBonds } = useListTreasuryBonds({ query: { queryKey: getListTreasuryBondsQueryKey(), enabled: category === "renda_fixa" } });
   const selectedBond = treasuryBonds?.find((b) => `${b.bondType}|${b.maturityDate}` === treasuryKey) ?? null;
+
+  /**
+   * Checagem de ticker real, só no cadastro (no formulário de edição o ticker vem
+   * travado — não digitável, sem risco de erro de digitação ali). Existe porque um
+   * ticker digitado errado ("DVF11" em vez de "DVFF11") não dá erro nenhum: vira uma
+   * posição de verdade, só que sem cotação, sem provento, sem nada — e o app só
+   * consolida compras de um mesmo ativo quando ticker E categoria batem
+   * exatamente, então o erro também nunca se junta com a posição certa.
+   *
+   * Debounced pra não bater a brapi a cada tecla — só depois de 500ms sem digitar. Só
+   * roda pra categoria cotada: renda fixa não tem ticker de mercado pra validar
+   * (título público já é validado por outro caminho, via findTreasuryBond).
+   */
+  const [debouncedTicker, setDebouncedTicker] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedTicker(ticker.trim()), 500);
+    return () => clearTimeout(timer);
+  }, [ticker]);
+
+  const tickerValidation = useValidateTicker(
+    { ticker: debouncedTicker },
+    { query: {
+      queryKey: getValidateTickerQueryKey({ ticker: debouncedTicker }),
+      enabled: isCreateOpen && category !== "renda_fixa" && debouncedTicker.length > 0,
+      retry: false,
+    } },
+  );
+  // Só considera o resultado quando ele é da versão mais recente do campo — sem isso,
+  // o resultado da busca anterior (ainda em cache) piscaria como válido/inválido do
+  // ticker atual por uma fração de segundo enquanto a nova busca carrega.
+  const tickerIsChecked = debouncedTicker === ticker.trim() && debouncedTicker.length > 0 && category !== "renda_fixa";
+  const tickerCheckDone = tickerIsChecked && !tickerValidation.isFetching && tickerValidation.data != null;
+
+  // Segunda confirmação pra salvar mesmo com ticker não encontrado — nunca bloqueia
+  // pra sempre (o ticker pode ser real e só ainda não coberto pela brapi), mas exige
+  // uma ação a mais em vez de deixar passar em silêncio. Reseta a cada mudança no
+  // campo pra não valer pra um ticker diferente do que foi confirmado.
+  const [pendingInvalidTickerConfirm, setPendingInvalidTickerConfirm] = useState(false);
+  useEffect(() => setPendingInvalidTickerConfirm(false), [ticker, category]);
+
   /** Data da compra e valor investido — só existem no caminho de título público. */
   const [purchaseDate, setPurchaseDate] = useState("");
   const [investedAmount, setInvestedAmount] = useState("");
@@ -141,6 +211,19 @@ export default function Carteira() {
     e.preventDefault();
     if (category === "renda_fixa" && !treasuryKey) {
       toast({ title: "Escolha o título, ou \"Outro\" para renda fixa privada.", variant: "destructive" });
+      return;
+    }
+    // Ticker sem cotação real: pede confirmação em vez de bloquear pra sempre — pode
+    // ser erro de digitação (o caso mais comum) ou um ticker real que a brapi ainda
+    // não cobre. Primeiro clique avisa e não salva; segundo clique, com o mesmo
+    // ticker, prossegue.
+    if (tickerCheckDone && tickerValidation.data?.valid === false && !pendingInvalidTickerConfirm) {
+      setPendingInvalidTickerConfirm(true);
+      toast({
+        title: `"${ticker}" não tem cotação encontrada — confira a digitação.`,
+        description: "Clique em salvar de novo se o ticker estiver certo mesmo assim.",
+        variant: "destructive",
+      });
       return;
     }
     if (selectedBond && !(derivedQuantity && derivedQuantity > 0)) {
@@ -380,6 +463,12 @@ export default function Carteira() {
                 <div className="space-y-2">
                   <Label>Ticker</Label>
                   <Input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="PETR4" required />
+                  {ticker.trim().length > 0 && (
+                    <TickerValidationFeedback
+                      isChecking={category !== "renda_fixa" && (ticker.trim() !== debouncedTicker || tickerValidation.isFetching)}
+                      result={tickerCheckDone ? tickerValidation.data ?? null : null}
+                    />
+                  )}
                 </div>
               )}
 

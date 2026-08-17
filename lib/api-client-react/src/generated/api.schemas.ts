@@ -106,6 +106,16 @@ export interface Asset {
   createdAt: string;
 }
 
+export interface TickerValidation {
+  /** true quando o ticker tem cotação real disponível agora (brapi.dev). */
+  valid: boolean;
+  /**
+     * Nome do ativo, quando encontrado — usado pra confirmar visualmente que é o papel certo, não só validar a string.
+     * @nullable
+     */
+  name: string | null;
+}
+
 export type AssetInputCategory = typeof AssetInputCategory[keyof typeof AssetInputCategory];
 
 
@@ -1549,6 +1559,10 @@ export interface PortfolioReport {
   topAlerts: Alert[];
   opportunities: Opportunity[];
 }
+
+export type ValidateTickerParams = {
+ticker: string;
+};
 
 export type GetTreasuryPriceOnDateParams = {
 bondType: string;
