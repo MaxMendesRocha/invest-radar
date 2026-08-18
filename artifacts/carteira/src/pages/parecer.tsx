@@ -244,7 +244,7 @@ export default function Parecer() {
   });
   const selectedTreasuryBond = treasuryBonds?.find((b) => `${b.bondType}|${b.maturityDate}` === treasuryKey) ?? null;
 
-  const { data: treasuryOpinion, isLoading: isTreasuryLoading, isError: isTreasuryError } = useGetTreasuryOpinion(
+  const { data: treasuryOpinion, isLoading: isTreasuryLoading, isError: isTreasuryError, error: treasuryError } = useGetTreasuryOpinion(
     submittedTreasuryRef ?? { bondType: "", maturityDate: "" },
     {
       query: {
@@ -325,7 +325,11 @@ export default function Parecer() {
           {isTreasuryError && (
             <Card>
               <CardContent className="p-8 text-center text-muted-foreground">
-                <p className="font-medium">Título não encontrado no catálogo sincronizado.</p>
+                <p className="font-medium">
+                  {(treasuryError as any)?.status === 404
+                    ? "Título não encontrado no catálogo sincronizado."
+                    : "Não foi possível consultar esse título agora. Tente novamente em instantes."}
+                </p>
               </CardContent>
             </Card>
           )}
