@@ -620,13 +620,19 @@ export function analyzeFundamentals(
  * pior do que é. A referência justa é a Selic depois do IR de 15% (alíquota de renda
  * fixa acima de 720 dias, o prazo compatível com quem carrega FII).
  */
-const FIXED_INCOME_TAX_RATE = 0.15;
+export const FIXED_INCOME_TAX_RATE = 0.15;
+
+// Prêmio (pontos percentuais) de DY sobre a Selic líquida que já pontua bem (2) e muito
+// bem (4) na régua abaixo — exportados pra fii-engine.ts converter os mesmos limiares em
+// preço real (zonas de preço), sem duplicar o número solto num segundo lugar.
+export const FII_YIELD_PREMIUM_GOOD_THRESHOLD = 2;
+export const FII_YIELD_PREMIUM_STRONG_THRESHOLD = 4;
 
 function evalFiiYield(dividendYield: number | null, selicPercent: number | null): MetricEval | null {
   if (dividendYield == null || selicPercent == null) return null;
   const referenceYield = selicPercent * (1 - FIXED_INCOME_TAX_RATE);
   const premium = dividendYield * 100 - referenceYield;
-  const score = interpolate(premium, [[-6, 20], [-3, 42], [0, 62], [2, 78], [4, 88], [6, 92]]);
+  const score = interpolate(premium, [[-6, 20], [-3, 42], [0, 62], [FII_YIELD_PREMIUM_GOOD_THRESHOLD, 78], [FII_YIELD_PREMIUM_STRONG_THRESHOLD, 88], [6, 92]]);
   const pct = (dividendYield * 100).toFixed(1).replace(".", ",");
   const ref = referenceYield.toFixed(1).replace(".", ",");
   if (premium >= 2) {
@@ -650,9 +656,13 @@ function evalFiiYield(dividendYield: number | null, selicPercent: number | null)
  * alerta, não pechincha. Do outro lado, ágio relevante sobre o patrimônio também
  * cobra caro por um fluxo que já está precificado.
  */
+// Zona de desconto saudável (pico de nota na curva acima) — exportada pra
+// fii-engine.ts converter em preço real (zonas de preço), mesma razão do par acima.
+export const FII_PVP_HEALTHY_DISCOUNT_RANGE: readonly [number, number] = [0.85, 0.95];
+
 function evalFiiPriceToNav(priceToNav: number | null): MetricEval | null {
   if (priceToNav == null || priceToNav <= 0) return null;
-  const score = interpolate(priceToNav, [[0.3, 25], [0.55, 45], [0.7, 65], [0.85, 82], [0.95, 85], [1.05, 70], [1.2, 48]]);
+  const score = interpolate(priceToNav, [[0.3, 25], [0.55, 45], [0.7, 65], [FII_PVP_HEALTHY_DISCOUNT_RANGE[0], 82], [FII_PVP_HEALTHY_DISCOUNT_RANGE[1], 85], [1.05, 70], [1.2, 48]]);
   const formatted = priceToNav.toFixed(2).replace(".", ",");
   if (priceToNav < 0.6) {
     return { score, risk: `Cotado a ${formatted} do valor patrimonial — desconto dessa ordem costuma indicar problema na carteira, não pechincha` };

@@ -1,6 +1,6 @@
-import { db, sectorBenchmarksTable, type SectorBenchmark } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import type { Fundamentals } from "./market-data";
+import { db, sectorBenchmarksTable, opportunitiesTable, type SectorBenchmark } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import { getFiiProfiles, type Fundamentals } from "./market-data";
 
 /**
  * Leitura barata das medianas setoriais já persistidas por regenerateOpportunities()
@@ -48,4 +48,63 @@ export function describeSectorComparison(f: Fundamentals, benchmark: SectorBench
 
   if (lines.length === 0) return `Comparação com o setor "${f.sector}" não disponível (fundamentos insuficientes pra comparar).`;
   return `Setor "${f.sector}": ${lines.join("; ")} (amostra real de ${benchmark.sampleSize} tickers do setor).`;
+}
+
+export interface FiiPeer {
+  ticker: string;
+  priceToNav: number | null;
+  dividendYield: number | null;
+  equity: number | null;
+}
+
+/**
+ * Pares REAIS do mesmo segmento de FII, nomeados — não só a mediana acima. Existe
+ * porque P/VP nem entra em `describeSectorComparison`: `Fundamentals` carrega P/L, ROE
+ * e DY (métricas de empresa), e FII não tem P/L nem ROE. A mediana do setor pra FII
+ * hoje só compara DY; P/VP contra pares nomeados fecha essa lacuna.
+ *
+ * Candidatos vêm de `opportunities` (persistida semanalmente por
+ * regenerateOpportunities, mesma fonte já usada pra mediana setorial) — nunca refaz o
+ * scan do universo aqui, seria caro demais por Parecer de Ativo. P/VP, DY e patrimônio
+ * vêm ao vivo de `getFiiProfiles` (cache de 24h), porque `opportunities` não guarda
+ * P/VP.
+ *
+ * Limitação honesta, não escondida: só entram fundos que passaram no piso de
+ * elegibilidade da última varredura (`evalFiiEligibility`) — um FII real do segmento
+ * pode ficar de fora por não atender liquidez/patrimônio mínimo, não porque não existe.
+ */
+export async function getFiiPeers(segmentLabel: string, excludeTicker: string, limit = 3): Promise<FiiPeer[]> {
+  const rows = await db
+    .select({ ticker: opportunitiesTable.ticker })
+    .from(opportunitiesTable)
+    .where(and(eq(opportunitiesTable.category, "fiis"), eq(opportunitiesTable.sector, segmentLabel)));
+
+  const candidateTickers = rows
+    .map((r) => r.ticker.toUpperCase())
+    .filter((t) => t !== excludeTicker.toUpperCase());
+  if (candidateTickers.length === 0) return [];
+
+  const profiles = await getFiiProfiles(candidateTickers);
+  const peers: FiiPeer[] = [];
+  for (const ticker of candidateTickers) {
+    const p = profiles.get(ticker);
+    if (!p) continue;
+    peers.push({ ticker, priceToNav: p.priceToNav, dividendYield: p.dividendYield12m, equity: p.equity });
+  }
+
+  // Maior patrimônio primeiro — proxy de relevância/liquidez, mesmo critério que o
+  // resto do app já usa pra ordenar FII por tamanho.
+  peers.sort((a, b) => (b.equity ?? 0) - (a.equity ?? 0));
+  return peers.slice(0, limit);
+}
+
+export function describeFiiPeers(peers: FiiPeer[]): string {
+  if (peers.length === 0) return "";
+  const parts = peers.map((p) => {
+    const bits: string[] = [];
+    if (p.priceToNav != null) bits.push(`P/VP ${p.priceToNav.toFixed(2)}`);
+    if (p.dividendYield != null) bits.push(`DY ${(p.dividendYield * 100).toFixed(1)}%`);
+    return bits.length > 0 ? `${p.ticker} (${bits.join(", ")})` : p.ticker;
+  });
+  return `Pares reais do mesmo segmento (última varredura de Oportunidades): ${parts.join("; ")}.`;
 }

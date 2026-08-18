@@ -27,6 +27,7 @@ Modelo usado em todos os pontos: `claude-haiku-4-5-20251001`.
 **Onde aparece:** Radar Inteligente e Análise de Ativos, para cada ativo já na carteira
 **Disparado por:** `POST /analysis/generate`
 **Cache:** 24h, por ticker + score + status + IR + % de concentração + tendência de dividendo + sinal técnico + Sharpe (todos arredondados/bucketizados)
+**Modelo:** `claude-sonnet-5` — é o ponto que cruza mais sinais ao mesmo tempo (score, DuPont, técnico, macro, setor, perfil de FII, zonas de preço, pares nomeados); os pontos de classificação simples e de geração em lote continuam em Haiku
 
 ### Dados de entrada
 - Score do Radar, classificação e status (`MANTER` / `ATENCAO` / `REAVALIAR` / `POSSIVEL_SAIDA`)
@@ -43,6 +44,8 @@ Modelo usado em todos os pontos: `claude-haiku-4-5-20251001`.
 - Perfil do FII — segmento papel/tijolo/híbrido/FoF, segmento de atuação, gestão, P/VP, DY 12m, patrimônio líquido, número de cotistas (com a ressalva de que mede alcance, não qualidade de gestão) (`fii-engine.ts`). Linha ausente do prompt quando o ativo não é FII
 - Sensibilidade a juro do segmento de FII — cruza o segmento com a tendência REAL de Selic (`macro-data.ts`): renda sobe/desce com o juro pra papel, preço reage mais que renda pra tijolo, sem direção afirmada pra híbrido/FoF (a proporção real não é exposta pela fonte de dados) (`describeFiiInterestRateSensitivity`, `fii-engine.ts`). Linha ausente sem os dois insumos
 - Composição real da carteira do FII e taxa de administração real — % em imóveis diretos, % em CRI/recebíveis estruturados e % em outros ativos financeiros, mais a taxa de administração mensal/anualizada, direto do Informe Mensal da CVM (`describeFiiCvmComposition`, `fii-engine.ts` + `cvm-data.ts`). É o dado que resolve, com número real, o que a linha de sensibilidade a juro acima se recusa a afirmar por segmento pra híbrido/FoF — um FII rotulado híbrido pode ter 80%+ em imóveis diretos na prática. Linha ausente sem CNPJ do fundo (via `FiiProfile.cnpj`, brapi) ou sem o fundo no informe mais recente da CVM
+- Zonas de preço em R$ (FII) — não é opinião nova, é a régua de FII (curvas de P/VP e de yield vs. Selic líquida, `analysis-engine.ts`) convertida de nota 0-100 pra preço real, usando o VP/cota e o provento real de hoje (`computeFiiPriceZones`, `fii-engine.ts`). Duas zonas, propositalmente não combinadas: uma pelo desconto patrimonial saudável (0,85–0,95 do VP/cota), outra pelo yield exigido (2–4 p.p. acima da Selic líquida de IR). Linha ausente sem P/VP real
+- Pares reais nomeados do mesmo segmento de FII — 3 fundos do mesmo segmento (papel/tijolo/híbrido/FoF) com P/VP, DY e patrimônio reais, escolhidos entre os que passaram na última varredura de Oportunidades (`getFiiPeers`, `sector-benchmarks.ts`). Fecha uma lacuna real: `describeSectorComparison` abaixo não tem P/VP (carrega P/L, ROE e DY, métricas de empresa que FII não tem). Linha ausente sem pares elegíveis no segmento
 - Comparação com pares do setor: P/L, ROE e DY contra a média real do setor (`sector-benchmarks.ts`)
 
 ### Prompt (montado dinamicamente — texto-base abaixo, com as linhas de IR/concentração/dividendo/técnico substituídas pelos dados reais de cada ativo)
@@ -72,6 +75,8 @@ Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FC
 {Perfil do FII: segmento e o que ele implica de risco, patrimônio, cotistas — linha ausente quando não é FII}
 {Sensibilidade a juro do segmento: como o ciclo ATUAL de Selic (alta/queda/estável, medido em macro-data.ts) afeta este FII — renda pra papel, preço pra tijolo, sem direção pra híbrido/FoF — linha ausente sem os dois insumos}
 {Composição real da carteira (CVM, referência mm/aaaa): % imóveis diretos, % CRI/recebíveis, % outros ativos, mais taxa de administração mensal/anualizada quando disponível — linha ausente sem CNPJ ou sem o fundo no informe da CVM}
+{Zonas de preço calculadas a partir das mesmas curvas reais da régua de FII: zona por P/VP (0,85–0,95 do VP/cota) e zona pelo yield exigido (2–4 p.p. acima da Selic líquida) — linha ausente sem P/VP real}
+{Pares reais do mesmo segmento (última varredura de Oportunidades): até 3 tickers com P/VP e DY reais — linha ausente sem pares elegíveis}
 Comparação com pares do setor: {P/L, ROE e DY vs. média real do setor, com tamanho da amostra}
 
 Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos
@@ -101,9 +106,13 @@ Se houver linha de perfil de FII, use o segmento pra qualificar o yield: yield a
 reflete juro alto e encolhe no ciclo de queda, em fundo de tijolo reflete aluguel contratado, e FoF
 carrega taxa em duas camadas. Se houver linha de composição real (CVM), qualifique o segmento com os
 percentuais reais — um FII híbrido com 80%+ em imóveis diretos se comporta mais como tijolo na
-prática — e trate a taxa de administração real como um custo concreto sobre o yield líquido. Use a
-comparação com o setor como contexto, nunca como sinal automático — mais barato que o setor pode ser
-desconto justificado, não vantagem.
+prática — e trate a taxa de administração real como um custo concreto sobre o yield líquido. Se
+houver linha de zonas de preço, cite os números reais dela em vez de dar sua própria estimativa de
+preço-alvo — são a mesma régua determinística do score convertida em R$, você só interpreta se o
+preço atual está dentro, acima ou abaixo. Se houver linha de pares reais do segmento, use-a pra
+dizer se este ativo está mais barato ou mais caro que fundos comparáveis nomeados, não só que a
+mediana. Use a comparação com o setor como contexto, nunca como sinal automático — mais barato que o
+setor pode ser desconto justificado, não vantagem.
 NÃO invente nenhum dado que não esteja listado acima. NÃO proponha um score ou status diferente do
 informado — a decisão de score é sempre do motor determinístico, você só interpreta. NÃO trate o
 valor de IR como exato — é uma estimativa isolada, deixe isso implícito no texto sem precisar repetir
@@ -126,6 +135,7 @@ Texto determinístico genérico citando o primeiro risco calculado (`buildRecomm
 **Onde aparece:** busca de um ticker que o usuário ainda não possui, avaliando se vale começar/reforçar uma posição
 **Disparado por:** `GET /analysis/opinion/:ticker`
 **Cache:** 12h, por ticker + score + preço + tendência de dividendo + sinal técnico + Sharpe
+**Modelo:** `claude-sonnet-5` — mesmo motivo do item 1, é o outro ponto que cruza mais sinais ao mesmo tempo
 
 ### Dados de entrada
 - Fundamentos (score, positivos, riscos) — ou aviso explícito de indisponibilidade
@@ -138,6 +148,8 @@ Texto determinístico genérico citando o primeiro risco calculado (`buildRecomm
 - Perfil do FII, quando aplicável
 - Sensibilidade a juro do segmento de FII (segmento × tendência real de Selic), quando aplicável
 - Composição real da carteira do FII e taxa de administração real, via CVM (`describeFiiCvmComposition`), quando aplicável
+- Zonas de preço em R$ (FII), pelas curvas reais de P/VP e yield vs. Selic líquida (`computeFiiPriceZones`), quando aplicável
+- Pares reais nomeados do mesmo segmento de FII, com P/VP e DY reais (`getFiiPeers`), quando aplicável
 - Comparação com pares do setor
 - Notícias recentes classificadas
 - Cenário macro (Selic, tendência, IPCA 12m, juro real, IGP-M 12m)
@@ -162,6 +174,8 @@ Saúde financeira (caixa, liquidez, alavancagem): {cobertura do dividendo por FC
 {Perfil do FII: segmento, implicação de risco, patrimônio, cotistas — ausente quando não é FII}
 {Sensibilidade a juro do segmento: renda pra papel, preço pra tijolo, sem direção pra híbrido/FoF — ausente sem os dois insumos}
 {Composição real da carteira (CVM): % imóveis diretos, % CRI/recebíveis, % outros ativos, taxa de administração real — ausente sem CNPJ ou sem o fundo no informe da CVM}
+{Zonas de preço (FII): zona por P/VP e zona pelo yield exigido, calculadas da régua real — ausente sem P/VP real}
+{Pares reais do segmento (FII): até 3 tickers com P/VP e DY reais — ausente sem pares elegíveis}
 Comparação com pares do setor: {múltiplos vs. média do setor}
 Notícias recentes classificadas: {notícias}
 Cenário macro: Selic {selic}% (tendência {tendência}), IPCA 12m {ipca}%, juro real {juroReal}% (Selic JÁ descontada a inflação — é o piso sem risco que o ativo precisa
@@ -425,7 +439,7 @@ insumo, nunca um valor estimado.
 | `technical-engine.ts` | SMA20/50/200, RSI14, MACD, Bollinger, cruzamento de médias |
 | `risk-metrics-engine.ts` | Sharpe, Sortino e Treynor, com CDI acumulado (nominal) como taxa livre de risco |
 | `financial-health-engine.ts` | Cobertura do dividendo por fluxo de caixa livre, conversão de lucro em caixa, dívida líquida/EBITDA, liquidez corrente, margem EBITDA |
-| `fii-engine.ts` | Perfil do FII: segmento (papel/tijolo/híbrido/FoF) e o risco que cada um implica; patrimônio, cotistas e elegibilidade de liquidez/patrimônio pra Oportunidades; sensibilidade a juro por segmento; texto de composição real + taxa de administração real (a partir de `cvm-data.ts`) |
+| `fii-engine.ts` | Perfil do FII: segmento (papel/tijolo/híbrido/FoF) e o risco que cada um implica; patrimônio, cotistas e elegibilidade de liquidez/patrimônio pra Oportunidades; sensibilidade a juro por segmento; texto de composição real + taxa de administração real (a partir de `cvm-data.ts`); zonas de preço em R$ pelas curvas reais de P/VP e yield |
 | `cvm-data.ts` | Composição real da carteira (% imóveis diretos / % CRI e recebíveis / % outros) e taxa de administração real, por FII, direto do Informe Mensal Estruturado da CVM (dado público, sem chave) — cruzado pelo CNPJ real vindo da brapi |
-| `sector-benchmarks.ts` | Médias reais do setor (P/L, P/VP, ROE, DY, margem), calculadas no job semanal de Oportunidades |
+| `sector-benchmarks.ts` | Médias reais do setor (P/L, P/VP, ROE, DY, margem), calculadas no job semanal de Oportunidades; pares reais nomeados do mesmo segmento de FII, com P/VP e DY reais |
 | `tax-engine.ts` / `monthly-tax-engine.ts` | IR estimado por venda e consolidação mensal por categoria |
