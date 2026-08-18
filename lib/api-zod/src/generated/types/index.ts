@@ -83,6 +83,8 @@ export * from './marketContext';
 export * from './marketContextWindow';
 export * from './monthlyCategoryTax';
 export * from './monthlyCategoryTaxCategory';
+export * from './newsItem';
+export * from './newsItemImpact';
 export * from './opportunitiesNextRefresh';
 export * from './opportunity';
 export * from './opportunityDividendFrequency';

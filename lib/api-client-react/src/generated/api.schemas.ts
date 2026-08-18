@@ -729,6 +729,36 @@ export interface DismissPendingDividendInput {
   paymentDate: string;
 }
 
+/**
+ * @nullable
+ */
+export type NewsItemImpact = typeof NewsItemImpact[keyof typeof NewsItemImpact] | null;
+
+
+export const NewsItemImpact = {
+  Muito_Positivo: 'Muito Positivo',
+  Positivo: 'Positivo',
+  Neutro: 'Neutro',
+  Negativo: 'Negativo',
+  Muito_Negativo: 'Muito Negativo',
+} as const;
+
+/**
+ * Notícia real do RSS do InfoMoney — título, impacto classificado, link real pro artigo e um resumo curto vindo do próprio <description> do feed (não é raspagem de página, é o campo que o publisher já disponibiliza pra syndication).
+ */
+export interface NewsItem {
+  title: string;
+  /** @nullable */
+  impact: NewsItemImpact;
+  /** URL real do artigo no InfoMoney. String vazia em notícia persistida antes desta mudança (sem link salvo). */
+  link: string;
+  /**
+     * Resumo curto real do RSS, HTML e rodapé do WordPress já removidos. Null sem resumo disponível.
+     * @nullable
+     */
+  summary: string | null;
+}
+
 export interface BenchmarkPoint {
   label: string;
   portfolio: number;
@@ -1168,7 +1198,7 @@ export interface AssetAnalysis {
   scoreClassification: AssetAnalysisScoreClassification;
   positives: string[];
   risks: string[];
-  newsItems: string[];
+  newsItems: NewsItem[];
   alerts: string[];
   monitoringRecommendation: string;
   /** Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível. */
@@ -1316,7 +1346,7 @@ export interface AssetOpinion {
   nextDividend?: DividendEntitlementPreview | null;
   /** Presente só quando `nextDividend` existe e `entitledIfBoughtToday` é false: o próximo provento que uma compra hoje efetivamente alcançaria. Null quando o mais próximo já é o certo, ou quando nada mais está anunciado depois dele. */
   nextEntitledDividend?: DividendEntitlementPreview | null;
-  newsItems: string[];
+  newsItems: NewsItem[];
   opinion: string;
   screening: PurchaseScreening;
   updatedAt: string;

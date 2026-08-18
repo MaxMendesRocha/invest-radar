@@ -1661,6 +1661,26 @@ components:
           type: string
           description: Mesma data do evento pendente (paymentDate em PendingDividend), formato YYYY-MM-DD.
 
+    NewsItem:
+      type: object
+      required: [title, impact, link, summary]
+      description: >-
+        Notícia real do RSS do InfoMoney — título, impacto classificado, link real pro
+        artigo e um resumo curto vindo do próprio <description> do feed (não é raspagem
+        de página, é o campo que o publisher já disponibiliza pra syndication).
+      properties:
+        title:
+          type: string
+        impact:
+          type: ["string", "null"]
+          enum: ["Muito Positivo", "Positivo", "Neutro", "Negativo", "Muito Negativo", null]
+        link:
+          type: string
+          description: URL real do artigo no InfoMoney. String vazia em notícia persistida antes desta mudança (sem link salvo).
+        summary:
+          type: ["string", "null"]
+          description: Resumo curto real do RSS, HTML e rodapé do WordPress já removidos. Null sem resumo disponível.
+
     BenchmarkPoint:
       type: object
       required: [label, portfolio, cdi, ibov, ifix]
@@ -2227,7 +2247,7 @@ components:
         newsItems:
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/NewsItem"
         alerts:
           type: array
           items:
@@ -2406,7 +2426,7 @@ components:
         newsItems:
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/NewsItem"
         opinion:
           type: string
         screening:

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Search, Check, AlertTriangle, Newspaper, Sparkles, TrendingUp, Coins, LineChart, CalendarClock } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
+import { NewsHeadlineItem } from "@/components/news-headline-item";
 
 /**
  * Preço-alvo do usuário para o ticker consultado.
@@ -431,7 +432,7 @@ export default function Parecer() {
                     </h4>
                     <ul className="space-y-1">
                       {opinion.newsItems.map((n, i) => (
-                        <li key={i} className="text-xs text-muted-foreground break-words">- {n}</li>
+                        <NewsHeadlineItem key={i} item={n} className="text-xs text-muted-foreground break-words" />
                       ))}
                     </ul>
                   </div>

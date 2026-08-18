@@ -14,6 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { BrainCircuit, Check, AlertTriangle, Newspaper, Bell, Activity, Clock, Receipt, LineChart, CalendarClock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { analysisStatusConfigFor } from "@/lib/analysis-status";
+import { NewsHeadlineItem } from "@/components/news-headline-item";
 import { formatCurrency } from "@/lib/utils";
 
 function TaxBadge({ tax }: { tax: AssetAnalysis["taxEstimate"] }) {
@@ -217,7 +218,7 @@ export default function Analise() {
                       </h4>
                       <ul className="space-y-1">
                         {analysis.newsItems.map((n, i) => (
-                          <li key={i} className="text-xs text-muted-foreground break-words">- {n}</li>
+                          <NewsHeadlineItem key={i} item={n} className="text-xs text-muted-foreground break-words" />
                         ))}
                       </ul>
                     </div>
@@ -318,7 +319,7 @@ export default function Analise() {
                                 </h4>
                                 <ul className="space-y-1">
                                   {analysis.newsItems.slice(0,2).map((n, i) => (
-                                    <li key={i} className="text-xs break-words">- {n}</li>
+                                    <NewsHeadlineItem key={i} item={n} className="text-xs break-words" />
                                   ))}
                                 </ul>
                               </div>
