@@ -486,6 +486,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /analysis/treasury-opinion:
+    get:
+      operationId: getTreasuryOpinion
+      tags: [analysis]
+      summary: >-
+        Comparação de taxa para um título do Tesouro Direto — o equivalente de "parecer"
+        que renda fixa admite. Não tem score: compara a taxa de hoje deste título contra
+        a própria faixa recente dele e contra Selic/IPCA atuais, nunca contra outro título.
+      parameters:
+        - name: bondType
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: maturityDate
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+      responses:
+        "200":
+          description: Comparação de taxa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreasuryOpinion"
+        "404":
+          description: Título não encontrado no catálogo sincronizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /portfolio/allocation:
     get:
       operationId: getAllocation
@@ -2607,6 +2641,84 @@ components:
         label:
           type: string
           description: Rótulo canônico usado como ticker da posição, ex. "TESOURO IPCA+ 2035".
+
+    TreasuryRateRange:
+      type: object
+      required: [days, min, max, avg, sampleCount, percentile]
+      description: >-
+        Faixa da taxa de compra do MESMO título nos últimos `days` dias-base publicados —
+        nunca comparada contra outro título, que teria prêmio de prazo diferente.
+      properties:
+        days:
+          type: number
+        min:
+          type: number
+        max:
+          type: number
+        avg:
+          type: number
+        sampleCount:
+          type: number
+          description: Quantidade de dias-base na janela. A faixa só existe quando há pelo menos 15.
+        percentile:
+          type: ["number", "null"]
+          description: >-
+            Posição da taxa de hoje na faixa, 0-100. Null quando a taxa não se moveu na
+            janela (mín. igual ao máx.) — não há posição relativa real pra reportar.
+
+    TreasuryOpinion:
+      type: object
+      required: [bondType, maturityDate, label, baseDate, buyRate, buyUnitPrice, rateLabel, indexer, rateRange, macro, liquidityNote]
+      description: >-
+        Comparação de taxa pra um título específico do Tesouro Direto — não é score, é a
+        taxa de hoje contra a própria faixa recente do título e contra o cenário de juro
+        atual. Sem IA: todo campo aqui é número real ou texto determinístico sobre ele.
+      properties:
+        bondType:
+          type: string
+        maturityDate:
+          type: string
+          format: date
+        label:
+          type: string
+        baseDate:
+          type: string
+          format: date
+        buyRate:
+          type: number
+        buyUnitPrice:
+          type: number
+        rateLabel:
+          type: string
+          description: Taxa já rotulada conforme a família — ver TreasurySuggestion.rateLabel.
+        indexer:
+          type: ["string", "null"]
+          enum: [selic, ipca, prefixado, null]
+          description: Null para família fora da allowlist de sugestão (ex. só-recompra, sem oferta ativa).
+        rateRange:
+          oneOf:
+            - $ref: "#/components/schemas/TreasuryRateRange"
+            - type: "null"
+          description: Null quando o histórico na janela de 90 dias é curto demais pra uma faixa confiável.
+        macro:
+          type: object
+          required: [selic, selicTrend, ipca12m, realInterestRate]
+          properties:
+            selic:
+              type: ["number", "null"]
+            selicTrend:
+              type: ["string", "null"]
+              enum: [alta, queda, estavel, null]
+            ipca12m:
+              type: ["number", "null"]
+            realInterestRate:
+              type: ["number", "null"]
+              description: Juro real ex-post pela fórmula de Fisher, em %.
+        liquidityNote:
+          type: string
+          description: >-
+            Nota sobre marcação a mercado no resgate antecipado — só o Tesouro Selic
+            escapa dela.
 
     TreasurySuggestion:
       type: object

@@ -35,6 +35,7 @@ import type {
   ErrorResponse,
   EvolutionPoint,
   GetAllocationPlanParams,
+  GetTreasuryOpinionParams,
   GetTreasuryPriceOnDateParams,
   HealthStatus,
   IncomeGoalInput,
@@ -62,6 +63,7 @@ import type {
   Transaction,
   TransactionInput,
   TreasuryBondOption,
+  TreasuryOpinion,
   TreasuryPriceOnDate,
   UpcomingDividend,
   User,
@@ -1747,6 +1749,90 @@ export function useGetTreasuryPriceOnDate<TData = Awaited<ReturnType<typeof getT
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetTreasuryPriceOnDateQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetTreasuryOpinionUrl = (params: GetTreasuryOpinionParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/analysis/treasury-opinion?${stringifiedParams}` : `/api/analysis/treasury-opinion`
+}
+
+/**
+ * @summary Comparação de taxa para um título do Tesouro Direto — o equivalente de "parecer" que renda fixa admite. Não tem score: compara a taxa de hoje deste título contra a própria faixa recente dele e contra Selic/IPCA atuais, nunca contra outro título.
+ */
+export const getTreasuryOpinion = async (params: GetTreasuryOpinionParams, options?: RequestInit): Promise<TreasuryOpinion> => {
+
+  return customFetch<TreasuryOpinion>(getGetTreasuryOpinionUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTreasuryOpinionQueryKey = (params?: GetTreasuryOpinionParams,) => {
+    return [
+    `/api/analysis/treasury-opinion`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetTreasuryOpinionQueryOptions = <TData = Awaited<ReturnType<typeof getTreasuryOpinion>>, TError = ErrorType<ErrorResponse>>(params: GetTreasuryOpinionParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTreasuryOpinion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTreasuryOpinionQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTreasuryOpinion>>> = ({ signal }) => getTreasuryOpinion(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTreasuryOpinion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTreasuryOpinionQueryResult = NonNullable<Awaited<ReturnType<typeof getTreasuryOpinion>>>
+export type GetTreasuryOpinionQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Comparação de taxa para um título do Tesouro Direto — o equivalente de "parecer" que renda fixa admite. Não tem score: compara a taxa de hoje deste título contra a própria faixa recente dele e contra Selic/IPCA atuais, nunca contra outro título.
+ */
+
+export function useGetTreasuryOpinion<TData = Awaited<ReturnType<typeof getTreasuryOpinion>>, TError = ErrorType<ErrorResponse>>(
+ params: GetTreasuryOpinionParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTreasuryOpinion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTreasuryOpinionQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

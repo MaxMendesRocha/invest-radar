@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, assetsTable, alertsTable, analysesTable, opportunitiesTable, investorProfilesTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
-import { GetAssetAnalysisParams } from "@workspace/api-zod";
+import { GetAssetAnalysisParams, GetTreasuryOpinionQueryParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
 import {
   getPricesFor,
@@ -39,6 +39,8 @@ import { getFiiCvmData } from "../lib/cvm-data";
 import { computeFinancialHealth } from "../lib/financial-health-engine";
 import { previewNextDividends } from "../lib/dividend-entitlement";
 import { todayInAppTimezone } from "../lib/local-date";
+import { findTreasuryBond, listTreasuryBondOptions, rateRangeFor } from "../lib/treasury-identity";
+import { buildTreasuryOpinion } from "../lib/treasury-opinion-engine";
 
 const router: IRouter = Router();
 
@@ -722,6 +724,43 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
 
   opinionResponseCache.set(ticker, { response, fetchedAt: Date.now() });
   res.json(response);
+});
+
+/**
+ * Comparação de taxa pra um título do Tesouro Direto — a versão de "Parecer de Ativo"
+ * pra quem não tem ticker. Sem IA e sem score: renda fixa pública não tem fundamento pra
+ * comparar entre títulos como ações têm entre si (ver analysis-engine.ts), então a
+ * pergunta que dá pra responder de verdade é mais estreita — a taxa de hoje está boa
+ * contra a própria faixa recente do MESMO título, e contra o cenário de juro atual.
+ */
+router.get("/analysis/treasury-opinion", requireAuth, async (req, res): Promise<void> => {
+  const parsed = GetTreasuryOpinionQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "bondType e maturityDate são obrigatórios" });
+    return;
+  }
+  const ref = { bondType: parsed.data.bondType, maturityDate: parsed.data.maturityDate };
+
+  const { found } = await findTreasuryBond(ref);
+  if (!found) {
+    res.status(404).json({ error: "Título não encontrado no catálogo sincronizado" });
+    return;
+  }
+
+  const [bonds, rateRange, macro] = await Promise.all([
+    listTreasuryBondOptions(),
+    rateRangeFor(ref, 90),
+    getMacroSnapshot(),
+  ]);
+  const bond = bonds.find((b) => b.bondType === ref.bondType && b.maturityDate === ref.maturityDate);
+  if (!bond) {
+    // findTreasuryBond já confirmou presença na mesma data-base — não deveria acontecer,
+    // mas 404 é a resposta honesta se as duas consultas divergirem entre si.
+    res.status(404).json({ error: "Título não encontrado no catálogo sincronizado" });
+    return;
+  }
+
+  res.json(buildTreasuryOpinion(bond, rateRange, macro));
 });
 
 router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> => {

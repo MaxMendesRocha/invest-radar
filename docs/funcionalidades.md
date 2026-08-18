@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 52 endpoints · 18 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
+**Superfície atual:** 53 endpoints · 19 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
 
 ---
 
@@ -487,6 +487,18 @@ oficial.
 - **Sugestão por objetivo.** Quem precisa de liquidez ou não tem reserva de emergência recebe
   Tesouro Selic, porque é o único cujo resgate antecipado não sofre marcação a mercado.
 
+### Parecer de Título Público — a mesma série histórica, respondendo outra pergunta
+
+Parecer de Ativo (`GET /analysis/treasury-opinion`) aceita título do Tesouro Direto, não só ticker
+cotado. Não existe score aqui — renda fixa pública não tem fundamento pra comparar ENTRE títulos
+como ações têm entre si — então a pergunta que dá pra responder é mais estreita: a taxa de compra de
+hoje deste título está boa contra a própria faixa recente dele (mín./máx./média dos últimos 90
+dias-base, calculada sobre a mesma série histórica de `treasury_bonds` que já alimentava marcação a
+mercado e sugestão de aporte) e contra o cenário de juro atual (Selic, IPCA 12m e juro real, via
+`getMacroSnapshot`). Sem IA: todo campo é número real ou texto determinístico sobre ele. Faixa
+`null` quando a janela de 90 dias tem menos de 15 dias-base publicados — histórico curto demais pra
+uma faixa confiável, em vez de calculada em cima de poucos pontos.
+
 ---
 
 ## Meta de renda passiva
@@ -600,7 +612,7 @@ sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela int
 | **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático e a data da compra, opcional em qualquer classe, editável depois |
 | **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
-| **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Triagem "atende / não atende ao corte", análise completa de qualquer ticker sem exigir posição, range de 52 semanas, tendência de proventos, comparação setorial |
+| **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Triagem "atende / não atende ao corte", análise completa de qualquer ticker sem exigir posição, range de 52 semanas, tendência de proventos, comparação setorial — e, pra Tesouro Direto, taxa de hoje contra a própria faixa dos últimos 90 dias e contra Selic/IPCA atuais |
 | **Oportunidades** | O que existe lá fora? | Universo de ~180 tickers varrido semanalmente, reordenado pelo nível de risco compatível com o perfil |
 | **Dividendos** | Quanto recebo, e caminho para a meta? | Total acumulado, yield on cost, histórico de 12 meses, proventos anunciados, progresso da meta, número mágico por ativo com plano seguro de concentração |
 | **Operações Encerradas** | Quanto ganhei, e quanto devo? | Vendas com resultado realizado e consolidação mensal de IR com compensação de prejuízo |
