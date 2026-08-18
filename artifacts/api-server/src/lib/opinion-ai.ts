@@ -6,7 +6,8 @@ import { describeTechnicalIndicators, type TechnicalIndicators } from "./technic
 import { describeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "./risk-metrics-engine";
 import { describeDuPontBreakdown, type DuPontBreakdown } from "./analysis-engine";
 import { describeFinancialHealth, type FinancialHealth } from "./financial-health-engine";
-import { describeFiiProfile, describeFiiInterestRateSensitivity, describeFiiCvmComposition } from "./fii-engine";
+import { describeFiiProfile, describeFiiInterestRateSensitivity, describeFiiCvmComposition, describeFiiPriceZones, type FiiPriceZones } from "./fii-engine";
+import { describeFiiPeers, type FiiPeer } from "./sector-benchmarks";
 import type { FiiProfile } from "./market-data";
 import type { FiiCvmData } from "./cvm-data";
 
@@ -32,6 +33,8 @@ export interface PrePurchaseOpinionInput {
   sector: string | null; // usado só pra ressalva de comparabilidade em setor financeiro (ver describeFinancialHealth)
   fiiProfile: FiiProfile | null; // só pra FIIs — null pra qualquer outra categoria (ver getFiiProfiles)
   fiiCvmData: FiiCvmData | null; // composição real + taxa de administração real, via CVM (ver cvm-data.ts) — null pra qualquer outra categoria ou fundo fora do informe mais recente
+  fiiPriceZones: FiiPriceZones | null; // zonas de preço em R$ derivadas das curvas reais de P/VP e yield (ver computeFiiPriceZones, fii-engine.ts) — null pra qualquer outra categoria ou sem P/VP real
+  fiiPeers: FiiPeer[]; // pares reais nomeados do mesmo segmento (ver getFiiPeers, sector-benchmarks.ts) — array vazio pra qualquer outra categoria ou sem pares na última varredura
   sectorComparison: string;
   dividendValue: string; // já formatado pelo chamador via describeDividendValue (dividend-value-engine.ts) // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts)
   newsItems: string[]; // já formatadas com "[Impacto] título"
@@ -50,7 +53,7 @@ function getClient(): Anthropic | null {
 const opinionCache = new Map<string, { text: string; fetchedAt: number }>();
 
 function buildPrompt(input: PrePurchaseOpinionInput): string {
-  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, sectorComparison, dividendValue, newsItems, macro } = input;
+  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, fiiPeers, sectorComparison, dividendValue, newsItems, macro } = input;
 
   const fundamentalsLine = available
     ? `Score do Radar: ${score}/100 (${scoreClassification})\nPontos positivos (fundamentos reais): ${positives.join("; ") || "nenhum"}\nPontos de atenção (fundamentos reais): ${risks.join("; ") || "nenhum"}`
@@ -72,6 +75,8 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
   const fiiProfileLine = describeFiiProfile(fiiProfile);
   const fiiRateSensitivityLine = describeFiiInterestRateSensitivity(fiiProfile?.segmentType ?? null, macro.selicTrend);
   const fiiCvmCompositionLine = describeFiiCvmComposition(fiiCvmData);
+  const fiiPriceZonesLine = describeFiiPriceZones(fiiPriceZones);
+  const fiiPeersLine = describeFiiPeers(fiiPeers);
 
   return (
     `Você é um analista financeiro sênior dando uma PRIMEIRA LEITURA sobre um ativo pra alguém que ` +
@@ -90,6 +95,8 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     (fiiProfileLine ? `Perfil do FII: ${fiiProfileLine}\n` : "") +
     (fiiRateSensitivityLine ? `${fiiRateSensitivityLine}\n` : "") +
     (fiiCvmCompositionLine ? `${fiiCvmCompositionLine}\n` : "") +
+    (fiiPriceZonesLine ? `${fiiPriceZonesLine}\n` : "") +
+    (fiiPeersLine ? `${fiiPeersLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n` +
     `${dividendValue}\n` +
     `Notícias recentes classificadas: ${newsItems.join(" | ") || "nenhuma"}\n` +
@@ -101,7 +108,7 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     `os pontos de atenção envolverem piora de ROE, dívida subindo ou desaceleração de crescimento, pode ` +
     `enquadrar isso como enfraquecimento da vantagem competitiva do negócio (moat). Use a decomposição ` +
     `DuPont pra qualificar o ROE, não só repeti-lo — um ROE alto puxado majoritariamente por alavancagem é ` +
-    `um sinal de qualidade bem diferente de um ROE alto puxado por margem operacional forte. Use a saúde financeira como o teste mais duro de sustentabilidade de dividendo: cobertura por fluxo de caixa livre abaixo de 1x significa que a empresa distribuiu mais caixa do que gerou no período — isso pesa MAIS que um payout ratio contábil confortável, porque payout usa lucro e lucro não paga dividendo, caixa paga. Dívida líquida alta sobre EBITDA agrava esse quadro (empresa alavancada corta dividendo antes de deixar de pagar credor). Respeite a ressalva de comparabilidade quando ela aparecer. Se houver linha de perfil de FII, use o segmento pra qualificar o yield em vez de tratá-lo como número solto: yield alto em fundo de papel costuma refletir juro alto e encolhe no ciclo de queda, enquanto em fundo de tijolo reflete aluguel contratado; FoF carrega taxa em duas camadas. Se houver linha de composição real da carteira (dado da CVM), use os percentuais pra qualificar o segmento com números reais — por exemplo, um FII rotulado híbrido mas com 80%+ em imóveis diretos se comporta mais como tijolo na prática — e trate a taxa de administração real (quando disponível) como um custo concreto que corrói o yield líquido do cotista. Use a ` +
+    `um sinal de qualidade bem diferente de um ROE alto puxado por margem operacional forte. Use a saúde financeira como o teste mais duro de sustentabilidade de dividendo: cobertura por fluxo de caixa livre abaixo de 1x significa que a empresa distribuiu mais caixa do que gerou no período — isso pesa MAIS que um payout ratio contábil confortável, porque payout usa lucro e lucro não paga dividendo, caixa paga. Dívida líquida alta sobre EBITDA agrava esse quadro (empresa alavancada corta dividendo antes de deixar de pagar credor). Respeite a ressalva de comparabilidade quando ela aparecer. Se houver linha de perfil de FII, use o segmento pra qualificar o yield em vez de tratá-lo como número solto: yield alto em fundo de papel costuma refletir juro alto e encolhe no ciclo de queda, enquanto em fundo de tijolo reflete aluguel contratado; FoF carrega taxa em duas camadas. Se houver linha de composição real da carteira (dado da CVM), use os percentuais pra qualificar o segmento com números reais — por exemplo, um FII rotulado híbrido mas com 80%+ em imóveis diretos se comporta mais como tijolo na prática — e trate a taxa de administração real (quando disponível) como um custo concreto que corrói o yield líquido do cotista. Se houver linha de zonas de preço (FII), essa é a informação mais direta pra responder "vale a pena entrar agora" — diga explicitamente se o preço atual está dentro, acima ou abaixo das zonas, sem propor uma faixa própria diferente da calculada. Se houver linha de pares reais do segmento, use-a pra dizer se este ativo está mais barato ou mais caro que fundos comparáveis nomeados, não só que a mediana. Use a ` +
     `comparação com o setor como contexto, nunca como sinal automático — um múltiplo mais barato que a ` +
     `média do setor pode ser oportunidade real ou desconto justificado por fundamentos piores; interprete ` +
     `à luz dos outros dados. Use o indicador ` +
@@ -141,7 +148,11 @@ export async function synthesizePrePurchaseOpinion(input: PrePurchaseOpinionInpu
 
   try {
     const message = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
+      // Sonnet, não Haiku — mesmo raciocínio de analysis-ai.ts: este é um dos dois
+      // pontos que cruzam mais sinais ao mesmo tempo, onde a qualidade da síntese
+      // compensa o custo/latência extra. Os pontos de classificação simples e de
+      // geração em lote (news.ts, opportunities-ai.ts) continuam em Haiku.
+      model: "claude-sonnet-5",
       max_tokens: 750, // 2-6 frases cruzando fundamentos+range+dividendo+técnico+notícias+macro passam de 650 com o prompt maior
       messages: [{ role: "user", content: buildPrompt(input) }],
     });

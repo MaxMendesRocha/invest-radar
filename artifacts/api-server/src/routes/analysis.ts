@@ -32,9 +32,9 @@ import { synthesizePrePurchaseOpinion } from "../lib/opinion-ai";
 import { estimateCapitalGainsTax, type TaxEstimate } from "../lib/tax-engine";
 import { computeTechnicalIndicators, type TechnicalIndicators } from "../lib/technical-engine";
 import { computeRiskAdjustedMetrics, type RiskAdjustedMetrics } from "../lib/risk-metrics-engine";
-import { getSectorBenchmark, describeSectorComparison } from "../lib/sector-benchmarks";
+import { getSectorBenchmark, describeSectorComparison, getFiiPeers } from "../lib/sector-benchmarks";
 import { computeDividendValue, describeDividendValue } from "../lib/dividend-value-engine";
-import { benchmarkGroupFor } from "../lib/fii-engine";
+import { benchmarkGroupFor, computeFiiPriceZones, FII_SEGMENT_LABEL } from "../lib/fii-engine";
 import { getFiiCvmData } from "../lib/cvm-data";
 import { computeFinancialHealth } from "../lib/financial-health-engine";
 import { previewNextDividends } from "../lib/dividend-entitlement";
@@ -594,6 +594,12 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
   const financialHealth = fundamentals ? computeFinancialHealth(fundamentals, dps12m) : null;
   const fiiProfile = (await getFiiProfiles([ticker])).get(ticker) ?? null;
   const fiiCvmData = await getFiiCvmData(fiiProfile?.cnpj ?? null);
+  const fiiPriceZones = fiiProfile?.priceToNav != null
+    ? computeFiiPriceZones(price, fiiProfile.priceToNav, dps12m, macro.selic)
+    : null;
+  const fiiPeers = fiiProfile?.segmentType
+    ? await getFiiPeers(FII_SEGMENT_LABEL[fiiProfile.segmentType], ticker)
+    : [];
   const sectorBenchmark = await getSectorBenchmark(
     fundamentals ? benchmarkGroupFor(fundamentals, fiiProfile ?? undefined) : null,
   );
@@ -643,6 +649,8 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     sector: fundamentals?.sector ?? null,
     fiiProfile,
     fiiCvmData,
+    fiiPriceZones,
+    fiiPeers,
     sectorComparison,
     dividendValue,
     newsItems,
@@ -801,6 +809,12 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         ? computeFinancialHealth(assetFundamentals, dps12mByTicker.get(analysis.ticker) ?? null)
         : null;
       const fiiCvmData = await getFiiCvmData(fiiProfileByTicker.get(analysis.ticker)?.cnpj ?? null);
+      const fiiPriceToNav = fiiProfileByTicker.get(analysis.ticker)?.priceToNav ?? null;
+      const fiiPriceZones = fiiPriceToNav != null && currentPrice != null
+        ? computeFiiPriceZones(currentPrice, fiiPriceToNav, dps12mByTicker.get(analysis.ticker) ?? null, macro.selic)
+        : null;
+      const fiiSegment = fiiProfileByTicker.get(analysis.ticker)?.segmentType;
+      const fiiPeers = fiiSegment ? await getFiiPeers(FII_SEGMENT_LABEL[fiiSegment], analysis.ticker) : [];
       const sectorBenchmark = await getSectorBenchmark(
         assetFundamentals
           ? benchmarkGroupFor(assetFundamentals, fiiProfileByTicker.get(analysis.ticker) ?? undefined)
@@ -841,6 +855,8 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         sector: assetFundamentals?.sector ?? null,
         fiiProfile: fiiProfileByTicker.get(analysis.ticker) ?? null,
         fiiCvmData,
+        fiiPriceZones,
+        fiiPeers,
         sectorComparison,
         dividendValue,
       });

@@ -1,5 +1,6 @@
 import type { FiiCvmData } from "./cvm-data";
 import type { FiiProfile, FiiSegment, Fundamentals, OhlcPoint } from "./market-data";
+import { FII_PVP_HEALTHY_DISCOUNT_RANGE, FII_YIELD_PREMIUM_GOOD_THRESHOLD, FII_YIELD_PREMIUM_STRONG_THRESHOLD, FIXED_INCOME_TAX_RATE } from "./analysis-engine";
 
 // O que cada segmento implica de risco — é o contexto que falta pra IA ler o dividend
 // yield de um FII corretamente. Um DY de 12% num fundo de papel e num de tijolo
@@ -64,7 +65,7 @@ export function describeFiiProfile(profile: FiiProfile | null): string {
   return parts.join("; ") + ".";
 }
 
-const FII_SEGMENT_LABEL: Record<FiiSegment, string> = {
+export const FII_SEGMENT_LABEL: Record<FiiSegment, string> = {
   papel: "FII de Papel",
   tijolo: "FII de Tijolo",
   hibrido: "FII Híbrido",
@@ -236,4 +237,76 @@ export function describeFiiCvmComposition(cvmData: FiiCvmData | null): string {
   }
 
   return `Composição real da carteira (CVM, referência ${referencia}): ${parts.join(", ")}.${taxaPart}`;
+}
+
+/**
+ * Zonas de preço em R$ — não uma opinião nova, é a régua de FII que já existe
+ * (`evalFiiPriceToNav`/`evalFiiYield` acima) convertida de nota 0-100 pra preço real,
+ * usando o VP/cota e o provento real de hoje. As DUAS curvas já eram medidas contra o
+ * universo real de FIIs antes de virarem constante (ver os comentários delas); aqui só
+ * reaproveitamos os mesmos breakpoints, nunca um novo número.
+ *
+ * Duas zonas, propositalmente NÃO combinadas numa única faixa: a de P/VP mede desconto
+ * patrimonial, a de yield mede renda exigida contra o risco-livre — são leituras
+ * diferentes que podem discordar entre si, e forçar uma média esconderia esse
+ * desacordo em vez de mostrá-lo.
+ */
+export interface FiiPriceZones {
+  /** VP/cota real, derivado do preço atual e do P/VP (price ÷ priceToNav). */
+  navPerShare: number;
+  /** Zona pela curva de P/VP (0,85–0,95 do VP/cota) — mesma curva de evalFiiPriceToNav. */
+  pvpZoneLow: number;
+  pvpZoneHigh: number;
+  /** Zona pelo yield exigido (2–4 p.p. acima da Selic líquida) — null sem provento real ou Selic. */
+  yieldZoneLow: number | null;
+  yieldZoneHigh: number | null;
+}
+
+/**
+ * `null` sem preço ou P/VP real — nunca estima VP/cota a partir de nada. A zona de
+ * yield fica null à parte (dentro do objeto) quando falta provento real dos últimos 12
+ * meses ou Selic, sem derrubar a zona de P/VP, que não depende desses dois.
+ */
+export function computeFiiPriceZones(
+  price: number,
+  priceToNav: number,
+  annualDividendPerUnit: number | null,
+  selicPercent: number | null,
+): FiiPriceZones | null {
+  if (price <= 0 || priceToNav <= 0) return null;
+
+  const navPerShare = price / priceToNav;
+  const pvpZoneLow = FII_PVP_HEALTHY_DISCOUNT_RANGE[0] * navPerShare;
+  const pvpZoneHigh = FII_PVP_HEALTHY_DISCOUNT_RANGE[1] * navPerShare;
+
+  let yieldZoneLow: number | null = null;
+  let yieldZoneHigh: number | null = null;
+  if (annualDividendPerUnit != null && annualDividendPerUnit > 0 && selicPercent != null) {
+    const referenceYield = selicPercent * (1 - FIXED_INCOME_TAX_RATE);
+    const requiredGood = referenceYield + FII_YIELD_PREMIUM_GOOD_THRESHOLD;
+    const requiredStrong = referenceYield + FII_YIELD_PREMIUM_STRONG_THRESHOLD;
+    // Prêmio maior exige yield maior, o que implica preço MENOR (yield = provento/preço)
+    // — por isso requiredStrong (o prêmio mais alto) vira o preço mais baixo da zona.
+    if (requiredGood > 0 && requiredStrong > 0) {
+      yieldZoneHigh = annualDividendPerUnit / (requiredGood / 100);
+      yieldZoneLow = annualDividendPerUnit / (requiredStrong / 100);
+    }
+  }
+
+  return { navPerShare, pvpZoneLow, pvpZoneHigh, yieldZoneLow, yieldZoneHigh };
+}
+
+export function describeFiiPriceZones(zones: FiiPriceZones | null): string {
+  if (!zones) return "";
+
+  const parts = [
+    `zona de desconto saudável por P/VP (${FII_PVP_HEALTHY_DISCOUNT_RANGE[0].toFixed(2)}–${FII_PVP_HEALTHY_DISCOUNT_RANGE[1].toFixed(2)} do VP/cota real de R$${zones.navPerShare.toFixed(2)}): R$${zones.pvpZoneLow.toFixed(2)}–R$${zones.pvpZoneHigh.toFixed(2)}`,
+  ];
+  if (zones.yieldZoneLow != null && zones.yieldZoneHigh != null) {
+    parts.push(
+      `zona de preço pelo yield exigido (${FII_YIELD_PREMIUM_GOOD_THRESHOLD}–${FII_YIELD_PREMIUM_STRONG_THRESHOLD} p.p. acima da Selic líquida de IR, sobre o provento real dos últimos 12 meses): R$${zones.yieldZoneLow.toFixed(2)}–R$${zones.yieldZoneHigh.toFixed(2)}`,
+    );
+  }
+
+  return `Zonas de preço calculadas a partir das mesmas curvas reais da régua de FII (não é previsão nem recomendação, é a régua de score convertida em R$): ${parts.join("; ")}.`;
 }

@@ -304,6 +304,31 @@ acima se recusa a fazer só com o rótulo de segmento, porque agora existe o nú
 no informe mais recente da CVM — nunca mostra 0% de taxa de administração quando o dado simplesmente
 não veio preenchido, o que seria dizer "gestão gratuita" sem base.
 
+### Zonas de preço em R$ — a mesma régua, convertida em número
+
+`computeFiiPriceZones` (`fii-engine.ts`) não inventa um preço-alvo: pega as duas curvas que a régua
+de FII já usa pra pontuar — desconto saudável de P/VP (0,85–0,95) e prêmio de yield sobre a Selic
+líquida (2–4 p.p.) — e converte os pontos de virada delas em R$, usando o VP/cota e o provento real
+de hoje. Duas zonas, de propósito não combinadas numa única faixa: uma mede desconto patrimonial, a
+outra mede renda exigida contra o risco-livre, e podem discordar entre si — combiná-las esconderia
+esse desacordo.
+
+Testado contra o CYCR11 em 18/08 (preço R$8,20, P/VP 0,87): a régua devolveu R$8,05–R$9,00 pela
+curva de P/VP, quase idêntico à faixa de R$8,00–R$9,00 que uma análise externa detalhada (CRI por
+CRI, devedor por devedor) chegou por conta própria — só que aqui é aritmética automática sobre uma
+régua já medida contra o universo real, não uma segunda opinião.
+
+### Pares reais nomeados, não só a mediana
+
+`describeSectorComparison` (`sector-benchmarks.ts`) compara P/L, ROE e DY contra a mediana do
+setor — mas `Fundamentals` não carrega P/VP (é métrica de empresa; FII não tem P/L nem ROE), então
+pra FII a comparação de fato útil, P/VP contra pares, nunca aparecia. `getFiiPeers`
+(`sector-benchmarks.ts`) fecha isso: busca no `opportunities` (persistido semanalmente, mesma fonte
+da mediana) até 3 fundos do mesmo segmento, com P/VP e DY reais vindos ao vivo de `getFiiProfiles`.
+Limitação declarada, não escondida: só entram fundos que passaram no piso de elegibilidade da
+última varredura — um par real do segmento pode ficar de fora por não atender liquidez/patrimônio
+mínimo, não por não existir.
+
 ---
 
 ## Status: dois "Vender" que pedem coisas opostas
@@ -509,12 +534,14 @@ sugerir zero cotas em silêncio — o app diz por que não é seguro comprar mai
 
 ## Onde a IA entra — e o que ela não decide
 
-Seis pontos, todos em `claude-haiku-4-5-20251001`. Os prompts exatos estão em
-[`analises-ia.md`](./analises-ia.md).
+Seis pontos. Os dois que cruzam mais sinais ao mesmo tempo (parecer de ativo e parecer pré-compra)
+rodam em `claude-sonnet-5`; os quatro restantes — classificação simples ou geração em lote sobre
+dezenas de tickers — continuam em `claude-haiku-4-5-20251001`, onde o ganho de qualidade não paga o
+custo/latência extra. Os prompts exatos estão em [`analises-ia.md`](./analises-ia.md).
 
 | Ponto | Recebe | Devolve | Decide |
 |---|---|---|---|
-| **Parecer de ativo** | Score, positivos, riscos, notícias, macro, imposto, concentração, técnico, DuPont, saúde financeira | 2–6 frases de leitura cruzada | **nada** |
+| **Parecer de ativo** | Score, positivos, riscos, notícias, macro, imposto, concentração, técnico, DuPont, saúde financeira, zonas de preço e pares reais de FII | 2–6 frases de leitura cruzada | **nada** |
 | **Parecer pré-compra** | O mesmo conjunto, sem posição | 2–6 frases | **nada** |
 | **Diagnóstico da carteira** | Score de saúde e as 5 dimensões, composição, macro | 3–6 frases interpretando sem repetir os números | **nada** |
 | **Narrativa de mercado** | Janelas de variação, atribuição por contribuição, manchetes reais, macro | 2–4 frases, com permissão de dizer "não sei" | **nada** |
