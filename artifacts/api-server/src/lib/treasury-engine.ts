@@ -84,7 +84,7 @@ function minimumInvestmentFor(unitPrice: number): number {
  * a Selic e não o rendimento — mostrado sem rótulo, o título mais conservador da praça
  * pareceria render zero.
  */
-function rateLabelFor(indexer: TreasuryIndexer, rate: number): string {
+export function rateLabelFor(indexer: TreasuryIndexer, rate: number): string {
   const formatted = rate.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (indexer === "selic") {
     // O sinal importa: deságio (positivo) rende Selic + algo, ágio rende Selic − algo.
@@ -92,6 +92,24 @@ function rateLabelFor(indexer: TreasuryIndexer, rate: number): string {
   }
   if (indexer === "ipca") return `IPCA + ${formatted}% a.a.`;
   return `${formatted}% a.a.`;
+}
+
+/** Família (nome publicado pelo Tesouro) -> indexador, pela mesma allowlist de SUGGESTABLE.
+ *  null para família fora dela (ex. só-recompra, sem oferta ativa) — degrada, não quebra. */
+export function indexerForBondType(bondType: string): TreasuryIndexer | null {
+  return SUGGESTABLE[bondType]?.indexer ?? null;
+}
+
+/**
+ * Nota de liquidez sobre resgate antecipado — mesma lógica já usada como alternativa em
+ * reasonFor(), extraída porque o Parecer de Título Público precisa dela sozinha, sem o
+ * resto do contexto de sugestão de aporte.
+ */
+export function liquidityNoteFor(indexer: TreasuryIndexer): string {
+  if (indexer === "selic") {
+    return "Este é o único título do Tesouro cujo resgate antecipado não sofre marcação a mercado — dá para vender a qualquer momento sem risco de prejuízo por oscilação de taxa.";
+  }
+  return "Diferente do Tesouro Selic, este título tem marcação a mercado no resgate antecipado — vender antes do vencimento pode dar prejuízo se a taxa de mercado subir depois da compra.";
 }
 
 function yearsUntil(maturityDate: string, now: Date): number {

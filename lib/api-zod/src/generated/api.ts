@@ -486,6 +486,44 @@ export const GetTreasuryPriceOnDateResponse = zod.object({
 
 
 /**
+ * @summary Comparação de taxa para um título do Tesouro Direto — o equivalente de "parecer" que renda fixa admite. Não tem score: compara a taxa de hoje deste título contra a própria faixa recente dele e contra Selic/IPCA atuais, nunca contra outro título.
+ */
+export const getTreasuryOpinionQueryMaturityDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const GetTreasuryOpinionQueryParams = zod.object({
+  "bondType": zod.coerce.string(),
+  "maturityDate": zod.coerce.string().regex(getTreasuryOpinionQueryMaturityDateRegExp)
+})
+
+export const GetTreasuryOpinionResponse = zod.object({
+  "bondType": zod.string(),
+  "maturityDate": zod.coerce.date(),
+  "label": zod.string(),
+  "baseDate": zod.coerce.date(),
+  "buyRate": zod.number(),
+  "buyUnitPrice": zod.number(),
+  "rateLabel": zod.string().describe('Taxa já rotulada conforme a família — ver TreasurySuggestion.rateLabel.'),
+  "indexer": zod.union([zod.literal('selic'),zod.literal('ipca'),zod.literal('prefixado'),zod.literal(null)]).nullable().describe('Null para família fora da allowlist de sugestão (ex. só-recompra, sem oferta ativa).'),
+  "rateRange": zod.union([zod.object({
+  "days": zod.number(),
+  "min": zod.number(),
+  "max": zod.number(),
+  "avg": zod.number(),
+  "sampleCount": zod.number().describe('Quantidade de dias-base na janela. A faixa só existe quando há pelo menos 15.'),
+  "percentile": zod.number().nullable().describe('Posição da taxa de hoje na faixa, 0-100. Null quando a taxa não se moveu na janela (mín. igual ao máx.) — não há posição relativa real pra reportar.')
+}).describe('Faixa da taxa de compra do MESMO título nos últimos `days` dias-base publicados — nunca comparada contra outro título, que teria prêmio de prazo diferente.'),zod.null()]).describe('Null quando o histórico na janela de 90 dias é curto demais pra uma faixa confiável.'),
+  "macro": zod.object({
+  "selic": zod.number().nullable(),
+  "selicTrend": zod.union([zod.literal('alta'),zod.literal('queda'),zod.literal('estavel'),zod.literal(null)]).nullable(),
+  "ipca12m": zod.number().nullable(),
+  "realInterestRate": zod.number().nullable().describe('Juro real ex-post pela fórmula de Fisher, em %.')
+}),
+  "liquidityNote": zod.string().describe('Nota sobre marcação a mercado no resgate antecipado — só o Tesouro Selic escapa dela.')
+}).describe('Comparação de taxa pra um título específico do Tesouro Direto — não é score, é a taxa de hoje contra a própria faixa recente do título e contra o cenário de juro atual. Sem IA: todo campo aqui é número real ou texto determinístico sobre ele.')
+
+
+/**
  * @summary Alocação-alvo por classe e desvio da carteira real em relação a ela
  */
 export const GetAllocationResponse = zod.object({

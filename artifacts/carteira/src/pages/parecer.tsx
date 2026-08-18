@@ -1,14 +1,21 @@
 import { useState, type FormEvent } from "react";
-import { useGetAssetOpinion, getGetAssetOpinionQueryKey } from "@workspace/api-client-react";
+import {
+  useGetAssetOpinion, getGetAssetOpinionQueryKey,
+  useListTreasuryBonds, getListTreasuryBondsQueryKey,
+  useGetTreasuryOpinion, getGetTreasuryOpinionQueryKey,
+} from "@workspace/api-client-react";
 import { usePriceTarget } from "@/hooks/use-price-target";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Check, AlertTriangle, Newspaper, Sparkles, TrendingUp, Coins, LineChart, CalendarClock } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { NewsHeadlineItem } from "@/components/news-headline-item";
+import { TreasuryOpinionCard } from "@/components/treasury-opinion-card";
 
 /**
  * Preço-alvo do usuário para o ticker consultado.
@@ -202,6 +209,8 @@ const CROSS_SIGNAL_LABELS: Record<string, string> = {
 };
 
 export default function Parecer() {
+  const [mode, setMode] = useState<"cotado" | "tesouro">("cotado");
+
   const [ticker, setTicker] = useState("");
   const [submittedTicker, setSubmittedTicker] = useState<string | null>(null);
 
@@ -224,30 +233,106 @@ export default function Parecer() {
       ? Math.min(100, Math.max(0, ((opinion.price - opinion.fiftyTwoWeekLow) / (opinion.fiftyTwoWeekHigh - opinion.fiftyTwoWeekLow)) * 100))
       : null;
 
+  // Título público não tem ticker — mesmo padrão de seleção já usado no cadastro de
+  // ativo (carteira.tsx): um único Select com a lista sincronizada, chaveado por
+  // "bondType|maturityDate" porque o par é o identificador real, não o rótulo.
+  const [treasuryKey, setTreasuryKey] = useState("");
+  const [submittedTreasuryRef, setSubmittedTreasuryRef] = useState<{ bondType: string; maturityDate: string } | null>(null);
+
+  const { data: treasuryBonds } = useListTreasuryBonds({
+    query: { queryKey: getListTreasuryBondsQueryKey(), enabled: mode === "tesouro" },
+  });
+  const selectedTreasuryBond = treasuryBonds?.find((b) => `${b.bondType}|${b.maturityDate}` === treasuryKey) ?? null;
+
+  const { data: treasuryOpinion, isLoading: isTreasuryLoading, isError: isTreasuryError } = useGetTreasuryOpinion(
+    submittedTreasuryRef ?? { bondType: "", maturityDate: "" },
+    {
+      query: {
+        queryKey: getGetTreasuryOpinionQueryKey(submittedTreasuryRef ?? { bondType: "", maturityDate: "" }),
+        enabled: !!submittedTreasuryRef,
+        retry: false,
+      },
+    },
+  );
+
+  const handleTreasurySubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (selectedTreasuryBond) {
+      setSubmittedTreasuryRef({ bondType: selectedTreasuryBond.bondType, maturityDate: selectedTreasuryBond.maturityDate });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Parecer de Ativo</h1>
-        <p className="text-muted-foreground">Consulte um ticker antes de comprar — fundamentos, tendência de dividendo, notícias e leitura da IA, mesmo sem tê-lo na carteira.</p>
+        <p className="text-muted-foreground">Consulte um ativo antes de comprar — ações, FIIs, ETFs e, agora, Tesouro Direto — mesmo sem tê-lo na carteira.</p>
       </div>
 
       <Card>
         <CardContent className="pt-6">
-          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3">
-            <Input
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value.toUpperCase())}
-              placeholder="Ex: WEGE3, HGLG11, BOVA11..."
-              className="font-mono"
-            />
-            <Button type="submit" disabled={isLoading} className="gap-2 shrink-0">
-              <Search className="w-4 h-4" />
-              {isLoading ? "Buscando..." : "Consultar"}
-            </Button>
-          </form>
+          <Tabs value={mode} onValueChange={(v) => setMode(v as "cotado" | "tesouro")}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="cotado">Ativo cotado</TabsTrigger>
+              <TabsTrigger value="tesouro">Título público</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {mode === "cotado" ? (
+            <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3">
+              <Input
+                value={ticker}
+                onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                placeholder="Ex: WEGE3, HGLG11, BOVA11..."
+                className="font-mono"
+              />
+              <Button type="submit" disabled={isLoading} className="gap-2 shrink-0">
+                <Search className="w-4 h-4" />
+                {isLoading ? "Buscando..." : "Consultar"}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleTreasurySubmit} className="flex flex-col sm:flex-row gap-3">
+              <Select value={treasuryKey} onValueChange={setTreasuryKey}>
+                <SelectTrigger><SelectValue placeholder="Selecione o título…" /></SelectTrigger>
+                <SelectContent>
+                  {(treasuryBonds ?? []).map((b) => (
+                    <SelectItem key={`${b.bondType}|${b.maturityDate}`} value={`${b.bondType}|${b.maturityDate}`}>
+                      {b.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button type="submit" disabled={isTreasuryLoading || !selectedTreasuryBond} className="gap-2 shrink-0">
+                <Search className="w-4 h-4" />
+                {isTreasuryLoading ? "Buscando..." : "Consultar"}
+              </Button>
+            </form>
+          )}
+          {mode === "tesouro" && treasuryBonds?.length === 0 && (
+            <p className="mt-2 text-xs text-muted-foreground text-pretty">
+              A lista do Tesouro Direto ainda não foi sincronizada — ela é atualizada uma vez por dia.
+            </p>
+          )}
         </CardContent>
       </Card>
 
+      {mode === "tesouro" ? (
+        <>
+          {isTreasuryLoading && (
+            <Card className="animate-pulse h-40 bg-muted/20" />
+          )}
+          {isTreasuryError && (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">
+                <p className="font-medium">Título não encontrado no catálogo sincronizado.</p>
+              </CardContent>
+            </Card>
+          )}
+          {treasuryOpinion && <TreasuryOpinionCard opinion={treasuryOpinion} />}
+        </>
+      ) : (
+        <>
       {isLoading && (
         <Card className="animate-pulse h-40 bg-muted/20" />
       )}
@@ -453,6 +538,8 @@ export default function Parecer() {
             </div>
           </div>
         </Card>
+      )}
+        </>
       )}
     </div>
   );

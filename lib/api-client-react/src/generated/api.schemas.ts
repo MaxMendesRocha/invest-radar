@@ -1496,6 +1496,86 @@ export interface TreasuryBondOption {
   label: string;
 }
 
+/**
+ * Faixa da taxa de compra do MESMO título nos últimos `days` dias-base publicados — nunca comparada contra outro título, que teria prêmio de prazo diferente.
+ */
+export interface TreasuryRateRange {
+  days: number;
+  min: number;
+  max: number;
+  avg: number;
+  /** Quantidade de dias-base na janela. A faixa só existe quando há pelo menos 15. */
+  sampleCount: number;
+  /**
+     * Posição da taxa de hoje na faixa, 0-100. Null quando a taxa não se moveu na janela (mín. igual ao máx.) — não há posição relativa real pra reportar.
+     * @nullable
+     */
+  percentile: number | null;
+}
+
+/**
+ * Null para família fora da allowlist de sugestão (ex. só-recompra, sem oferta ativa).
+ * @nullable
+ */
+export type TreasuryOpinionIndexer = typeof TreasuryOpinionIndexer[keyof typeof TreasuryOpinionIndexer] | null;
+
+
+export const TreasuryOpinionIndexer = {
+  selic: 'selic',
+  ipca: 'ipca',
+  prefixado: 'prefixado',
+} as const;
+
+/**
+ * @nullable
+ */
+export type TreasuryOpinionMacroSelicTrend = typeof TreasuryOpinionMacroSelicTrend[keyof typeof TreasuryOpinionMacroSelicTrend] | null;
+
+
+export const TreasuryOpinionMacroSelicTrend = {
+  alta: 'alta',
+  queda: 'queda',
+  estavel: 'estavel',
+} as const;
+
+export type TreasuryOpinionMacro = {
+  /** @nullable */
+  selic: number | null;
+  /** @nullable */
+  selicTrend: TreasuryOpinionMacroSelicTrend;
+  /** @nullable */
+  ipca12m: number | null;
+  /**
+     * Juro real ex-post pela fórmula de Fisher, em %.
+     * @nullable
+     */
+  realInterestRate: number | null;
+};
+
+/**
+ * Comparação de taxa pra um título específico do Tesouro Direto — não é score, é a taxa de hoje contra a própria faixa recente do título e contra o cenário de juro atual. Sem IA: todo campo aqui é número real ou texto determinístico sobre ele.
+ */
+export interface TreasuryOpinion {
+  bondType: string;
+  maturityDate: string;
+  label: string;
+  baseDate: string;
+  buyRate: number;
+  buyUnitPrice: number;
+  /** Taxa já rotulada conforme a família — ver TreasurySuggestion.rateLabel. */
+  rateLabel: string;
+  /**
+     * Null para família fora da allowlist de sugestão (ex. só-recompra, sem oferta ativa).
+     * @nullable
+     */
+  indexer: TreasuryOpinionIndexer;
+  /** Null quando o histórico na janela de 90 dias é curto demais pra uma faixa confiável. */
+  rateRange: TreasuryRateRange | null;
+  macro: TreasuryOpinionMacro;
+  /** Nota sobre marcação a mercado no resgate antecipado — só o Tesouro Selic escapa dela. */
+  liquidityNote: string;
+}
+
 export interface TreasurySuggestion {
   bondType: string;
   maturityDate: string;
@@ -1610,6 +1690,14 @@ maturityDate: string;
  * @pattern ^\d{4}-\d{2}-\d{2}$
  */
 date: string;
+};
+
+export type GetTreasuryOpinionParams = {
+bondType: string;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+maturityDate: string;
 };
 
 export type GetAllocationPlanParams = {

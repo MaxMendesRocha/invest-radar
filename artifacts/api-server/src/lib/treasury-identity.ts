@@ -1,5 +1,5 @@
 import { db, treasuryBondsTable, type TreasuryBond } from "@workspace/db";
-import { and, desc, eq, lte, max } from "drizzle-orm";
+import { and, avg, count, desc, eq, gte, lte, max, min } from "drizzle-orm";
 
 /**
  * Identidade de uma posição em título público.
@@ -86,6 +86,57 @@ export async function priceOnDate(ref: TreasuryRef, date: string): Promise<{ bas
   if (!row) return null;
   const price = parseFloat(row.buyUnitPrice);
   return Number.isFinite(price) && price > 0 ? { baseDate: row.baseDate, buyUnitPrice: price } : null;
+}
+
+export interface TreasuryRateRange {
+  days: number;
+  min: number;
+  max: number;
+  avg: number;
+  sampleCount: number;
+}
+
+/** Amostra mínima de pregões na janela pra faixa valer alguma coisa — abaixo disso o
+ *  histórico é curto demais (título recém-emitido, ou janela cruzando um período sem
+ *  sincronização) e devolver uma faixa calculada em cima de poucos pontos seria uma
+ *  medição disfarçada de robustez que ela não tem. */
+const MIN_SAMPLE_FOR_RANGE = 15;
+
+function daysAgoIso(days: number, now: Date): string {
+  const d = new Date(now);
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Faixa (mín/máx/média) da taxa de compra de um título nos últimos `days` dias-base
+ * publicados. Usada para comparar a taxa de hoje contra o próprio histórico recente do
+ * MESMO título — nunca contra outro título, que teria prêmio de prazo diferente.
+ */
+export async function rateRangeFor(ref: TreasuryRef, days: number): Promise<TreasuryRateRange | null> {
+  const since = daysAgoIso(days, new Date());
+  const [row] = await db
+    .select({
+      min: min(treasuryBondsTable.buyRate),
+      max: max(treasuryBondsTable.buyRate),
+      avg: avg(treasuryBondsTable.buyRate),
+      sampleCount: count(),
+    })
+    .from(treasuryBondsTable)
+    .where(and(
+      eq(treasuryBondsTable.bondType, ref.bondType),
+      eq(treasuryBondsTable.maturityDate, ref.maturityDate),
+      gte(treasuryBondsTable.baseDate, since),
+    ));
+
+  if (!row || row.sampleCount < MIN_SAMPLE_FOR_RANGE || row.min == null || row.max == null || row.avg == null) return null;
+
+  const min_ = parseFloat(row.min);
+  const max_ = parseFloat(row.max);
+  const avg_ = parseFloat(row.avg);
+  if (!Number.isFinite(min_) || !Number.isFinite(max_) || !Number.isFinite(avg_)) return null;
+
+  return { days, min: min_, max: max_, avg: avg_, sampleCount: row.sampleCount };
 }
 
 export async function listTreasuryBondOptions(): Promise<TreasuryBondOption[]> {
