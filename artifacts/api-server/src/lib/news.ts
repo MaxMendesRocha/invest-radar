@@ -53,12 +53,34 @@ export interface NewsHeadline {
   link: string;
   publishedAt: string;
   impact: NewsImpact | null; // null when no ANTHROPIC_API_KEY is configured yet
+  summary: string | null; // real excerpt from the publisher's own RSS <description>, cleaned — null when the feed didn't include one
 }
 
 interface RawFeedItem {
   title: string;
   link: string;
   pubDate: string;
+  /** HTML bruto do <description> do RSS — resumo curto que o próprio InfoMoney publica pra syndication, não a matéria inteira. */
+  description?: string;
+}
+
+/**
+ * `<description>` do RSS do InfoMoney vem em HTML, com uma imagem embutida, o resumo
+ * de fato, e um rodapé fixo que o WordPress cola em toda entrada ("The post
+ * <título> appeared first on InfoMoney."). Corta no início desse rodapé em vez de por
+ * regex no texto inteiro — mais robusto, porque o título dentro do rodapé pode ter
+ * qualquer pontuação.
+ *
+ * `null` quando não sobra nada de real depois da limpeza — nunca um resumo vazio
+ * fingindo ser conteúdo.
+ */
+function cleanSummary(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const withoutTags = raw.replace(/<[^>]*>/g, " ");
+  const boilerplateStart = withoutTags.indexOf("The post ");
+  const withoutBoilerplate = boilerplateStart >= 0 ? withoutTags.slice(0, boilerplateStart) : withoutTags;
+  const collapsed = withoutBoilerplate.replace(/\s+/g, " ").trim();
+  return collapsed.length > 0 ? collapsed : null;
 }
 
 const searchCache = new Map<string, { items: RawFeedItem[]; fetchedAt: number }>();
@@ -90,6 +112,7 @@ async function fetchSearchFeed(term: string): Promise<RawFeedItem[]> {
         title: String(item.title),
         link: String(item.link),
         pubDate: String(item.pubDate ?? ""),
+        description: item.description != null ? String(item.description) : undefined,
       }));
 
     searchCache.set(term, { items, fetchedAt: now });
@@ -162,6 +185,7 @@ export async function getNewsFor(term: string, limit = 3): Promise<NewsHeadline[
       link: item.link,
       publishedAt: item.pubDate,
       impact: await classifyImpact(item.title),
+      summary: cleanSummary(item.description),
     }))
   );
 }

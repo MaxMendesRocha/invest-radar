@@ -9,6 +9,7 @@ import type { AssetOpinionDividendFrequency } from './assetOpinionDividendFreque
 import type { AssetOpinionDividendTrend } from './assetOpinionDividendTrend';
 import type { AssetOpinionScoreClassification } from './assetOpinionScoreClassification';
 import type { DividendEntitlementPreview } from './dividendEntitlementPreview';
+import type { NewsItem } from './newsItem';
 import type { PurchaseScreening } from './purchaseScreening';
 import type { TechnicalIndicators } from './technicalIndicators';
 
@@ -47,7 +48,7 @@ export interface AssetOpinion {
   nextDividend?: DividendEntitlementPreview | null;
   /** Presente só quando `nextDividend` existe e `entitledIfBoughtToday` é false: o próximo provento que uma compra hoje efetivamente alcançaria. Null quando o mais próximo já é o certo, ou quando nada mais está anunciado depois dele. */
   nextEntitledDividend?: DividendEntitlementPreview | null;
-  newsItems: string[];
+  newsItems: NewsItem[];
   opinion: string;
   screening: PurchaseScreening;
   updatedAt: Date;

@@ -9,6 +9,7 @@ import type { AssetAnalysisDividendFrequency } from './assetAnalysisDividendFreq
 import type { AssetAnalysisScoreClassification } from './assetAnalysisScoreClassification';
 import type { AssetAnalysisStatus } from './assetAnalysisStatus';
 import type { AssetAnalysisStatusReason } from './assetAnalysisStatusReason';
+import type { NewsItem } from './newsItem';
 import type { TaxEstimate } from './taxEstimate';
 import type { TechnicalIndicators } from './technicalIndicators';
 import type { TrimSuggestion } from './trimSuggestion';
@@ -29,7 +30,7 @@ export interface AssetAnalysis {
   scoreClassification: AssetAnalysisScoreClassification;
   positives: string[];
   risks: string[];
-  newsItems: string[];
+  newsItems: NewsItem[];
   alerts: string[];
   monitoringRecommendation: string;
   /** Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível. */

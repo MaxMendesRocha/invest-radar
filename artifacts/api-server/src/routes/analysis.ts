@@ -24,7 +24,7 @@ import {
   type DividendEvent,
 } from "../lib/market-data";
 import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, analyzeFii, computeDuPontBreakdown, computeTrimSuggestion, resolveStatusReason, screenForPurchase, type AnalysisResult, concentrationLimitsFor, type ConcentrationLimits } from "../lib/analysis-engine";
-import { getNewsFor, resolveSearchTerm, type NewsHeadline } from "../lib/news";
+import { getNewsFor, resolveSearchTerm, type NewsHeadline, type NewsImpact } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { getCdiTrailingAnnual } from "../lib/benchmark-data";
 import { synthesizeAssetRecommendation } from "../lib/analysis-ai";
@@ -319,17 +319,54 @@ interface FiiContext {
 
 const EMPTY_FII_CONTEXT: FiiContext = { profileByTicker: new Map(), eventsByTicker: new Map(), selicPercent: null };
 
+// Só pro TEXTO que vai pro PROMPT da IA (analysis-ai.ts/opinion-ai.ts) — a IA não
+// precisa de link nem de resumo, só do título com o impacto já classificado.
 function formatHeadline(item: NewsHeadline): string {
   return item.impact ? `[${item.impact}] ${item.title}` : item.title;
+}
+
+/**
+ * Notícia como a API/tela precisam: título, impacto, link real pro artigo e resumo
+ * real do próprio RSS do publisher (ver cleanSummary, news.ts) — o que permite abrir
+ * a matéria de verdade ou um resumo em vez de só um título sem saída nenhuma.
+ */
+export interface NewsItemView {
+  title: string;
+  impact: NewsImpact | null;
+  link: string;
+  summary: string | null;
+}
+
+function toNewsItemView(item: NewsHeadline): NewsItemView {
+  return { title: item.title, impact: item.impact, link: item.link, summary: item.summary };
+}
+
+/**
+ * `analyses.news_items` guardava só string formatada ("[Positivo] título") antes desta
+ * mudança — sem link nem resumo real. Uma linha antiga ainda parseia (degrada pra sem
+ * link/resumo em vez de quebrar a tela) e é substituída pra sempre na próxima geração
+ * (POST /analysis/generate sobrescreve a tabela inteira).
+ */
+function parseNewsItems(raw: string): NewsItemView[] {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) return [];
+  return parsed.map((item): NewsItemView => {
+    if (typeof item === "string") {
+      const match = item.match(/^\[(.+?)\] ([\s\S]*)$/);
+      return { title: match ? match[2] : item, impact: (match?.[1] as NewsImpact) ?? null, link: "", summary: null };
+    }
+    const obj = item as Partial<NewsItemView>;
+    return { title: obj.title ?? "", impact: obj.impact ?? null, link: obj.link ?? "", summary: obj.summary ?? null };
+  });
 }
 
 // Real, relevant headlines for a ticker — see resolveSearchTerm's comment for how the
 // search term is picked. Renda fixa/fundos have no company to search for, so they
 // never get news.
-async function getNewsItemsFor(ticker: string, category: string): Promise<string[]> {
+async function getNewsItemsFor(ticker: string, category: string): Promise<NewsItemView[]> {
   if (!QUOTED_CATEGORIES.has(category)) return [];
   const headlines = await getNewsFor(resolveSearchTerm(ticker), 3);
-  return headlines.map(formatHeadline);
+  return headlines.map(toNewsItemView);
 }
 
 function serializePersisted(
@@ -373,7 +410,7 @@ function serializePersisted(
     scoreClassification: row.scoreClassification,
     positives: JSON.parse(row.positives) as string[],
     risks: JSON.parse(row.risks) as string[],
-    newsItems: JSON.parse(row.newsItems) as string[],
+    newsItems: parseNewsItems(row.newsItems),
     alerts: JSON.parse(row.alerts) as string[],
     monitoringRecommendation: row.monitoringRecommendation,
     // Persistido no momento do POST /analysis/generate (preço daquele instante) —
@@ -429,7 +466,7 @@ function buildTrim(
   };
 }
 
-function toApiShape(ticker: string, result: AnalysisResult, newsItems: string[], dividendFrequency: DividendFrequencyLabel | null, trim: ReturnType<typeof buildTrim> = null) {
+function toApiShape(ticker: string, result: AnalysisResult, newsItems: NewsItemView[], dividendFrequency: DividendFrequencyLabel | null, trim: ReturnType<typeof buildTrim> = null) {
   return {
     ticker: ticker.toUpperCase(),
     available: result.available,
@@ -606,7 +643,8 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
   const sectorComparison = fundamentals
     ? describeSectorComparison(fundamentals, sectorBenchmark)
     : "Comparação com o setor não disponível (fundamentos não encontrados para este ativo).";
-  const newsItems = newsHeadlines.map(formatHeadline);
+  const aiNewsItems = newsHeadlines.map(formatHeadline);
+  const newsItems = newsHeadlines.map(toNewsItemView);
   const name = fundamentals?.name ?? null;
 
   // "Se eu comprar hoje, recebo o próximo provento anunciado?" — pergunta binária que
@@ -653,7 +691,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     fiiPeers,
     sectorComparison,
     dividendValue,
-    newsItems,
+    newsItems: aiNewsItems,
     macro,
   });
 
@@ -785,7 +823,9 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   // deixava uma carteira de 5 ativos demorando ~20s pra gerar.
   await Promise.all(
     available.map(async (analysis) => {
-      const newsItems = (newsByTicker.get(analysis.ticker) ?? []).map(formatHeadline);
+      const tickerHeadlines = newsByTicker.get(analysis.ticker) ?? [];
+      const aiNewsItems = tickerHeadlines.map(formatHeadline);
+      const newsItems = tickerHeadlines.map(toNewsItemView);
 
       const asset = assetsByTicker.get(analysis.ticker);
       const currentPrice = asset ? (prices.get(analysis.ticker)?.price ?? parseFloat(asset.averagePrice)) : null;
@@ -842,7 +882,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         status: analysis.status,
         positives: analysis.positives,
         risks: analysis.risks,
-        newsItems,
+        newsItems: aiNewsItems,
         macro,
         tax,
         positionPercent,
@@ -1022,7 +1062,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
     },
     analyses: analyses.map((a) => ({
       ...a,
-      newsItems: (newsByTicker.get(a.ticker) ?? []).map(formatHeadline),
+      newsItems: (newsByTicker.get(a.ticker) ?? []).map(toNewsItemView),
       alerts: a.available && a.risks.length > 0 ? [a.risks[0]] : [],
     })),
     topAlerts: alertRows.slice(0, 5).map((a) => ({

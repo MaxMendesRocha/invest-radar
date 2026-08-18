@@ -969,7 +969,12 @@ export const ListAssetAnalysesResponseItem = zod.object({
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
   "risks": zod.array(zod.string()),
-  "newsItems": zod.array(zod.string()),
+  "newsItems": zod.array(zod.object({
+  "title": zod.string(),
+  "impact": zod.union([zod.literal('Muito Positivo'),zod.literal('Positivo'),zod.literal('Neutro'),zod.literal('Negativo'),zod.literal('Muito Negativo'),zod.literal(null)]).nullable(),
+  "link": zod.string().describe('URL real do artigo no InfoMoney. String vazia em notícia persistida antes desta mudança (sem link salvo).'),
+  "summary": zod.string().nullable().describe('Resumo curto real do RSS, HTML e rodapé do WordPress já removidos. Null sem resumo disponível.')
+}).describe('Notícia real do RSS do InfoMoney — título, impacto classificado, link real pro artigo e um resumo curto vindo do próprio <description> do feed (não é raspagem de página, é o campo que o publisher já disponibiliza pra syndication).')),
   "alerts": zod.array(zod.string()),
   "monitoringRecommendation": zod.string(),
   "taxEstimate": zod.union([zod.null(),zod.object({
@@ -1032,7 +1037,12 @@ export const GetAssetAnalysisResponse = zod.object({
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
   "risks": zod.array(zod.string()),
-  "newsItems": zod.array(zod.string()),
+  "newsItems": zod.array(zod.object({
+  "title": zod.string(),
+  "impact": zod.union([zod.literal('Muito Positivo'),zod.literal('Positivo'),zod.literal('Neutro'),zod.literal('Negativo'),zod.literal('Muito Negativo'),zod.literal(null)]).nullable(),
+  "link": zod.string().describe('URL real do artigo no InfoMoney. String vazia em notícia persistida antes desta mudança (sem link salvo).'),
+  "summary": zod.string().nullable().describe('Resumo curto real do RSS, HTML e rodapé do WordPress já removidos. Null sem resumo disponível.')
+}).describe('Notícia real do RSS do InfoMoney — título, impacto classificado, link real pro artigo e um resumo curto vindo do próprio <description> do feed (não é raspagem de página, é o campo que o publisher já disponibiliza pra syndication).')),
   "alerts": zod.array(zod.string()),
   "monitoringRecommendation": zod.string(),
   "taxEstimate": zod.union([zod.null(),zod.object({
@@ -1122,7 +1132,12 @@ export const GetAssetOpinionResponse = zod.object({
   "exDate": zod.string().nullable().describe('Data-com. Nullable pelo contrato do provider, sem faltar na amostra medida.'),
   "entitledIfBoughtToday": zod.boolean().nullable().describe('Null só no caso (não observado na amostra) de o provento vir sem data-com — aí não há base pra afirmar nada, e a incerteza é dita, não escondida.')
 }).describe('Um provento anunciado e se comprar HOJE dá direito a ele — a data que decide é a data-com (exDate), não a data de pagamento. As duas costumam vir separadas por semanas (até 112 dias na amostra medida de PETR4), e essa distância é exatamente o que confunde quem vê \"paga dia X\" e compra pensando que X é o prazo.'),zod.null()]).optional().describe('Presente só quando `nextDividend` existe e `entitledIfBoughtToday` é false: o próximo provento que uma compra hoje efetivamente alcançaria. Null quando o mais próximo já é o certo, ou quando nada mais está anunciado depois dele.'),
-  "newsItems": zod.array(zod.string()),
+  "newsItems": zod.array(zod.object({
+  "title": zod.string(),
+  "impact": zod.union([zod.literal('Muito Positivo'),zod.literal('Positivo'),zod.literal('Neutro'),zod.literal('Negativo'),zod.literal('Muito Negativo'),zod.literal(null)]).nullable(),
+  "link": zod.string().describe('URL real do artigo no InfoMoney. String vazia em notícia persistida antes desta mudança (sem link salvo).'),
+  "summary": zod.string().nullable().describe('Resumo curto real do RSS, HTML e rodapé do WordPress já removidos. Null sem resumo disponível.')
+}).describe('Notícia real do RSS do InfoMoney — título, impacto classificado, link real pro artigo e um resumo curto vindo do próprio <description> do feed (não é raspagem de página, é o campo que o publisher já disponibiliza pra syndication).')),
   "opinion": zod.string(),
   "screening": zod.object({
   "outcome": zod.enum(['atende', 'nao_atende', 'sem_dados']),
@@ -1175,7 +1190,12 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "scoreClassification": zod.enum(['Excelente', 'Forte', 'Estavel', 'Atencao', 'Critico']),
   "positives": zod.array(zod.string()),
   "risks": zod.array(zod.string()),
-  "newsItems": zod.array(zod.string()),
+  "newsItems": zod.array(zod.object({
+  "title": zod.string(),
+  "impact": zod.union([zod.literal('Muito Positivo'),zod.literal('Positivo'),zod.literal('Neutro'),zod.literal('Negativo'),zod.literal('Muito Negativo'),zod.literal(null)]).nullable(),
+  "link": zod.string().describe('URL real do artigo no InfoMoney. String vazia em notícia persistida antes desta mudança (sem link salvo).'),
+  "summary": zod.string().nullable().describe('Resumo curto real do RSS, HTML e rodapé do WordPress já removidos. Null sem resumo disponível.')
+}).describe('Notícia real do RSS do InfoMoney — título, impacto classificado, link real pro artigo e um resumo curto vindo do próprio <description> do feed (não é raspagem de página, é o campo que o publisher já disponibiliza pra syndication).')),
   "alerts": zod.array(zod.string()),
   "monitoringRecommendation": zod.string(),
   "taxEstimate": zod.union([zod.null(),zod.object({

@@ -83,7 +83,7 @@ depende da IA para existir.**
 | `brapi.dev` | Cotação, fundamentos, balanço e DRE, proventos, indicadores de FII, universo de tickers | O módulo pago `financialData` não expõe tudo; ROE, dívida/patrimônio e crescimento são **calculados** a partir do balanço e da DRE reais (padrão CVM) via os endpoints v2, não lidos prontos |
 | `api.bcb.gov.br` | Selic, IPCA, IGP-M, CDI, dólar | Séries oficiais do Banco Central. A Selic é a referência contra a qual o rendimento de FII é lido, e o CDI é a taxa livre de risco do Sharpe |
 | `tesourotransparente` | PU diário de todos os títulos do Tesouro Direto | Descoberto via CKAN — o endpoint JSON amplamente citado em tutoriais responde `410 Gone`. Ingestão incremental e de memória constante |
-| InfoMoney RSS | Manchetes recentes por ativo | Só título e link. A classificação de impacto é o único ponto em que a IA toca notícia |
+| InfoMoney RSS | Manchetes recentes por ativo | Título, link real do artigo e um resumo curto vindo do próprio `<description>` do feed (não é raspagem de página — é o campo que o publisher já disponibiliza pra syndication). A classificação de impacto é o único ponto em que a IA toca notícia |
 | `dados.cvm.gov.br` | Composição real da carteira de FII (% imóveis diretos, % CRI/recebíveis, % outros) e taxa de administração real | Informe Mensal Estruturado, dado público sem chave, cruzado com a brapi pelo CNPJ real do fundo. Diferente do investidor10.com.br (descartado por Termos de Uso), este é o próprio administrador prestando conta à CVM |
 | `maisretorno.com` (opcional) | IFIX e CDI com histórico, dados D-1 | Entra só onde as outras fontes são cegas: o IFIX, que a brapi não devolve com série, e o CDI quando o BCB não responde. Sem `MAIS_RETORNO_TOKEN` o app funciona igual a antes — nada depende dela |
 
@@ -567,6 +567,28 @@ custo/latência extra. Os prompts exatos estão em [`analises-ia.md`](./analises
 
 O enum de nível de risco é o exemplo mais claro da separação: é derivado do beta real por
 comparação numérica direta. A IA escreve o texto *em volta* dele, mas nunca o escolhe.
+
+### Manchete clicável — o link real que já existia e ficava sem uso
+
+O RSS do InfoMoney sempre trouxe o link de cada notícia (`NewsHeadline.link`, `news.ts`), mas a
+rota que monta a resposta da API achatava `{título, link, impacto}` num único texto formatado
+("[Positivo] título") antes de devolver — o link nunca chegava na tela, e a manchete não tinha
+como ser clicável por mais que o dado existisse por baixo.
+
+Corrigido expondo `newsItems` como objeto estruturado (`title`, `impact`, `link`, `summary`) em vez
+de string solta, em Análise de Ativos e Parecer de Ativo. Cada manchete agora abre um modal com o
+**resumo real** do próprio `<description>` do RSS — não é raspagem de página, é o campo que o
+InfoMoney já publica pra syndication — e um botão pra ler a matéria completa. O resumo é limpo de
+HTML e do rodapé que o WordPress cola em toda entrada ("The post ... appeared first on
+InfoMoney.") antes de chegar na tela.
+
+Limitação honesta: o resumo do RSS é uma frase curta pensada pra fazer o leitor clicar, não a
+matéria inteira — não é onde o valor exato de um provento aparece. Pra isso, o link pra matéria
+completa continua sendo o caminho.
+
+Uma linha antiga persistida em `analyses.news_items` (formato string, de antes desta mudança)
+continua parseável — degrada pra sem link/resumo em vez de quebrar a tela — e é substituída pra
+sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela inteira).
 
 ---
 
