@@ -92,6 +92,11 @@ export interface Asset {
      * @nullable
      */
   priceAsOf?: string | null;
+  /**
+     * Variação % do dia (fechamento contra o fechamento anterior), direto do provedor. Null pra título público — PU é publicado uma vez por dia, sem "fechou em alta/baixa hoje" real — e pra preço datado (provedor indisponível).
+     * @nullable
+     */
+  changePercent?: number | null;
   /** @nullable */
   totalValue?: number | null;
   /** @nullable */

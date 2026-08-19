@@ -11,6 +11,9 @@ export interface Quote {
   priceEarnings: number | null;
   name: string | null;
   updatedAt: string;
+  /** Variação % do dia (fechamento contra o fechamento anterior), direto do provedor —
+   *  não é calculada aqui. Null pra plano/ativo que não traga o campo. */
+  changePercent: number | null;
 }
 
 interface CacheEntry {
@@ -25,6 +28,7 @@ interface BrapiResult {
   regularMarketTime?: string;
   longName?: string;
   shortName?: string;
+  regularMarketChangePercent?: number;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -52,6 +56,7 @@ async function fetchQuote(ticker: string): Promise<Quote | null> {
     priceEarnings: item.priceEarnings ?? null,
     name: item.longName ?? item.shortName ?? null,
     updatedAt: item.regularMarketTime ?? new Date().toISOString(),
+    changePercent: typeof item.regularMarketChangePercent === "number" ? item.regularMarketChangePercent : null,
   };
 }
 
@@ -1281,6 +1286,9 @@ export interface PricePoint {
    * melhor do que o preço médio de compra.
    */
   asOf: Date | null;
+  /** Variação % do dia, só pra cotação ao vivo (asOf null) de ativo cotado — título
+   *  público não tem "fechou em alta/baixa hoje" real, PU é publicado uma vez por dia. */
+  changePercent: number | null;
 }
 
 export interface PriceableItem {
@@ -1325,7 +1333,10 @@ async function getTreasuryPrices(items: PriceableItem[]): Promise<Map<string, Pr
     if (!bond?.sellUnitPrice) continue;
     const price = parseFloat(bond.sellUnitPrice);
     if (!Number.isFinite(price) || price <= 0) continue;
-    prices.set(item.ticker.toUpperCase(), { price, asOf: new Date(`${bond.baseDate}T00:00:00Z`) });
+    // Título público não tem "variação do dia" real — PU é publicado uma vez por dia,
+    // não intradiário — então não há o que mostrar aqui, em vez de calcular contra o
+    // dia anterior (isso é o que a Parecer de Título Público já faz, num sentido diferente).
+    prices.set(item.ticker.toUpperCase(), { price, asOf: new Date(`${bond.baseDate}T00:00:00Z`), changePercent: null });
   }
 
   return prices;
@@ -1353,12 +1364,14 @@ export async function getPricesFor(items: PriceableItem[]): Promise<Map<string, 
   const tickers = items.filter((i) => QUOTED_CATEGORIES.has(i.category)).map((i) => i.ticker.toUpperCase());
   if (tickers.length > 0) {
     const quotes = await getQuotes(tickers);
-    for (const [ticker, quote] of quotes) prices.set(ticker, { price: quote.price, asOf: null });
+    for (const [ticker, quote] of quotes) prices.set(ticker, { price: quote.price, asOf: null, changePercent: quote.changePercent });
 
     const missing = Array.from(new Set(tickers)).filter((ticker) => !prices.has(ticker));
     if (missing.length > 0) {
       for (const [ticker, snapshot] of await getLastKnownPrices(missing)) {
-        prices.set(ticker, { price: snapshot.price, asOf: snapshot.capturedAt });
+        // Preço datado (provedor fora do ar) não tem variação do dia confiável pra
+        // acompanhar — a mesma defasagem que já é sinalizada por `asOf`.
+        prices.set(ticker, { price: snapshot.price, asOf: snapshot.capturedAt, changePercent: null });
       }
     }
   }

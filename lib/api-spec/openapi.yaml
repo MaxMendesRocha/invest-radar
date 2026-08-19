@@ -1126,6 +1126,12 @@ components:
             Preenchido só quando currentPrice é o último preço conhecido em vez da
             cotação de agora (provedor indisponível) — é a data dessa última cotação.
             Null quando o preço é ao vivo.
+        changePercent:
+          type: ["number", "null"]
+          description: >-
+            Variação % do dia (fechamento contra o fechamento anterior), direto do
+            provedor. Null pra título público — PU é publicado uma vez por dia, sem
+            "fechou em alta/baixa hoje" real — e pra preço datado (provedor indisponível).
         totalValue:
           type: ["number", "null"]
         profitLoss:
