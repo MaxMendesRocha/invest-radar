@@ -33,7 +33,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Edit2, Trash2, Banknote, CircleCheck, TriangleAlert, Loader2 } from "lucide-react";
+import { Plus, Edit2, Trash2, Banknote, CircleCheck, TriangleAlert, Loader2, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { categoryLabel, CATEGORY_LABELS } from "@/lib/categories";
 import { PriceTargetControl } from "@/components/price-target-control";
@@ -55,6 +55,23 @@ function acceptsPriceTarget(category: string): boolean {
 function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: string | null }): string {
   if (!asset.priceAsOf) return "";
   return asset.treasuryBondType ? formatShortDate(asset.priceAsOf.slice(0, 10)) : formatShortDateTime(asset.priceAsOf);
+}
+
+/**
+ * Variação do dia — direto do provedor (brapi), não calculada. Só existe pra ativo
+ * cotado com cotação ao vivo: null pra título público (PU diário, sem "fechou em alta
+ * hoje" real) e pra preço datado (provedor fora do ar), casos em que não renderiza nada.
+ */
+function ChangeBadge({ changePercent }: { changePercent: number | null | undefined }) {
+  if (changePercent == null) return null;
+  const isUp = changePercent >= 0;
+  const Icon = isUp ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-mono font-medium ${isUp ? "text-green-600 dark:text-green-500" : "text-destructive"}`}>
+      <Icon className="w-3 h-3" />
+      {isUp ? "+" : ""}{formatPercent(changePercent)}
+    </span>
+  );
 }
 
 /**
@@ -630,7 +647,10 @@ export default function Carteira() {
                       <TableCell className="text-right font-mono">{asset.quantity}</TableCell>
                       <TableCell className="text-right font-mono">{formatCurrency(asset.averagePrice)}</TableCell>
                       <TableCell className="text-right font-mono">
-                        {asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}
+                          <ChangeBadge changePercent={asset.changePercent} />
+                        </div>
                         {asset.priceAsOf && (
                           // Âmbar sinaliza problema, e título público datado não é
                           // problema: o Tesouro publica o PU com atraso por natureza.
@@ -737,7 +757,10 @@ export default function Carteira() {
                       <div className="text-xs text-muted-foreground">
                         {asset.treasuryBondType ? 'PU de Recompra' : asset.priceAsOf ? 'Última Cotação' : 'Cotação Atual'}
                       </div>
-                      <div className="font-mono">{asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono">{asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}</span>
+                        <ChangeBadge changePercent={asset.changePercent} />
+                      </div>
                       {asset.priceAsOf && (
                         <div className={`text-xs ${asset.treasuryBondType ? "text-muted-foreground" : "text-amber-700 dark:text-amber-500"}`}>
                           {priceMoment(asset)}

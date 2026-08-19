@@ -44,6 +44,9 @@ function enrichAsset(asset: {
     // com a mesma cara de um preço ao vivo, e o lucro/prejuízo calculado a partir
     // dele pareceria apurado neste instante.
     priceAsOf: quoted?.asOf?.toISOString() ?? null,
+    // Variação % do dia, direto do provedor — null pra título público (PU diário, sem
+    // "fechou em alta/baixa hoje" real) e pra preço datado (provedor fora do ar).
+    changePercent: quoted?.changePercent ?? null,
     totalValue,
     profitLoss,
     profitLossPercent,
