@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable, salesTable, dividendDismissalsTable } from "@workspace/db";
 import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries } from "../lib/market-data";
+import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries, getSavingsIncomeLast12Months } from "../lib/market-data";
 import { computeCompositionRisk, type RiskPosition } from "../lib/portfolio-risk-metrics";
 import { computeAssetCorrelations } from "../lib/correlation-engine";
 import { computeMarketContext } from "../lib/market-context-engine";
@@ -1195,6 +1195,10 @@ async function currentIncomeAndPatrimony(userId: number): Promise<{ monthlyIncom
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, userId));
   const prices = await getPricesFor(assets);
   const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
+  // Renda real da poupança (rendimento já creditado, via série 195 do BCB) — sem isso,
+  // o patrimônio contava o saldo cheio da poupança mas a renda dela entrava como zero,
+  // subestimando o yield da carteira e inflando o aporte necessário pra meta.
+  const savingsIncome = await getSavingsIncomeLast12Months(assets, new Date());
   const now = Date.now();
 
   let annualIncome = 0;
@@ -1203,6 +1207,10 @@ async function currentIncomeAndPatrimony(userId: number): Promise<{ monthlyIncom
     const qty = parseFloat(a.quantity);
     const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
     totalPatrimony += qty * price;
+    if (a.isSavingsAccount) {
+      annualIncome += savingsIncome.get(a.ticker.toUpperCase()) ?? 0;
+      continue;
+    }
     if (!QUOTED_CATEGORIES.has(a.category)) continue;
     const dps12m = sumLast12Months(dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [], now);
     if (dps12m != null) annualIncome += dps12m * qty;

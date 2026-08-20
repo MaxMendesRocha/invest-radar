@@ -1369,6 +1369,24 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * projeção de agora pra agora. Sem "variação do dia": poupança só muda de valor no
  * aniversário mensal, nunca dia a dia.
  */
+async function fetchSavingsRateSeries(checkpointDate: string, today: Date): Promise<SavingsRatePoint[] | null> {
+  const daysBack = Math.ceil((today.getTime() - new Date(`${checkpointDate}T00:00:00Z`).getTime()) / MS_PER_DAY) + 5;
+  if (daysBack <= 0) return null; // checkpoint no futuro — dado inválido, não projeta nada
+
+  let points: { data: string; valor: string }[] = [];
+  try {
+    points = await fetchSeriesRange(SAVINGS_SGS_CODE, daysBack);
+  } catch (err) {
+    logger.warn({ err }, "busca da série de rendimento da poupança falhou");
+    return null;
+  }
+  if (points.length === 0) return null;
+
+  return points
+    .map((p) => ({ date: bcbDateToIso(p.data), ratePercent: parseFloat(p.valor) }))
+    .filter((p) => Number.isFinite(p.ratePercent));
+}
+
 async function getSavingsPrices(items: PriceableItem[]): Promise<Map<string, PricePoint>> {
   const prices = new Map<string, PricePoint>();
   const savingsItems = items.filter((i) => i.isSavingsAccount && i.purchaseDate && i.averagePrice != null);
@@ -1379,21 +1397,9 @@ async function getSavingsPrices(items: PriceableItem[]): Promise<Map<string, Pri
     const checkpointDate = item.purchaseDate as string;
     const checkpointBalance = Number(item.averagePrice);
     if (!Number.isFinite(checkpointBalance) || checkpointBalance <= 0) continue;
-    const daysBack = Math.ceil((today.getTime() - new Date(`${checkpointDate}T00:00:00Z`).getTime()) / MS_PER_DAY) + 5;
-    if (daysBack <= 0) continue; // checkpoint no futuro — dado inválido, não projeta nada
 
-    let points: { data: string; valor: string }[] = [];
-    try {
-      points = await fetchSeriesRange(SAVINGS_SGS_CODE, daysBack);
-    } catch (err) {
-      logger.warn({ err, ticker: item.ticker }, "busca da série de rendimento da poupança falhou");
-      continue;
-    }
-    if (points.length === 0) continue;
-
-    const rateSeries: SavingsRatePoint[] = points
-      .map((p) => ({ date: bcbDateToIso(p.data), ratePercent: parseFloat(p.valor) }))
-      .filter((p) => Number.isFinite(p.ratePercent));
+    const rateSeries = await fetchSavingsRateSeries(checkpointDate, today);
+    if (!rateSeries) continue;
 
     const projection = projectSavingsBalance(checkpointBalance, checkpointDate, today, rateSeries);
     if (!Number.isFinite(projection.currentBalance) || projection.currentBalance <= 0) continue;
@@ -1401,6 +1407,46 @@ async function getSavingsPrices(items: PriceableItem[]): Promise<Map<string, Pri
   }
 
   return prices;
+}
+
+/**
+ * Renda real da poupança nos últimos 12 meses (ou desde o checkpoint, se mais recente
+ * que isso) — projeta o saldo em dois pontos (12 meses atrás e hoje) a partir do MESMO
+ * checkpoint e devolve a diferença. É rendimento de verdade, já creditado em ciclos
+ * fechados — nunca uma taxa anualizada chutada. Usada pra contar poupança como renda no
+ * yield da carteira (income-goal-engine.ts), que antes tratava renda fixa como se
+ * rendesse zero enquanto contava o valor cheio no patrimônio.
+ */
+export async function getSavingsIncomeLast12Months(items: PriceableItem[], today: Date = new Date()): Promise<Map<string, number>> {
+  const income = new Map<string, number>();
+  const savingsItems = items.filter((i) => i.isSavingsAccount && i.purchaseDate && i.averagePrice != null);
+  if (savingsItems.length === 0) return income;
+
+  const twelveMonthsAgo = new Date(today);
+  twelveMonthsAgo.setUTCFullYear(twelveMonthsAgo.getUTCFullYear() - 1);
+
+  for (const item of savingsItems) {
+    const checkpointDate = item.purchaseDate as string;
+    const checkpointBalance = Number(item.averagePrice);
+    if (!Number.isFinite(checkpointBalance) || checkpointBalance <= 0) continue;
+
+    const rateSeries = await fetchSavingsRateSeries(checkpointDate, today);
+    if (!rateSeries) continue;
+
+    const balanceToday = projectSavingsBalance(checkpointBalance, checkpointDate, today, rateSeries).currentBalance;
+    // Checkpoint mais recente que 12 meses atrás: não há como saber o saldo antes dele,
+    // então o ponto de partida da janela é o próprio checkpoint — nunca inventa um saldo
+    // anterior ao que a pessoa informou.
+    const referenceDate = new Date(`${checkpointDate}T00:00:00Z`) > twelveMonthsAgo ? new Date(`${checkpointDate}T00:00:00Z`) : twelveMonthsAgo;
+    const balanceAtReference = referenceDate.getTime() === new Date(`${checkpointDate}T00:00:00Z`).getTime()
+      ? checkpointBalance
+      : projectSavingsBalance(checkpointBalance, checkpointDate, referenceDate, rateSeries).currentBalance;
+
+    const earned = balanceToday - balanceAtReference;
+    if (Number.isFinite(earned) && earned > 0) income.set(item.ticker.toUpperCase(), earned);
+  }
+
+  return income;
 }
 
 /**
