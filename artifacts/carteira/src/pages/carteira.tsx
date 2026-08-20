@@ -177,6 +177,16 @@ export default function Carteira() {
   /** Data da compra e valor investido — só existem no caminho de título público. */
   const [purchaseDate, setPurchaseDate] = useState("");
   const [investedAmount, setInvestedAmount] = useState("");
+  /**
+   * Override opcional do PU, pro caso em que a pessoa tem o comprovante real da
+   * corretora em mãos. O Tesouro Direto negocia continuamente durante o pregão; o
+   * arquivo que sincronizamos é uma referência única por dia (a "manhã"), então o PU de
+   * execução real quase sempre difere um pouco do nosso. Vazio = comportamento de
+   * sempre (PU vem do nosso histórico, nunca digitado); preenchido = a pessoa está
+   * informando um número que ELA já confirmou, não chutando um — mesmo princípio de só
+   * aceitar dado real, só que a fonte agora é o comprovante dela em vez do nosso sync.
+   */
+  const [manualUnitPrice, setManualUnitPrice] = useState("");
 
   /**
    * PU real do título na data da compra, buscado no histórico do Tesouro. É o que
@@ -193,9 +203,11 @@ export default function Carteira() {
   );
   const historicalPrice = priceQuery.data ?? null;
 
-  // PU efetivo: o histórico manda; sem ele (data não informada ainda, ou título sem
-  // publicação até ali), o campo continua sendo digitado à mão.
-  const effectiveUnitPrice = historicalPrice?.buyUnitPrice ?? (Number(averagePrice) || 0);
+  // PU efetivo: override do comprovante manda quando preenchido; senão o histórico;
+  // sem nenhum dos dois (data não informada ainda, ou título sem publicação até ali), o
+  // campo continua sendo digitado à mão.
+  const manualUnitPriceValue = Number(manualUnitPrice) > 0 ? Number(manualUnitPrice) : null;
+  const effectiveUnitPrice = manualUnitPriceValue ?? historicalPrice?.buyUnitPrice ?? (Number(averagePrice) || 0);
   const derivedQuantity = selectedBond && Number(investedAmount) > 0 && effectiveUnitPrice > 0
     ? Number(investedAmount) / effectiveUnitPrice
     : null;
@@ -221,6 +233,7 @@ export default function Carteira() {
     setTreasuryKey("");
     setPurchaseDate("");
     setInvestedAmount("");
+    setManualUnitPrice("");
     setEditingId(null);
   };
 
@@ -522,13 +535,46 @@ export default function Carteira() {
                     </div>
                   </div>
 
+                  <div className="space-y-2">
+                    <Label htmlFor="manual-unit-price" className="text-xs text-muted-foreground font-normal">
+                      PU exato do comprovante (opcional)
+                    </Label>
+                    <Input
+                      id="manual-unit-price"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      placeholder={historicalPrice ? String(historicalPrice.buyUnitPrice) : "Ex: 730,37"}
+                      value={manualUnitPrice}
+                      onChange={(e) => setManualUnitPrice(e.target.value)}
+                    />
+                    <p className="text-[11px] text-muted-foreground text-pretty">
+                      O Tesouro Direto negocia durante o pregão todo — o PU que sincronizamos é uma referência
+                      única por dia, então pode diferir um pouco do preço real da sua execução. Preencha aqui
+                      só se tiver o comprovante da corretora com o PU exato; senão, deixe em branco.
+                    </p>
+                  </div>
+
                   <div className="rounded-md border border-border/60 p-3 text-sm space-y-1">
-                    {priceQuery.isFetching ? (
+                    {manualUnitPriceValue ? (
+                      <>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">PU do comprovante</span>
+                          <span className="font-mono font-medium">{formatCurrency(manualUnitPriceValue)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">Quantidade</span>
+                          <span className="font-mono font-medium">
+                            {derivedQuantity ? derivedQuantity.toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : "—"}
+                          </span>
+                        </div>
+                      </>
+                    ) : priceQuery.isFetching ? (
                       <p className="text-muted-foreground">Buscando o PU dessa data…</p>
                     ) : priceQuery.isError ? (
                       <p className="text-destructive text-pretty">
                         Sem PU publicado para esse título até {purchaseDate ? formatShortDate(purchaseDate) : "essa data"}.
-                        Confira a data — pode ser anterior à emissão do título.
+                        Confira a data — pode ser anterior à emissão do título — ou informe o PU do comprovante acima.
                       </p>
                     ) : historicalPrice ? (
                       <>
