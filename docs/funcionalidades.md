@@ -527,6 +527,15 @@ uma consulta e outra. Reenviar o cadastro com o mesmo nome de conta não soma co
 compra (isso produziria uma média ponderada sem sentido pra saldo) — substitui saldo e data pelos
 novos, o mesmo efeito de editar a posição.
 
+Pra não exigir que a pessoa calcule o novo saldo de cabeça a cada depósito ou saque, o botão de
+cifrão da linha (que em outras classes abre "Vender") abre, pra poupança, o diálogo "Movimentar
+Poupança": mostra o saldo estimado de hoje, deixa escolher depósito ou saque e valor, e calcula o
+novo saldo/data sozinho antes de enviar pro mesmo `PATCH /assets/:id` que a edição manual já usa —
+nenhuma rota nova. Optei por não rastrear cada depósito como um lote com aniversário próprio (o que
+seria necessário pra modelar com exatidão o caso de um saque parcial antes do fechamento do ciclo);
+o ganho aqui é só de UX sobre o mesmo modelo de saldo único já existente, com a mesma aproximação e
+o mesmo aviso de honestidade sobre precisão perto da data de crédito.
+
 ---
 
 ## Meta de renda passiva

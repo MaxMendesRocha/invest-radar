@@ -114,6 +114,13 @@ export default function Carteira() {
   const [isSellOpen, setIsSellOpen] = useState(false);
   const [sellingAsset, setSellingAsset] = useState<Asset | null>(null);
 
+  // "Movimentar Poupança" — depósito/saque calculado a partir do saldo estimado de
+  // hoje, pra não obrigar a pessoa a fazer a conta de cabeça antes de editar a posição.
+  const [movingSavingsAsset, setMovingSavingsAsset] = useState<Asset | null>(null);
+  const [moveType, setMoveType] = useState<"deposito" | "saque">("deposito");
+  const [moveAmount, setMoveAmount] = useState("");
+  const [moveDate, setMoveDate] = useState("");
+
   // Form State
   const [ticker, setTicker] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -369,6 +376,40 @@ export default function Carteira() {
     setSaleDate(new Date().toISOString().slice(0, 10));
     setSaleQuantity(String(asset.quantity));
     setIsSellOpen(true);
+  };
+
+  const handleSavingsMoveOpen = (asset: Asset) => {
+    setMovingSavingsAsset(asset);
+    setMoveType("deposito");
+    setMoveAmount("");
+    setMoveDate(new Date().toISOString().slice(0, 10));
+  };
+
+  const moveNewBalance = movingSavingsAsset && Number(moveAmount) > 0
+    ? (movingSavingsAsset.currentPrice ?? movingSavingsAsset.averagePrice)
+      + (moveType === "deposito" ? Number(moveAmount) : -Number(moveAmount))
+    : null;
+
+  const handleSavingsMoveSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!movingSavingsAsset || moveNewBalance == null) return;
+    if (moveNewBalance <= 0) {
+      toast({ title: "O saque não pode ser maior que o saldo estimado hoje.", variant: "destructive" });
+      return;
+    }
+    updateAsset.mutate({
+      id: movingSavingsAsset.id,
+      data: { averagePrice: moveNewBalance, purchaseDate: moveDate, quantity: 1, category: "renda_fixa" as any },
+    }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListAssetsQueryKey() });
+        setMovingSavingsAsset(null);
+        toast({ title: `${moveType === "deposito" ? "Depósito" : "Saque"} registrado — novo saldo ${formatCurrency(moveNewBalance)}.` });
+      },
+      onError: () => {
+        toast({ title: "Erro ao registrar movimentação.", variant: "destructive" });
+      },
+    });
   };
 
   const handleSellSubmit = (e: React.FormEvent) => {
@@ -645,8 +686,8 @@ export default function Carteira() {
                   <p className="text-xs text-muted-foreground text-pretty">
                     A partir daqui o app projeta o saldo de hoje usando o rendimento real da poupança
                     publicado pelo Banco Central — só credita no aniversário mensal completo, igual a
-                    conta de verdade. Pra atualizar depois (novo depósito ou saque), edite esta posição
-                    em vez de cadastrar de novo.
+                    conta de verdade. Pra registrar um depósito ou saque depois, use o botão de
+                    cifrão na posição já cadastrada, em vez de cadastrar de novo.
                   </p>
                 </>
               ) : (
@@ -782,7 +823,13 @@ export default function Carteira() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => handleSellOpen(asset)} title="Vender" className="text-muted-foreground hover:text-foreground">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => asset.isSavingsAccount ? handleSavingsMoveOpen(asset) : handleSellOpen(asset)}
+                            title={asset.isSavingsAccount ? "Movimentar" : "Vender"}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
                             <Banknote className="w-4 h-4" />
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => handleEditOpen(asset)}>
@@ -830,7 +877,13 @@ export default function Carteira() {
                       ) : analysis?.status ? (
                         <Badge variant="outline" className={analysisStatusConfigFor(analysis.status, analysis.statusReason).className}>{analysisStatusConfigFor(analysis.status, analysis.statusReason).label}</Badge>
                       ) : null}
-                      <Button variant="ghost" size="icon" onClick={() => handleSellOpen(asset)} title="Vender" className="text-muted-foreground hover:text-foreground">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => asset.isSavingsAccount ? handleSavingsMoveOpen(asset) : handleSellOpen(asset)}
+                        title={asset.isSavingsAccount ? "Movimentar" : "Vender"}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
                         <Banknote className="w-4 h-4" />
                       </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleEditOpen(asset)}>
@@ -1008,6 +1061,90 @@ export default function Carteira() {
             <DialogFooter>
               <Button type="submit" disabled={sellAsset.isPending}>
                 {sellAsset.isPending ? "Registrando..." : "Confirmar Venda"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Movimentar Poupança — depósito/saque calculado a partir do saldo estimado de
+          hoje, em vez de exigir que a pessoa faça a conta e edite o saldo à mão. */}
+      <Dialog open={!!movingSavingsAsset} onOpenChange={(open) => !open && setMovingSavingsAsset(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Movimentar {movingSavingsAsset?.ticker}</DialogTitle>
+            <DialogDescription>
+              Registra um depósito ou saque a partir do saldo estimado de hoje.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSavingsMoveSubmit} className="space-y-4 py-4">
+            <div className="rounded-md border border-border/60 p-3 text-sm">
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Saldo estimado hoje</span>
+                <span className="font-mono font-medium">
+                  {formatCurrency(movingSavingsAsset?.currentPrice ?? movingSavingsAsset?.averagePrice ?? 0)}
+                </span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={moveType === "deposito" ? "default" : "outline"}
+                onClick={() => setMoveType("deposito")}
+              >
+                Depósito
+              </Button>
+              <Button
+                type="button"
+                variant={moveType === "saque" ? "default" : "outline"}
+                onClick={() => setMoveType("saque")}
+              >
+                Saque
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="move-amount">Valor</Label>
+                <Input
+                  id="move-amount"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="500,00"
+                  value={moveAmount}
+                  onChange={(e) => setMoveAmount(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="move-date">Data</Label>
+                <Input
+                  id="move-date"
+                  type="date"
+                  value={moveDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setMoveDate(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            {moveNewBalance != null && (
+              <div className="bg-muted/50 p-3 rounded-md text-sm border border-border/50">
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Novo saldo</span>
+                  <span className={`font-mono font-medium ${moveNewBalance <= 0 ? "text-destructive" : ""}`}>
+                    {formatCurrency(moveNewBalance)}
+                  </span>
+                </div>
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground text-pretty">
+              O aniversário mensal reinicia a partir de hoje — se a movimentação for feita perto da data de
+              crédito, o rendimento daquele ciclo pode ficar um pouco diferente do extrato real da corretora.
+            </p>
+            <DialogFooter>
+              <Button type="submit" disabled={updateAsset.isPending || moveNewBalance == null || moveNewBalance <= 0}>
+                {updateAsset.isPending ? "Salvando..." : "Confirmar"}
               </Button>
             </DialogFooter>
           </form>
