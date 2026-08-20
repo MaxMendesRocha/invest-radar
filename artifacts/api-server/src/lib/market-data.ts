@@ -2,6 +2,8 @@ import { db, priceSnapshotsTable } from "@workspace/db";
 import { latestTreasuryBonds } from "./treasury-identity";
 import { inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { fetchSeriesRange, SAVINGS_SGS_CODE } from "./macro-data";
+import { projectSavingsBalance, type SavingsRatePoint } from "./savings-engine";
 
 const BRAPI_BASE_URL = "https://brapi.dev/api/quote";
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -1297,6 +1299,17 @@ export interface PriceableItem {
   /** Preenchidos só em posição de Tesouro Direto — ver o schema de assets. */
   treasuryBondType?: string | null;
   treasuryMaturityDate?: string | null;
+  /**
+   * Preenchidos só em posição de poupança (`isSavingsAccount`). `purchaseDate` aqui
+   * guarda a DATA do saldo conhecido (não a data de abertura da conta), e `averagePrice`
+   * o próprio saldo — mesmos campos genéricos do asset, reaproveitados, ver o comentário
+   * em lib/db/src/schema/assets.ts.
+   */
+  isSavingsAccount?: boolean;
+  purchaseDate?: string | null;
+  /** string quando vem direto da linha do banco (coluna numeric); number quando montado
+   *  à mão em algum outro chamador. Convertido dentro de getSavingsPrices. */
+  averagePrice?: string | number;
 }
 
 /**
@@ -1342,6 +1355,54 @@ async function getTreasuryPrices(items: PriceableItem[]): Promise<Map<string, Pr
   return prices;
 }
 
+function bcbDateToIso(dataBcb: string): string {
+  const [dd, mm, yyyy] = dataBcb.split("/");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Projeta o saldo de hoje pra cada posição de poupança, via a série 195 do BCB
+ * (rendimento real já com a regra de TR aplicada) + savings-engine.ts. `asOf: null`
+ * porque o saldo é sempre recomputado na hora — não é um preço datado/stale, é a
+ * projeção de agora pra agora. Sem "variação do dia": poupança só muda de valor no
+ * aniversário mensal, nunca dia a dia.
+ */
+async function getSavingsPrices(items: PriceableItem[]): Promise<Map<string, PricePoint>> {
+  const prices = new Map<string, PricePoint>();
+  const savingsItems = items.filter((i) => i.isSavingsAccount && i.purchaseDate && i.averagePrice != null);
+  if (savingsItems.length === 0) return prices;
+
+  const today = new Date();
+  for (const item of savingsItems) {
+    const checkpointDate = item.purchaseDate as string;
+    const checkpointBalance = Number(item.averagePrice);
+    if (!Number.isFinite(checkpointBalance) || checkpointBalance <= 0) continue;
+    const daysBack = Math.ceil((today.getTime() - new Date(`${checkpointDate}T00:00:00Z`).getTime()) / MS_PER_DAY) + 5;
+    if (daysBack <= 0) continue; // checkpoint no futuro — dado inválido, não projeta nada
+
+    let points: { data: string; valor: string }[] = [];
+    try {
+      points = await fetchSeriesRange(SAVINGS_SGS_CODE, daysBack);
+    } catch (err) {
+      logger.warn({ err, ticker: item.ticker }, "busca da série de rendimento da poupança falhou");
+      continue;
+    }
+    if (points.length === 0) continue;
+
+    const rateSeries: SavingsRatePoint[] = points
+      .map((p) => ({ date: bcbDateToIso(p.data), ratePercent: parseFloat(p.valor) }))
+      .filter((p) => Number.isFinite(p.ratePercent));
+
+    const projection = projectSavingsBalance(checkpointBalance, checkpointDate, today, rateSeries);
+    if (!Number.isFinite(projection.currentBalance) || projection.currentBalance <= 0) continue;
+    prices.set(item.ticker.toUpperCase(), { price: projection.currentBalance, asOf: null, changePercent: null });
+  }
+
+  return prices;
+}
+
 /**
  * Convenience wrapper around getQuotes for a list of { ticker, category } records
  * (assets, opportunities, ...): filters to quotable categories and returns a
@@ -1377,6 +1438,7 @@ export async function getPricesFor(items: PriceableItem[]): Promise<Map<string, 
   }
 
   for (const [ticker, point] of await getTreasuryPrices(items)) prices.set(ticker, point);
+  for (const [ticker, point] of await getSavingsPrices(items)) prices.set(ticker, point);
 
   return prices;
 }

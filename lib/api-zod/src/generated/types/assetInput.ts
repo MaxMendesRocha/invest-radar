@@ -20,6 +20,8 @@ export interface AssetInput {
   treasuryBondType?: string | null;
   /** @nullable */
   treasuryMaturityDate?: Date | null;
+  /** Só válido com category=renda_fixa. quantity deve vir 1, averagePrice o saldo conhecido, purchaseDate a data desse saldo — ver Asset.isSavingsAccount. */
+  isSavingsAccount?: boolean;
   quantity: number;
   averagePrice: number;
   /** @nullable */

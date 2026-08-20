@@ -85,6 +85,8 @@ export interface Asset {
   treasuryBondType?: string | null;
   /** @nullable */
   treasuryMaturityDate?: string | null;
+  /** Marca uma posição de renda_fixa como conta poupança. quantity fica em 1, averagePrice guarda o saldo conhecido, purchaseDate a data DESSE saldo (não a de abertura da conta) — currentPrice é a projeção de hoje via a série 195 do Banco Central (rendimento real da poupança, com a regra de TR já aplicada). */
+  isSavingsAccount?: boolean;
   /** @nullable */
   currentPrice?: number | null;
   /**
@@ -146,6 +148,8 @@ export interface AssetInput {
   treasuryBondType?: string | null;
   /** @nullable */
   treasuryMaturityDate?: string | null;
+  /** Só válido com category=renda_fixa. quantity deve vir 1, averagePrice o saldo conhecido, purchaseDate a data desse saldo — ver Asset.isSavingsAccount. */
+  isSavingsAccount?: boolean;
   quantity: number;
   averagePrice: number;
   /** @nullable */

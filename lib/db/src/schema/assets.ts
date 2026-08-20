@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, numeric, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, numeric, date, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -27,6 +27,16 @@ export const assetsTable = pgTable("assets", {
    */
   treasuryBondType: text("treasury_bond_type"),
   treasuryMaturityDate: date("treasury_maturity_date", { mode: "string" }),
+  /**
+   * Marca uma posição de `renda_fixa` como conta poupança — sem ser categoria própria,
+   * porque poupança deve entrar na mesma fatia de alocação que Tesouro e CDB/LCI/LCA,
+   * não numa classe separada. `quantity` fica travada em 1, `averagePrice` guarda o
+   * saldo conhecido, `purchaseDate` guarda a DATA desse saldo (não a data de abertura da
+   * conta) — é o par que `savings-engine.ts` usa como ponto de partida pra projetar o
+   * saldo de hoje via a série 195 do Banco Central (rendimento real da poupança, já com
+   * a regra de TR aplicada, publicado por dia-aniversário).
+   */
+  isSavingsAccount: boolean("is_savings_account").notNull().default(false),
   sector: text("sector"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

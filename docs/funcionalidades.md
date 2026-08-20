@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 53 endpoints · 19 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
+**Superfície atual:** 53 endpoints · 20 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
 
 ---
 
@@ -81,7 +81,7 @@ depende da IA para existir.**
 | Fonte | O que traz | Detalhe que importa |
 |---|---|---|
 | `brapi.dev` | Cotação, fundamentos, balanço e DRE, proventos, indicadores de FII, universo de tickers | O módulo pago `financialData` não expõe tudo; ROE, dívida/patrimônio e crescimento são **calculados** a partir do balanço e da DRE reais (padrão CVM) via os endpoints v2, não lidos prontos |
-| `api.bcb.gov.br` | Selic, IPCA, IGP-M, CDI, dólar | Séries oficiais do Banco Central. A Selic é a referência contra a qual o rendimento de FII é lido, e o CDI é a taxa livre de risco do Sharpe |
+| `api.bcb.gov.br` | Selic, IPCA, IGP-M, CDI, dólar, rendimento real da poupança | Séries oficiais do Banco Central. A Selic é a referência contra a qual o rendimento de FII é lido, o CDI é a taxa livre de risco do Sharpe, e a série 195 já traz o rendimento da poupança com a regra de TR aplicada — pronto, sem reimplementar a regra |
 | `tesourotransparente` | PU diário de todos os títulos do Tesouro Direto | Descoberto via CKAN — o endpoint JSON amplamente citado em tutoriais responde `410 Gone`. Ingestão incremental e de memória constante |
 | InfoMoney RSS | Manchetes recentes por ativo | Título, link real do artigo e um resumo curto vindo do próprio `<description>` do feed (não é raspagem de página — é o campo que o publisher já disponibiliza pra syndication). A classificação de impacto é o único ponto em que a IA toca notícia |
 | `dados.cvm.gov.br` | Composição real da carteira de FII (% imóveis diretos, % CRI/recebíveis, % outros) e taxa de administração real | Informe Mensal Estruturado, dado público sem chave, cruzado com a brapi pelo CNPJ real do fundo. Diferente do investidor10.com.br (descartado por Termos de Uso), este é o próprio administrador prestando conta à CVM |
@@ -499,6 +499,34 @@ mercado e sugestão de aporte) e contra o cenário de juro atual (Selic, IPCA 12
 `null` quando a janela de 90 dias tem menos de 15 dias-base publicados — histórico curto demais pra
 uma faixa confiável, em vez de calculada em cima de poucos pontos.
 
+### Poupança — sub-tipo de renda fixa, não categoria própria
+
+Poupança entra como uma terceira variante dentro de `renda_fixa` — ao lado de Tesouro Direto
+(`treasuryBondType`) e renda fixa privada (ticker livre) — marcada pelo booleano
+`isSavingsAccount`, não por uma categoria nova. A decisão é deliberada: poupança deveria somar na
+mesma fatia de alocação que Tesouro e CDB, não abrir uma classe própria em toda tela que já itera
+sobre categoria (distribuição, alocação-alvo, saúde do portfólio).
+
+Não existe cotação nem PU pra poupança — só um saldo que rende uma vez por mês, no aniversário do
+depósito. `quantity` fica travada em 1; `averagePrice` guarda o saldo que a pessoa informou;
+`purchaseDate` guarda a DATA desse saldo, não a data de abertura da conta. A partir desses dois,
+`savings-engine.ts` projeta o saldo de hoje usando a série 195 do Banco Central (SGS) — o
+rendimento REAL da poupança, já com a regra oficial de TR aplicada (TR + 0,5% a.m. com Selic acima
+de 8,5% a.a.; TR + 70% da Selic nos demais casos), publicado por dia-aniversário. Não reimplementamos
+essa regra — o BCB já publica a taxa final pronta.
+
+O motor só compõe ciclos mensais **já fechados**: poupança não rende accrual linear entre
+aniversários — sacar antes do aniversário fechar não dá direito a nada daquele ciclo, e mostrar um
+valor pro-rated seria inventar um número que o banco não creditou. O saldo fica parado desde o
+último aniversário até o próximo fechar. A regra oficial dos dias 29/30/31 (aniversário desses
+depósitos cai sempre no dia 1º do mês seguinte, porque nem todo mês tem esses dias) também é
+respeitada.
+
+Limitação honesta, a mesma de renda fixa privada: o app não sabe de depósitos e saques feitos entre
+uma consulta e outra. Reenviar o cadastro com o mesmo nome de conta não soma como uma segunda
+compra (isso produziria uma média ponderada sem sentido pra saldo) — substitui saldo e data pelos
+novos, o mesmo efeito de editar a posição.
+
 ---
 
 ## Meta de renda passiva
@@ -609,7 +637,7 @@ sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela int
 | Tela | A pergunta | O que mostra |
 |---|---|---|
 | **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, **carteira contra o mercado e quem puxou o resultado**, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks, oscilação da composição atual |
-| **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático e a data da compra, opcional em qualquer classe, editável depois |
+| **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático, poupança com saldo projetado pelo rendimento real do BCB, e a data da compra, opcional em qualquer classe, editável depois |
 | **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
 | **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Triagem "atende / não atende ao corte", análise completa de qualquer ticker sem exigir posição, range de 52 semanas, tendência de proventos, comparação setorial — e, pra Tesouro Direto, taxa de hoje contra a própria faixa dos últimos 90 dias e contra Selic/IPCA atuais |

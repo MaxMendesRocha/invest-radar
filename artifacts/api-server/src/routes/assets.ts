@@ -15,6 +15,7 @@ function enrichAsset(asset: {
   id: number; userId: number; ticker: string; quantity: string;
   averagePrice: string; purchaseDate: string | null; category: string;
   treasuryBondType: string | null; treasuryMaturityDate: string | null;
+  isSavingsAccount: boolean;
   sector: string | null; notes: string | null;
   createdAt: Date; updatedAt: Date;
 }, quoted: PricePoint | null, dividendFrequency: DividendFrequency | null) {
@@ -36,6 +37,7 @@ function enrichAsset(asset: {
     category: asset.category,
     treasuryBondType: asset.treasuryBondType,
     treasuryMaturityDate: asset.treasuryMaturityDate,
+    isSavingsAccount: asset.isSavingsAccount,
     sector: asset.sector,
     notes: asset.notes,
     currentPrice,
@@ -103,7 +105,7 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const { ticker, quantity, averagePrice, purchaseDate, category, sector, notes } = parsed.data;
-  const { treasuryBondType, treasuryMaturityDate } = parsed.data;
+  const { treasuryBondType, treasuryMaturityDate, isSavingsAccount } = parsed.data;
 
   // Título público: o par identifica o papel e o ticker passa a ser derivado dele, não
   // digitado — ver treasury-identity.ts para o porquê.
@@ -113,6 +115,10 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
 
   if (treasuryRef && category !== "renda_fixa") {
     res.status(400).json({ error: "Título do Tesouro Direto só pode ser cadastrado na categoria Renda Fixa." });
+    return;
+  }
+  if (isSavingsAccount && category !== "renda_fixa") {
+    res.status(400).json({ error: "Poupança só pode ser cadastrada na categoria Renda Fixa." });
     return;
   }
   // Metade do par é sempre erro de chamada, e aceitá-lo gravaria uma posição que se
@@ -143,6 +149,22 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
   );
 
   if (existing) {
+    // Poupança não tem "comprar mais unidades" — reenviar o cadastro é a pessoa
+    // informando um saldo/data NOVOS, não uma segunda compra pra fazer média ponderada
+    // com a antiga (isso produziria um número sem sentido). Substitui em vez de
+    // consolidar; é o mesmo efeito de editar a posição, só que pelo formulário de
+    // cadastro.
+    if (existing.isSavingsAccount) {
+      const [updated] = await db.update(assetsTable)
+        .set({ quantity: String(quantity), averagePrice: String(averagePrice), purchaseDate: purchaseDate ? isoDate(purchaseDate) : null })
+        .where(eq(assetsTable.id, existing.id))
+        .returning();
+      const prices = await getPricesFor([updated]);
+      const dividendFrequency = await dividendFrequencyFor(updated.ticker);
+      res.status(200).json(enrichAsset(updated, prices.get(updated.ticker.toUpperCase()) ?? null, dividendFrequency));
+      return;
+    }
+
     const existingQty = parseFloat(existing.quantity);
     const existingAvg = parseFloat(existing.averagePrice);
     const newQty = existingQty + quantity;
@@ -167,6 +189,7 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     category,
     treasuryBondType: treasuryRef?.bondType ?? null,
     treasuryMaturityDate: treasuryRef?.maturityDate ?? null,
+    isSavingsAccount: isSavingsAccount ?? false,
     sector: sector ?? null,
     notes: notes ?? null,
   }).returning();
