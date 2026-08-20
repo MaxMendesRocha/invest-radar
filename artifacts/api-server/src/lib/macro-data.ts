@@ -15,7 +15,14 @@ const SERIES = {
   ipca12m: "13522",
   usdBrl: "1",
   igpmMonthly: "189",
+  // Rendimento real da poupança, já com a regra oficial de TR aplicada, publicado por
+  // dia-aniversário — ver savings-engine.ts para como isso vira saldo projetado.
+  poupanca: "195",
 } as const;
+
+/** Reexportado porque market-data.ts precisa do código pra buscar a série diretamente
+ *  via fetchSeriesRange — SERIES em si fica privado do módulo. */
+export const SAVINGS_SGS_CODE = SERIES.poupanca;
 
 export interface SgsPoint {
   data: string;

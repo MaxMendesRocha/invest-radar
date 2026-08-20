@@ -1117,6 +1117,13 @@ components:
         treasuryMaturityDate:
           type: ["string", "null"]
           format: date
+        isSavingsAccount:
+          type: boolean
+          description: >-
+            Marca uma posição de renda_fixa como conta poupança. quantity fica em 1,
+            averagePrice guarda o saldo conhecido, purchaseDate a data DESSE saldo (não a
+            de abertura da conta) — currentPrice é a projeção de hoje via a série 195 do
+            Banco Central (rendimento real da poupança, com a regra de TR já aplicada).
         currentPrice:
           type: ["number", "null"]
         priceAsOf:
@@ -1179,6 +1186,11 @@ components:
         treasuryMaturityDate:
           type: ["string", "null"]
           format: date
+        isSavingsAccount:
+          type: boolean
+          description: >-
+            Só válido com category=renda_fixa. quantity deve vir 1, averagePrice o saldo
+            conhecido, purchaseDate a data desse saldo — ver Asset.isSavingsAccount.
         quantity:
           type: number
         averagePrice:

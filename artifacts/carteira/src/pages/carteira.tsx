@@ -266,6 +266,7 @@ export default function Carteira() {
       return;
     }
     const enteredQuantity = Number(quantity);
+    const isSavings = treasuryKey === "poupanca";
     // Para título público a comparação é pelo par, não pelo ticker: o ticker é derivado
     // no servidor, então o cliente não sabe qual string vai sair e erraria o aviso de
     // consolidação.
@@ -280,13 +281,15 @@ export default function Carteira() {
         ticker: selectedBond ? selectedBond.label : ticker,
         // No caminho de título público a quantidade é DERIVADA (valor investido ÷ PU do
         // dia da compra) em vez de digitada: ninguém sabe de cabeça que comprou 0,2083
-        // títulos, mas todo mundo sabe quanto investiu.
-        quantity: selectedBond ? (derivedQuantity ?? enteredQuantity) : enteredQuantity,
+        // títulos, mas todo mundo sabe quanto investiu. Poupança não tem quantidade
+        // nenhuma — é só um saldo — então fica travada em 1.
+        quantity: selectedBond ? (derivedQuantity ?? enteredQuantity) : isSavings ? 1 : enteredQuantity,
         averagePrice: selectedBond ? effectiveUnitPrice : Number(averagePrice),
         purchaseDate: purchaseDate || undefined,
         category: category as any,
         treasuryBondType: selectedBond?.bondType ?? null,
         treasuryMaturityDate: selectedBond?.maturityDate ?? null,
+        isSavingsAccount: isSavings,
       }
     }, {
       onSuccess: (asset) => {
@@ -307,6 +310,8 @@ export default function Carteira() {
       }
     });
   };
+
+  const editingAsset = assets?.find((a) => a.id === editingId) ?? null;
 
   const handleEditOpen = (asset: any) => {
     setEditingId(asset.id);
@@ -464,6 +469,7 @@ export default function Carteira() {
                     <SelectTrigger><SelectValue placeholder="Selecione o título…" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="outro">Outro (CDB, LCI, LCA…)</SelectItem>
+                      <SelectItem value="poupanca">Poupança</SelectItem>
                       {(treasuryBonds ?? []).map((b) => (
                         <SelectItem key={`${b.bondType}|${b.maturityDate}`} value={`${b.bondType}|${b.maturityDate}`}>
                           {b.label}
@@ -487,6 +493,9 @@ export default function Carteira() {
                       identificada por texto livre e avaliada pelo preço médio. */}
                   {treasuryKey === "outro" && (
                     <Input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="CDB BANCO X 2028" required />
+                  )}
+                  {treasuryKey === "poupanca" && (
+                    <Input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="POUPANÇA NUBANK" required />
                   )}
                 </div>
               ) : (
@@ -601,6 +610,45 @@ export default function Carteira() {
                     )}
                   </div>
                 </>
+              ) : treasuryKey === "poupanca" ? (
+                <>
+                  {/* Poupança não tem "quantidade de cotas" nem PU — é só um saldo que
+                      rende no aniversário mensal. Sem investedAmount/PU pra derivar
+                      nada: a pessoa informa o saldo que já sabe, e a data em que sabia
+                      esse valor. quantity fica travada em 1 na hora de submeter. */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="savings-balance">Saldo conhecido</Label>
+                      <Input
+                        id="savings-balance"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        placeholder="1000,00"
+                        value={averagePrice}
+                        onChange={(e) => setAveragePrice(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="savings-date">Data desse saldo</Label>
+                      <Input
+                        id="savings-date"
+                        type="date"
+                        value={purchaseDate}
+                        max={new Date().toISOString().slice(0, 10)}
+                        onChange={(e) => setPurchaseDate(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-pretty">
+                    A partir daqui o app projeta o saldo de hoje usando o rendimento real da poupança
+                    publicado pelo Banco Central — só credita no aniversário mensal completo, igual a
+                    conta de verdade. Pra atualizar depois (novo depósito ou saque), edite esta posição
+                    em vez de cadastrar de novo.
+                  </p>
+                </>
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-4">
@@ -690,13 +738,16 @@ export default function Carteira() {
                           <div className="text-xs text-muted-foreground">{asset.dividendFrequency}</div>
                         )}
                       </TableCell>
-                      <TableCell className="text-right font-mono">{asset.quantity}</TableCell>
+                      <TableCell className="text-right font-mono">{asset.isSavingsAccount ? '—' : asset.quantity}</TableCell>
                       <TableCell className="text-right font-mono">{formatCurrency(asset.averagePrice)}</TableCell>
                       <TableCell className="text-right font-mono">
                         <div className="flex items-center justify-end gap-1.5">
                           {asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}
                           <ChangeBadge changePercent={asset.changePercent} />
                         </div>
+                        {asset.isSavingsAccount && (
+                          <div className="text-xs font-sans text-muted-foreground">saldo estimado hoje</div>
+                        )}
                         {asset.priceAsOf && (
                           // Âmbar sinaliza problema, e título público datado não é
                           // problema: o Tesouro publica o PU com atraso por natureza.
@@ -793,15 +844,17 @@ export default function Carteira() {
                   <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-sm">
                     <div>
                       <div className="text-xs text-muted-foreground">Quantidade</div>
-                      <div className="font-mono">{asset.quantity}</div>
+                      <div className="font-mono">{asset.isSavingsAccount ? '—' : asset.quantity}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground">Preço Médio</div>
+                      <div className="text-xs text-muted-foreground">
+                        {asset.isSavingsAccount && asset.purchaseDate ? `Saldo em ${formatShortDate(asset.purchaseDate)}` : 'Preço Médio'}
+                      </div>
                       <div className="font-mono">{formatCurrency(asset.averagePrice)}</div>
                     </div>
                     <div>
                       <div className="text-xs text-muted-foreground">
-                        {asset.treasuryBondType ? 'PU de Recompra' : asset.priceAsOf ? 'Última Cotação' : 'Cotação Atual'}
+                        {asset.isSavingsAccount ? 'Saldo Estimado' : asset.treasuryBondType ? 'PU de Recompra' : asset.priceAsOf ? 'Última Cotação' : 'Cotação Atual'}
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="font-mono">{asset.currentPrice ? formatCurrency(asset.currentPrice) : '-'}</span>
@@ -854,10 +907,17 @@ export default function Carteira() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Quantidade</Label>
-                <Input type="number" step="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+                <Input
+                  type="number"
+                  step="0.0001"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  required
+                  disabled={!!editingAsset?.isSavingsAccount}
+                />
               </div>
               <div className="space-y-2">
-                <Label>Preço Médio</Label>
+                <Label>{editingAsset?.isSavingsAccount ? "Saldo" : "Preço Médio"}</Label>
                 <Input type="number" step="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
               </div>
             </div>
@@ -877,7 +937,11 @@ export default function Carteira() {
                 versão, que é justamente quem tem proventos acumulados para registrar. */}
             <div className="space-y-2">
               <Label htmlFor="edit-purchase-date">
-                Data da compra <span className="font-normal text-muted-foreground">(opcional)</span>
+                {editingAsset?.isSavingsAccount ? (
+                  "Data desse saldo"
+                ) : (
+                  <>Data da compra <span className="font-normal text-muted-foreground">(opcional)</span></>
+                )}
               </Label>
               <Input
                 id="edit-purchase-date"
@@ -887,8 +951,9 @@ export default function Carteira() {
                 onChange={(e) => setPurchaseDate(e.target.value)}
               />
               <p className="text-xs text-muted-foreground text-pretty">
-                Preenchendo, o app passa a saber a quais proventos você tinha direito e para
-                de pedir conferência em cada um.
+                {editingAsset?.isSavingsAccount
+                  ? "Atualize saldo e data sempre que depositar ou sacar — é assim que se mantém a estimativa em dia."
+                  : "Preenchendo, o app passa a saber a quais proventos você tinha direito e para de pedir conferência em cada um."}
               </p>
             </div>
             <DialogFooter>
