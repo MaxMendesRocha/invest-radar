@@ -42,6 +42,8 @@ export * from './authResponse';
 export * from './benchmarkComparison';
 export * from './benchmarkPoint';
 export * from './compositionRisk';
+export * from './corporateEventWarning';
+export * from './corporateEventWarningType';
 export * from './dismissPendingDividendInput';
 export * from './distributionItem';
 export * from './distributionQuality';

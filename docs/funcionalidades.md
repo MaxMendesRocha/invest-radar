@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 53 endpoints · 20 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
+**Superfície atual:** 54 endpoints · 21 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
 
 ---
 
@@ -46,7 +46,7 @@ flowchart LR
     F2["api.bcb.gov.br<br/>Selic · IPCA · IGP-M · CDI"]
     F3["tesourotransparente<br/>PU diário dos títulos"]
     F4["InfoMoney RSS<br/>manchetes por ativo"]
-    F5["dados.cvm.gov.br<br/>composição real de FII · taxa de adm."]
+    F5["dados.cvm.gov.br<br/>composição real de FII · taxa de adm.<br/>evento corporativo"]
   end
 
   subgraph M["MOTORES — 100% determinístico"]
@@ -84,7 +84,7 @@ depende da IA para existir.**
 | `api.bcb.gov.br` | Selic, IPCA, IGP-M, CDI, dólar, rendimento real da poupança | Séries oficiais do Banco Central. A Selic é a referência contra a qual o rendimento de FII é lido, o CDI é a taxa livre de risco do Sharpe, e a série 195 já traz o rendimento da poupança com a regra de TR aplicada — pronto, sem reimplementar a regra |
 | `tesourotransparente` | PU diário de todos os títulos do Tesouro Direto | Descoberto via CKAN — o endpoint JSON amplamente citado em tutoriais responde `410 Gone`. Ingestão incremental e de memória constante |
 | InfoMoney RSS | Manchetes recentes por ativo | Título, link real do artigo e um resumo curto vindo do próprio `<description>` do feed (não é raspagem de página — é o campo que o publisher já disponibiliza pra syndication). A classificação de impacto é o único ponto em que a IA toca notícia |
-| `dados.cvm.gov.br` | Composição real da carteira de FII (% imóveis diretos, % CRI/recebíveis, % outros) e taxa de administração real | Informe Mensal Estruturado, dado público sem chave, cruzado com a brapi pelo CNPJ real do fundo. Diferente do investidor10.com.br (descartado por Termos de Uso), este é o próprio administrador prestando conta à CVM |
+| `dados.cvm.gov.br` | Composição real da carteira de FII (% imóveis diretos, % CRI/recebíveis, % outros), taxa de administração real, e a série mensal de cotas emitidas e amortização que alimenta o detector de evento corporativo | Informe Mensal Estruturado, dado público sem chave. O CNPJ vem cruzado com a brapi para a composição, e do `Codigo_ISIN` do próprio arquivo para o detector — que por isso não depende de plano pago. Diferente do investidor10.com.br (descartado por Termos de Uso), este é o próprio administrador prestando conta à CVM |
 | `maisretorno.com` (opcional) | IFIX e CDI com histórico, dados D-1 | Entra só onde as outras fontes são cegas: o IFIX, que a brapi não devolve com série, e o CDI quando o BCB não responde. Sem `MAIS_RETORNO_TOKEN` o app funciona igual a antes — nada depende dela |
 
 ---
@@ -536,6 +536,50 @@ seria necessário pra modelar com exatidão o caso de um saque parcial antes do 
 o ganho aqui é só de UX sobre o mesmo modelo de saldo único já existente, com a mesma aproximação e
 o mesmo aviso de honestidade sobre precisão perto da data de crédito.
 
+### Evento corporativo em FII — avisa, não corrige
+
+O preço médio guardado aqui é o que a pessoa informou. A corretora recalcula o dela a partir das
+notas de corretagem **e ajusta por evento corporativo**; o app não ajusta nada. Enquanto nada
+acontece com o fundo os dois números batem. Quando acontece, o app diverge **em silêncio** — foi
+assim que uma divergência real (app R$ 5,68, corretora R$ 5,04) passou despercebida até aparecer no
+extrato, num FII que tinha sofrido desdobramento 1:10.
+
+O detector lê `fii_monthly_reports` e avisa quando o fundo passou por um evento **depois** da data
+de compra registrada. Só entram eventos que **sempre** alteram o preço médio de quem já tinha a
+posição:
+
+- **Desdobramento e grupamento** — detectados por razão inteira entre a quantidade de cotas de dois
+  meses consecutivos (2, 3, 4, 5, 8, 10, 20, 25, 40, 50 ou 100, com 2% de tolerância). A lista é
+  explícita porque o arquivo tem lixo: existe fundo com razão de ×262.600 entre dois meses, que é
+  erro de preenchimento e não evento societário.
+- **Amortização** — só acima de **1% acumulado** desde a compra. Amortização mensal típica é da
+  ordem de 0,18%; avisar a cada mês seria ruído.
+
+**Variação de cotas que não bate razão inteira é deliberadamente ignorada.** É emissão nova, que não
+mexe no preço médio de quem não subscreveu — e é de longe a mais comum: medindo 2022–2026, 64% dos
+FIIs (1.023 de 1.602) tiveram alguma variação, 6.049 ocorrências. Alertar nisso seria alarme falso
+em dois terços de qualquer carteira. Filtrando por razão inteira sobram 164 fundos e 198 eventos.
+
+Duas armadilhas do arquivo da CVM que custaram bug e viraram teste de regressão:
+
+1. **Os campos `Percentual_*` são fração, não percentual**, apesar do nome. Provado por igualdade
+   exata: `Percentual_Dividend_Yield_Mes` de 0,0074884 vezes o valor patrimonial da cota de 8,6801
+   dá R$ 0,0650 — exatamente o rendimento pago naquele mês. Dividir por 100 "corrigindo" o nome
+   tornaria o limiar de amortização inalcançável e o detector silenciaria sem avisar ninguém.
+2. **A coluna do CNPJ mudou de nome**: até 2022 é `CNPJ_Fundo`, de 2023 em diante
+   `CNPJ_Fundo_Classe`. Ler só o nome novo fazia o backfill descartar os anos antigos inteiros
+   retornando zero linha, sem erro nenhum.
+
+Ticker → CNPJ sai do `Codigo_ISIN` do próprio arquivo (DVFF11 → prefixo `BRDVFFCTF`), o que dispensa
+o plano pago da brapi que o outro caminho do app usa. O ISIN é preenchido de forma inconsistente
+entre anos — o DVFF11 vem vazio em todo o ano de 2023 e preenchido em 2026 —, então a busca varre a
+tabela inteira: basta um mês qualquer trazer o ISIN pra que a série toda do fundo fique alcançável.
+
+O aviso aparece como triângulo âmbar ao lado do ticker em Minha Carteira, na linha onde o preço
+médio está escrito, e não como alerta no Radar — o questionamento vale mais colado no número que ele
+questiona. Sem a sincronização ter rodado, a tabela está vazia e ninguém recebe aviso: silêncio
+honesto, nunca palpite.
+
 ---
 
 ## Meta de renda passiva
@@ -691,6 +735,12 @@ provedor deixe de preencher no futuro.
 **Sincronização do Tesouro** (diária) — ingere o arquivo oficial de PU. Na primeira execução carrega
 o histórico completo; depois, apenas o incremento a partir da última data conhecida.
 
+**Informe mensal de FII da CVM** (semanal) — alimenta `fii_monthly_reports` com a série de cotas
+emitidas e amortização por fundo por mês, base do detector de evento corporativo (seção própria
+abaixo). Na primeira execução faz backfill de 2019 em diante; depois só o ano corrente, porque ano
+fechado não é republicado. Um ano que falha não derruba os outros — o detector opera com histórico
+parcial, só enxerga menos longe.
+
 > **Ao limpar `opportunities` manualmente, zere também a linha correspondente em `job_runs`.** O
 > scheduler decide se roda consultando `last_run_at`, e com o gap de uma semana a tela fica vazia
 > por dias se o registro não for zerado junto.
@@ -823,6 +873,11 @@ para decidir nada.
   razão de conversão do recibo. Melhor "dados insuficientes" que uma nota sobre número quebrado.
 - **ETFs não têm caminho de avaliação.** Um ETF não tem fundamentos próprios — tem a carteira que
   replica. Avaliar exigiria olhar através do índice. Aparecem na carteira e na alocação, sem análise.
+- **Evento corporativo é detectado só em FII, e só desdobramento/grupamento/amortização.** A fonte é
+  o informe mensal da CVM, que não cobre ação nem ETF. Subscrição e bonificação também alteram preço
+  médio e não são detectadas: o arquivo não distingue emissão por subscrição de emissão comum, e
+  chutar pela variação de cotas geraria alarme falso em 64% dos fundos (ver seção própria). Nada
+  disso é corrigido automaticamente em nenhum caso — o app avisa, quem ajusta é a pessoa.
 - **Notícias e macro não entram no score.** Valem 20% cada na fórmula original, mas não há fonte
   estruturada. Ficam fora da média; o peso é redistribuído entre o que existe.
 - **A nota de diversificação ainda não usa correlação real, mas o dado já existe ao lado dela.**

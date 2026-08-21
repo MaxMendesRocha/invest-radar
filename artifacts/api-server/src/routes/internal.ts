@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { requireInternalToken } from "../middlewares/internal-auth";
 import { OPPORTUNITIES_JOB } from "../lib/opportunities-engine";
 import { TREASURY_JOB } from "../lib/treasury-data";
+import { FII_EVENTS_JOB } from "../lib/fii-events-sync";
 import { runJobAndRecord } from "../lib/scheduler";
 import { logger } from "../lib/logger";
 
@@ -41,6 +42,23 @@ router.post("/internal/treasury/sync", requireInternalToken, async (req, res): P
   } catch (err) {
     logger.error({ err }, "POST /internal/treasury/sync falhou");
     res.status(500).json({ error: "Falha ao sincronizar o Tesouro Direto — ver logs do servidor" });
+  }
+});
+
+// Mesmo padrão. Na primeira execução este job faz o backfill do histórico inteiro
+// (2019 em diante), então num ambiente novo vale disparar na mão em vez de esperar a
+// janela semanal — sem a série, o detector de evento corporativo não tem o que comparar.
+router.post("/internal/fii-events/sync", requireInternalToken, async (req, res): Promise<void> => {
+  try {
+    const result = await runJobAndRecord(FII_EVENTS_JOB);
+    if (!result) {
+      res.status(409).json({ error: "Job já está em execução" });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "POST /internal/fii-events/sync falhou");
+    res.status(500).json({ error: "Falha ao sincronizar o informe mensal de FII — ver logs do servidor" });
   }
 });
 

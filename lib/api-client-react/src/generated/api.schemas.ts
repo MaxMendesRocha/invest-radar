@@ -68,6 +68,33 @@ export const AssetDividendFrequency = {
   Irregular: 'Irregular',
 } as const;
 
+export type CorporateEventWarningType = typeof CorporateEventWarningType[keyof typeof CorporateEventWarningType];
+
+
+export const CorporateEventWarningType = {
+  desdobramento: 'desdobramento',
+  grupamento: 'grupamento',
+  amortizacao: 'amortizacao',
+} as const;
+
+export interface CorporateEventWarning {
+  type: CorporateEventWarningType;
+  /** Mês de referência do informe da CVM em que o evento aparece. */
+  date: string;
+  /**
+     * Desdobramento 1:10 e grupamento 10:1 vêm ambos como 10 — o sentido está em type. Null para amortização.
+     * @nullable
+     */
+  ratio: number | null;
+  /**
+     * Amortização acumulada desde a compra, em fração (0.0134 = 1,34%). Só é reportada acima de 1% acumulado, porque amortização mensal típica é da ordem de 0,18% e avisar a cada mês seria ruído. Null para desdobramento/grupamento.
+     * @nullable
+     */
+  accumulatedFraction: number | null;
+  /** true quando a posição não tem purchaseDate registrada — nesse caso não dá pra afirmar que o evento é posterior à compra, e a interface diz isso. */
+  purchaseDateUnknown: boolean;
+}
+
 export interface Asset {
   id: number;
   userId: number;
@@ -110,6 +137,8 @@ export interface Asset {
      * @nullable
      */
   dividendFrequency?: AssetDividendFrequency;
+  /** Evento corporativo que o FII sofreu DEPOIS da data de compra registrada e que sempre altera o preço médio de quem já tinha a posição. Null pra qualquer outra classe, pra FII sem evento no período, e enquanto a série mensal da CVM não tiver sido sincronizada. O app avisa mas não corrige — não tem como saber o que a pessoa fez na corretora. */
+  corporateEventWarning?: null | CorporateEventWarning;
   createdAt: string;
 }
 

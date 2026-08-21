@@ -1149,9 +1149,47 @@ components:
           type: ["string", "null"]
           enum: [Mensal, Trimestral, Semestral, Anual, Irregular, null]
           description: Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+        corporateEventWarning:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/CorporateEventWarning"
+          description: >-
+            Evento corporativo que o FII sofreu DEPOIS da data de compra registrada e que
+            sempre altera o preço médio de quem já tinha a posição. Null pra qualquer
+            outra classe, pra FII sem evento no período, e enquanto a série mensal da CVM
+            não tiver sido sincronizada. O app avisa mas não corrige — não tem como saber
+            o que a pessoa fez na corretora.
         createdAt:
           type: string
           format: date-time
+
+    CorporateEventWarning:
+      type: object
+      required: [type, date, ratio, accumulatedFraction, purchaseDateUnknown]
+      properties:
+        type:
+          type: string
+          enum: [desdobramento, grupamento, amortizacao]
+        date:
+          type: string
+          format: date
+          description: Mês de referência do informe da CVM em que o evento aparece.
+        ratio:
+          type: ["number", "null"]
+          description: >-
+            Desdobramento 1:10 e grupamento 10:1 vêm ambos como 10 — o sentido está em
+            type. Null para amortização.
+        accumulatedFraction:
+          type: ["number", "null"]
+          description: >-
+            Amortização acumulada desde a compra, em fração (0.0134 = 1,34%). Só é
+            reportada acima de 1% acumulado, porque amortização mensal típica é da ordem
+            de 0,18% e avisar a cada mês seria ruído. Null para desdobramento/grupamento.
+        purchaseDateUnknown:
+          type: boolean
+          description: >-
+            true quando a posição não tem purchaseDate registrada — nesse caso não dá pra
+            afirmar que o evento é posterior à compra, e a interface diz isso.
 
     TickerValidation:
       type: object

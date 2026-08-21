@@ -33,6 +33,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, Edit2, Trash2, Banknote, CircleCheck, TriangleAlert, Loader2, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { categoryLabel, CATEGORY_LABELS } from "@/lib/categories";
@@ -71,6 +72,59 @@ function ChangeBadge({ changePercent }: { changePercent: number | null | undefin
       <Icon className="w-3 h-3" />
       {isUp ? "+" : ""}{formatPercent(changePercent)}
     </span>
+  );
+}
+
+/**
+ * Aviso de evento corporativo (desdobramento, grupamento, amortização) que o FII sofreu
+ * depois da data de compra registrada, detectado no informe mensal da CVM.
+ *
+ * Só avisa — não corrige. O app não tem como saber o que a pessoa fez na corretora, e
+ * chutar um preço médio "ajustado" seria pior que apontar a dúvida. Sem esse aviso o
+ * número simplesmente envelhece em silêncio, que é como uma divergência real passou
+ * despercebida até aparecer no extrato da corretora.
+ */
+function CorporateEventBadge({ warning }: { warning: Asset["corporateEventWarning"] }) {
+  if (!warning) return null;
+
+  const monthLabel = (() => {
+    const [year, month] = warning.date.split("-");
+    const names = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+    return `${names[Number(month) - 1] ?? month}/${year}`;
+  })();
+
+  const headline = warning.type === "amortizacao"
+    ? `Amortização de ${formatPercent((warning.accumulatedFraction ?? 0) * 100)} desde a sua compra`
+    : warning.type === "desdobramento"
+      ? `Desdobramento 1:${warning.ratio} em ${monthLabel}`
+      : `Grupamento ${warning.ratio}:1 em ${monthLabel}`;
+
+  const detail = warning.type === "amortizacao"
+    ? "Amortização devolve capital e a corretora abate o valor direto do preço médio."
+    : "A corretora ajusta quantidade e preço médio automaticamente nesses casos; o app não.";
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Evento corporativo detectado"
+          className="inline-flex items-center text-amber-700 dark:text-amber-500 hover:opacity-80"
+        >
+          <TriangleAlert className="w-3.5 h-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 text-sm space-y-2">
+        <div className="font-medium">{headline}</div>
+        <p className="text-muted-foreground text-xs text-pretty">{detail}</p>
+        <p className="text-muted-foreground text-xs text-pretty">
+          {warning.purchaseDateUnknown
+            ? "Esta posição não tem data de compra registrada, então não dá pra saber se o evento é anterior a ela. Confira o preço médio na corretora."
+            : "Seu preço médio pode não refletir o evento — confira na corretora e ajuste pelo botão de editar."}
+        </p>
+        <p className="text-[11px] text-muted-foreground">Fonte: Informe Mensal de FII (CVM).</p>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -772,7 +826,12 @@ export default function Carteira() {
 
                   return (
                     <TableRow key={asset.id}>
-                      <TableCell className="font-bold">{asset.ticker}</TableCell>
+                      <TableCell className="font-bold">
+                        <div className="flex items-center gap-1.5">
+                          {asset.ticker}
+                          <CorporateEventBadge warning={asset.corporateEventWarning} />
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div>{categoryLabel(asset.category)}</div>
                         {asset.dividendFrequency && (
@@ -865,7 +924,10 @@ export default function Carteira() {
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-bold text-lg">{asset.ticker}</div>
+                      <div className="font-bold text-lg flex items-center gap-1.5">
+                        {asset.ticker}
+                        <CorporateEventBadge warning={asset.corporateEventWarning} />
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {categoryLabel(asset.category)}
                         {asset.dividendFrequency && ` · ${asset.dividendFrequency}`}

@@ -100,6 +100,13 @@ export const ListAssetsResponseItem = zod.object({
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
+  "corporateEventWarning": zod.union([zod.null(),zod.object({
+  "type": zod.enum(['desdobramento', 'grupamento', 'amortizacao']),
+  "date": zod.coerce.date().describe('Mês de referência do informe da CVM em que o evento aparece.'),
+  "ratio": zod.number().nullable().describe('Desdobramento 1:10 e grupamento 10:1 vêm ambos como 10 — o sentido está em type. Null para amortização.'),
+  "accumulatedFraction": zod.number().nullable().describe('Amortização acumulada desde a compra, em fração (0.0134 = 1,34%). Só é reportada acima de 1% acumulado, porque amortização mensal típica é da ordem de 0,18% e avisar a cada mês seria ruído. Null para desdobramento\/grupamento.'),
+  "purchaseDateUnknown": zod.boolean().describe('true quando a posição não tem purchaseDate registrada — nesse caso não dá pra afirmar que o evento é posterior à compra, e a interface diz isso.')
+})]).optional().describe('Evento corporativo que o FII sofreu DEPOIS da data de compra registrada e que sempre altera o preço médio de quem já tinha a posição. Null pra qualquer outra classe, pra FII sem evento no período, e enquanto a série mensal da CVM não tiver sido sincronizada. O app avisa mas não corrige — não tem como saber o que a pessoa fez na corretora.'),
   "createdAt": zod.coerce.date()
 })
 export const ListAssetsResponse = zod.array(ListAssetsResponseItem)
@@ -144,6 +151,13 @@ export const CreateAssetResponse = zod.object({
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
+  "corporateEventWarning": zod.union([zod.null(),zod.object({
+  "type": zod.enum(['desdobramento', 'grupamento', 'amortizacao']),
+  "date": zod.coerce.date().describe('Mês de referência do informe da CVM em que o evento aparece.'),
+  "ratio": zod.number().nullable().describe('Desdobramento 1:10 e grupamento 10:1 vêm ambos como 10 — o sentido está em type. Null para amortização.'),
+  "accumulatedFraction": zod.number().nullable().describe('Amortização acumulada desde a compra, em fração (0.0134 = 1,34%). Só é reportada acima de 1% acumulado, porque amortização mensal típica é da ordem de 0,18% e avisar a cada mês seria ruído. Null para desdobramento\/grupamento.'),
+  "purchaseDateUnknown": zod.boolean().describe('true quando a posição não tem purchaseDate registrada — nesse caso não dá pra afirmar que o evento é posterior à compra, e a interface diz isso.')
+})]).optional().describe('Evento corporativo que o FII sofreu DEPOIS da data de compra registrada e que sempre altera o preço médio de quem já tinha a posição. Null pra qualquer outra classe, pra FII sem evento no período, e enquanto a série mensal da CVM não tiver sido sincronizada. O app avisa mas não corrige — não tem como saber o que a pessoa fez na corretora.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -188,6 +202,13 @@ export const GetAssetResponse = zod.object({
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
+  "corporateEventWarning": zod.union([zod.null(),zod.object({
+  "type": zod.enum(['desdobramento', 'grupamento', 'amortizacao']),
+  "date": zod.coerce.date().describe('Mês de referência do informe da CVM em que o evento aparece.'),
+  "ratio": zod.number().nullable().describe('Desdobramento 1:10 e grupamento 10:1 vêm ambos como 10 — o sentido está em type. Null para amortização.'),
+  "accumulatedFraction": zod.number().nullable().describe('Amortização acumulada desde a compra, em fração (0.0134 = 1,34%). Só é reportada acima de 1% acumulado, porque amortização mensal típica é da ordem de 0,18% e avisar a cada mês seria ruído. Null para desdobramento\/grupamento.'),
+  "purchaseDateUnknown": zod.boolean().describe('true quando a posição não tem purchaseDate registrada — nesse caso não dá pra afirmar que o evento é posterior à compra, e a interface diz isso.')
+})]).optional().describe('Evento corporativo que o FII sofreu DEPOIS da data de compra registrada e que sempre altera o preço médio de quem já tinha a posição. Null pra qualquer outra classe, pra FII sem evento no período, e enquanto a série mensal da CVM não tiver sido sincronizada. O app avisa mas não corrige — não tem como saber o que a pessoa fez na corretora.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -229,6 +250,13 @@ export const UpdateAssetResponse = zod.object({
   "profitLoss": zod.number().nullish(),
   "profitLossPercent": zod.number().nullish(),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
+  "corporateEventWarning": zod.union([zod.null(),zod.object({
+  "type": zod.enum(['desdobramento', 'grupamento', 'amortizacao']),
+  "date": zod.coerce.date().describe('Mês de referência do informe da CVM em que o evento aparece.'),
+  "ratio": zod.number().nullable().describe('Desdobramento 1:10 e grupamento 10:1 vêm ambos como 10 — o sentido está em type. Null para amortização.'),
+  "accumulatedFraction": zod.number().nullable().describe('Amortização acumulada desde a compra, em fração (0.0134 = 1,34%). Só é reportada acima de 1% acumulado, porque amortização mensal típica é da ordem de 0,18% e avisar a cada mês seria ruído. Null para desdobramento\/grupamento.'),
+  "purchaseDateUnknown": zod.boolean().describe('true quando a posição não tem purchaseDate registrada — nesse caso não dá pra afirmar que o evento é posterior à compra, e a interface diz isso.')
+})]).optional().describe('Evento corporativo que o FII sofreu DEPOIS da data de compra registrada e que sempre altera o preço médio de quem já tinha a posição. Null pra qualquer outra classe, pra FII sem evento no período, e enquanto a série mensal da CVM não tiver sido sincronizada. O app avisa mas não corrige — não tem como saber o que a pessoa fez na corretora.'),
   "createdAt": zod.coerce.date()
 })
 

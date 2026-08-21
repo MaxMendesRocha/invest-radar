@@ -7,6 +7,7 @@
  */
 import type { AssetCategory } from './assetCategory';
 import type { AssetDividendFrequency } from './assetDividendFrequency';
+import type { CorporateEventWarning } from './corporateEventWarning';
 
 export interface Asset {
   id: number;
@@ -50,5 +51,7 @@ export interface Asset {
      * @nullable
      */
   dividendFrequency?: AssetDividendFrequency;
+  /** Evento corporativo que o FII sofreu DEPOIS da data de compra registrada e que sempre altera o preço médio de quem já tinha a posição. Null pra qualquer outra classe, pra FII sem evento no período, e enquanto a série mensal da CVM não tiver sido sincronizada. O app avisa mas não corrige — não tem como saber o que a pessoa fez na corretora. */
+  corporateEventWarning?: null | CorporateEventWarning;
   createdAt: Date;
 }
