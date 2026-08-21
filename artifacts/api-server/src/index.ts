@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { startScheduler } from "./lib/scheduler";
 import { OPPORTUNITIES_JOB } from "./lib/opportunities-engine";
 import { TREASURY_JOB } from "./lib/treasury-data";
+import { FII_EVENTS_JOB } from "./lib/fii-events-sync";
 
 const rawPort = process.env["PORT"];
 
@@ -27,4 +28,4 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
 });
 
-startScheduler([OPPORTUNITIES_JOB, TREASURY_JOB]);
+startScheduler([OPPORTUNITIES_JOB, TREASURY_JOB, FII_EVENTS_JOB]);

@@ -8,6 +8,7 @@ import { canonicalTickerFor, findTreasuryBond } from "../lib/treasury-identity";
 import { estimateCapitalGainsTax } from "../lib/tax-engine";
 import { computeMonthlyTaxSummary } from "../lib/monthly-tax-engine";
 import { isoDate } from "../lib/local-date";
+import { getCorporateEventWarnings, type CorporateEventWarning } from "../lib/corporate-events";
 
 const router: IRouter = Router();
 
@@ -18,7 +19,7 @@ function enrichAsset(asset: {
   isSavingsAccount: boolean;
   sector: string | null; notes: string | null;
   createdAt: Date; updatedAt: Date;
-}, quoted: PricePoint | null, dividendFrequency: DividendFrequency | null) {
+}, quoted: PricePoint | null, dividendFrequency: DividendFrequency | null, corporateEvent: CorporateEventWarning | null = null) {
   const qty = parseFloat(asset.quantity);
   const avgPrice = parseFloat(asset.averagePrice);
   const totalCost = qty * avgPrice;
@@ -53,6 +54,11 @@ function enrichAsset(asset: {
     profitLoss,
     profitLossPercent,
     dividendFrequency: dividendFrequency?.label ?? null,
+    // Desdobramento, grupamento ou amortização que o fundo sofreu DEPOIS da data de
+    // compra registrada. O app não corrige a posição — não tem como saber o que a pessoa
+    // fez na corretora — mas sem esse aviso o preço médio envelhece em silêncio, que foi
+    // exatamente como uma divergência real passou despercebida até aparecer no extrato.
+    corporateEventWarning: corporateEvent,
     createdAt: asset.createdAt.toISOString(),
   };
 }
@@ -72,11 +78,13 @@ router.get("/assets", requireAuth, async (req, res): Promise<void> => {
   // (getDividendEvents, cache de 6h) — periodicidade classificada a partir da mesma
   // fonte, sem chamada nova à API além da já feita hoje pra outras telas.
   const dividendEventsByTicker = await getDividendEvents(assets.map((a) => ({ ticker: a.ticker, category: a.category })));
+  const corporateEvents = await getCorporateEventWarnings(assets);
   const now = Date.now();
   res.json(assets.map((a) => enrichAsset(
     a,
     prices.get(a.ticker.toUpperCase()) ?? null,
     classifyDividendFrequency(dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [], now),
+    corporateEvents.get(a.ticker.toUpperCase()) ?? null,
   )));
 });
 
