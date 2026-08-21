@@ -709,12 +709,15 @@ export const UpsertIncomeGoalResponse = zod.object({
  */
 export const GetPortfolioBenchmarksResponse = zod.object({
   "points": zod.array(zod.object({
-  "label": zod.string(),
-  "portfolio": zod.number(),
+  "date": zod.coerce.date(),
+  "label": zod.string().describe('Rótulo curto do eixo, no formato dd\/mm.'),
+  "portfolio": zod.number().nullable(),
   "cdi": zod.number(),
   "ibov": zod.number(),
   "ifix": zod.number().nullable()
 })),
+  "granularity": zod.enum(['diario']).describe('Resolução dos pontos. Era mensal até o comparativo passar a usar a série diária que já existia no banco — com janela curta, o gráfico mensal tinha dois pontos e virava uma reta sem percurso.'),
+  "windowDays": zod.number(),
   "windowMonths": zod.number(),
   "windowNote": zod.string().nullable(),
   "portfolioTotal": zod.number().nullable(),

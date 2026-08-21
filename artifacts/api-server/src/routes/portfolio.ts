@@ -10,8 +10,8 @@ import { fetchIndexSeries, isMaisRetornoConfigured } from "../lib/mais-retorno";
 import { synthesizeMarketNarrative } from "../lib/market-context-ai";
 import { getNewsFor, resolveSearchTerm } from "../lib/news";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
-import { computeMonthlyTwr } from "../lib/time-weighted-return";
-import { getCdiMonthlyReturns, syncAndGetIndexCloses } from "../lib/benchmark-data";
+import { computeDailyTwr } from "../lib/time-weighted-return";
+import { getCdiDailyReturns, syncAndGetDailyIndexCloses } from "../lib/benchmark-data";
 import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/analysis-engine";
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
 import { getMacroSnapshot } from "../lib/macro-data";
@@ -645,7 +645,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   // rentabilidade e aparecer como desempenho pior que o dos índices ao lado. O TWR
   // neutraliza o fluxo, que é justamente o que torna as três séries comparáveis.
   // Detalhes e limites do método em time-weighted-return.ts.
-  const twrByMonth = computeMonthlyTwr(
+  const twrByDate = computeDailyTwr(
     snapshots,
     sales,
     assets.length > 0 && totalCost > 0
@@ -659,96 +659,62 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   // recebia 1,0087 fixo. Duas chamadas seguidas devolviam históricos diferentes: o
   // IBOV acumulado saltava de +4,56% para +7,71% num F5.
   //
-  // A regra agora é a janela COMUM. Retorno acumulado só é comparável entre séries
-  // medidas no mesmo intervalo — plotar "carteira em 12 meses" contra "IBOV em 3
-  // meses" no mesmo eixo compara coisas diferentes mesmo com todo dado real. Então a
-  // janela é o trecho contíguo, terminando no mês corrente, em que TODAS as séries
-  // exibidas têm dado real, e todas são rebaseadas a 0% no início dela.
+  // A regra continua sendo a janela COMUM — retorno acumulado só é comparável entre
+  // séries medidas no mesmo intervalo —, mas em granularidade DIÁRIA. Agregar por mês
+  // descartava a resolução que já existia no banco: com janela de dois meses sobravam
+  // dois pontos, e dois pontos ligados viram uma reta que não mostra percurso nenhum.
   const [cdiReturns, ibovCloses, ifixCloses] = await Promise.all([
-    getCdiMonthlyReturns(),
-    syncAndGetIndexCloses(IBOV_SERIES_TICKER, "ibov"),
-    syncAndGetIndexCloses("IFIX", "ifix"),
+    getCdiDailyReturns(),
+    syncAndGetDailyIndexCloses(IBOV_SERIES_TICKER, "ibov"),
+    syncAndGetDailyIndexCloses("IFIX", "ifix"),
   ]);
 
-  const now = new Date();
-  const monthKeyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  const factorBetween = (closes: Map<string, number>, key: string, prevKey: string): number | null => {
-    const a = closes.get(key);
-    const b = closes.get(prevKey);
-    return a != null && b != null ? a / b : null;
-  };
+  // O eixo é o calendário de pregão: datas com fechamento de IBOV **e** CDI publicado.
+  // A interseção mantém a disciplina de janela comum — quando o BCB publica o CDI com um
+  // dia de atraso, o gráfico termina na véspera em vez de exibir um dia em que uma das
+  // séries não andou.
+  const horizon = new Date();
+  horizon.setFullYear(horizon.getFullYear() - 1);
+  const horizonStart = horizon.toISOString().slice(0, 10);
+  const axis = [...ibovCloses.keys()]
+    .filter((d) => d >= horizonStart && cdiReturns.has(d))
+    .sort();
 
-  interface MonthSlot {
-    label: string;
-    cdiReturn: number | null; // % do mês
-    ibovFactor: number | null; // fechamento do mês ÷ fechamento do mês anterior
-    ifixFactor: number | null;
-    /** Crescimento acumulado de R$ 1 na carteira até o fim do mês, líquido de aporte. */
-    portfolioFactor: number | null;
-    /** Patrimônio no fechamento do mês — só usado para nomear o ponto de partida. */
-    portfolioValue: number | null;
-  }
+  // A base é a primeira data do eixo que TAMBÉM tem medição de carteira: é onde as três
+  // séries são rebaseadas a 0%, então precisa ser um dia realmente medido, nunca um
+  // interpolado.
+  //
+  // Deliberadamente a carteira NÃO decide o resto da janela. `recordSnapshot` só grava
+  // quando a pessoa abre o app, então a série dela é esparsa por construção; exigir
+  // medição em todo dia do eixo — como a versão mensal exigia em todo mês — cortaria a
+  // janela no primeiro dia sem acesso e devolveria dois ou três dias de gráfico.
+  const baseIdx = axis.findIndex((d) => twrByDate.has(d));
+  const windowDates = baseIdx >= 0 ? axis.slice(baseIdx) : [];
 
-  const slots: MonthSlot[] = [];
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const prevD = new Date(now.getFullYear(), now.getMonth() - i - 1, 1);
-    const key = monthKeyOf(d);
-    const prevKey = monthKeyOf(prevD);
-
-    slots.push({
-      label: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
-      cdiReturn: cdiReturns.get(key) ?? null,
-      ibovFactor: factorBetween(ibovCloses, key, prevKey),
-      ifixFactor: factorBetween(ifixCloses, key, prevKey),
-      // Mês sem medição não está no mapa, e ausência continua sendo ausência: o mês fica
-      // de fora da janela em vez de receber um valor de preenchimento.
-      portfolioFactor: twrByMonth.get(key)?.factor ?? null,
-      portfolioValue: twrByMonth.get(key)?.value ?? null,
-    });
-  }
-
-  // Caminha do mês mais recente para trás enquanto carteira, CDI e IBOV têm dado real.
-  // O IFIX fica fora desta decisão: ele não tem histórico gratuito e exigi-lo zeraria
-  // a janela para todo mundo. Ele é reportado só quando cobre a janela inteira.
-  const REQUIRED_FOR_WINDOW = (s: MonthSlot) =>
-    s.cdiReturn != null && s.ibovFactor != null && s.portfolioFactor != null;
-
-  let firstIdx = slots.length;
-  for (let i = slots.length - 1; i >= 0; i--) {
-    if (!REQUIRED_FOR_WINDOW(slots[i])) break;
-    firstIdx = i;
-  }
-  // O mês-base não precisa dos fatores (ele vale 0% por definição), só do retorno da
-  // carteira, que é a referência contra a qual os meses seguintes são medidos.
-  if (firstIdx > 0 && slots[firstIdx - 1].portfolioFactor != null) firstIdx -= 1;
-
-  const windowSlots = slots.slice(firstIdx);
-
-  if (windowSlots.length < 2) {
-    const blocker = slots[slots.length - 1];
+  if (windowDates.length < 2) {
     const missing = [
-      blocker?.portfolioFactor == null ? "histórico da carteira" : null,
-      blocker?.cdiReturn == null ? "CDI" : null,
-      blocker?.ibovFactor == null ? "IBOV" : null,
+      baseIdx < 0 ? "histórico da carteira" : null,
+      cdiReturns.size === 0 ? "CDI" : null,
+      ibovCloses.size === 0 ? "IBOV" : null,
     ].filter((m): m is string => m != null);
 
-    // Série INTEIRA vazia é outra coisa que "faltou este mês". O BCB publica anos de
+    // Série INTEIRA vazia é outra coisa que "faltou hoje". O BCB publica anos de
     // histórico de graça, então zero pontos só acontece quando a API dele está fora
-    // do ar — e dizer "AINDA não há dois meses seguidos" nesse caso joga a culpa no
-    // histórico do usuário, que fica esperando amadurecer algo que já existe. O
-    // gráfico volta sozinho quando a fonte se restabelecer, e a tela precisa dizer
-    // isso em vez de sugerir que falta tempo de carteira.
+    // do ar — e dizer "AINDA não há histórico" nesse caso joga a culpa no histórico do
+    // usuário, que fica esperando amadurecer algo que já existe. O gráfico volta sozinho
+    // quando a fonte se restabelecer, e a tela precisa dizer isso.
     const cdiSourceDown = cdiReturns.size === 0;
 
     res.json({
       points: [],
+      granularity: "diario",
+      windowDays: 0,
       windowMonths: 0,
       windowNote: cdiSourceDown
         ? "O Banco Central não respondeu agora, então o CDI não pôde ser lido e não há como comparar sem ele. O comparativo volta sozinho assim que a fonte se restabelecer — não falta histórico seu."
         : missing.length > 0
-          ? `Ainda não há dois meses seguidos com dado real de ${missing.join(", ")} para comparar.`
-          : "Ainda não há dois meses seguidos de histórico para comparar.",
+          ? `Ainda não há dois dias seguidos com dado real de ${missing.join(", ")} para comparar.`
+          : "Ainda não há dois dias de histórico para comparar.",
       portfolioTotal: null,
       cdiTotal: null,
       ibovTotal: null,
@@ -759,50 +725,72 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     return;
   }
 
-  const base = windowSlots[0];
-  let cdiAcc = 1;
-  let ibovAcc = 1;
-  // Uma única lacuna invalida a série inteira do IFIX na janela — acumular por cima de
-  // um buraco produziria um número que parece medido e não é.
-  let ifixAcc: number | null = 1;
+  const baseDate = windowDates[0];
+  const baseIbov = ibovCloses.get(baseDate)!;
+  const baseTwr = twrByDate.get(baseDate)!;
+  // IFIX só é comparável se a própria base tiver fechamento — sem denominador real não
+  // há rebase, e inventar um produziria uma linha que parece medida e não é.
+  const baseIfix = ifixCloses.get(baseDate) ?? null;
 
-  const points = windowSlots.map((s, i) => {
-    if (i > 0) {
-      cdiAcc *= 1 + s.cdiReturn! / 100;
-      ibovAcc *= s.ibovFactor!;
-      ifixAcc = ifixAcc != null && s.ifixFactor != null ? ifixAcc * s.ifixFactor : null;
-    }
-    const pct = (acc: number) => Math.round((acc - 1) * 10000) / 100;
+  const pct = (ratio: number) => Math.round((ratio - 1) * 10000) / 100;
+  const labelOf = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+  let cdiAcc = 1;
+  const points = windowDates.map((d, i) => {
+    // O dia-base vale 0% por definição; o CDI passa a acumular a partir do dia seguinte.
+    if (i > 0) cdiAcc *= 1 + cdiReturns.get(d)! / 100;
+
+    const twr = twrByDate.get(d);
+    const ifixClose = ifixCloses.get(d);
+
     return {
-      label: s.label,
-      // Composto, não subtraído — dividir os fatores dá "quanto rendeu R$ 1 desde o
-      // início da janela", exatamente o que CDI e IBOV medem ao lado.
-      portfolio: Math.round((s.portfolioFactor! / base.portfolioFactor! - 1) * 10000) / 100,
+      date: d,
+      label: labelOf(d),
+      // Índices rebaseiam por divisão direta contra o fechamento da base — não há
+      // encadeamento a fazer, e por isso um buraco no meio da série do IFIX anula só
+      // aquele ponto em vez de contaminar todos os seguintes.
+      portfolio: twr != null ? pct(twr.factor / baseTwr.factor) : null,
       cdi: pct(cdiAcc),
-      ibov: pct(ibovAcc),
-      ifix: ifixAcc != null ? pct(ifixAcc) : null,
+      ibov: pct(ibovCloses.get(d)! / baseIbov),
+      ifix: baseIfix != null && ifixClose != null ? pct(ifixClose / baseIfix) : null,
     };
   });
 
-  const lastPoint = points[points.length - 1];
-  const windowNote =
-    windowSlots.length < slots.length
-      ? `Comparativo limitado a ${windowSlots.length} meses — é o histórico real disponível para todas as séries.`
-      : null;
+  // O último valor de cada série que tem valor. A carteira é esparsa, então o último
+  // ponto do eixo pode não ter medição — pegar `points[points.length - 1].portfolio`
+  // devolveria null num gráfico que tem dado, e o card ficaria vazio sem motivo.
+  const lastOf = (pick: (p: (typeof points)[number]) => number | null): number | null => {
+    for (let i = points.length - 1; i >= 0; i--) {
+      const v = pick(points[i]);
+      if (v != null) return v;
+    }
+    return null;
+  };
+
+  const spanDays = Math.round(
+    (new Date(`${windowDates[windowDates.length - 1]}T00:00:00Z`).getTime()
+      - new Date(`${baseDate}T00:00:00Z`).getTime()) / (24 * 60 * 60 * 1000),
+  );
+  const spanMonths = Math.max(1, Math.round(spanDays / 30));
+  const windowNote = spanDays < 330
+    ? `Comparativo limitado a ${spanMonths} ${spanMonths === 1 ? "mês" : "meses"} — é o histórico real disponível para todas as séries.`
+    : null;
 
   res.json({
     points,
-    windowMonths: points.length,
+    granularity: "diario",
+    windowDays: points.length,
+    windowMonths: spanMonths,
     windowNote,
-    portfolioTotal: lastPoint.portfolio,
-    cdiTotal: lastPoint.cdi,
-    ibovTotal: lastPoint.ibov,
-    ifixTotal: lastPoint.ifix,
+    portfolioTotal: lastOf((p) => p.portfolio),
+    cdiTotal: lastOf((p) => p.cdi),
+    ibovTotal: lastOf((p) => p.ibov),
+    ifixTotal: lastOf((p) => p.ifix),
     // O ponto de partida, dito com todas as letras. O gráfico mede a partir daqui, e
     // sem expor QUANDO e QUANTO era, a diferença para o card Resultado — que mede
     // contra o custo — só se resolve refazendo a conta à mão.
-    baseLabel: base.label,
-    baseValue: base.portfolioValue,
+    baseLabel: labelOf(baseDate),
+    baseValue: baseTwr.value,
   });
 });
 

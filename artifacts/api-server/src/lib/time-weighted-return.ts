@@ -122,6 +122,41 @@ export function computeMonthlyTwr(
   sales: Sale[],
   live: PortfolioPoint | null,
 ): Map<string, MonthlyTwr> {
+  return computeTwr(snapshots, sales, live, (date) => date.slice(0, 7));
+}
+
+/**
+ * A mesma cadeia, chaveada pelo dia inteiro ("YYYY-MM-DD") em vez do mês.
+ *
+ * Nada no cálculo muda — o encadeamento sempre foi por par de medições em datas
+ * arbitrárias, e o mês só aparecia no recorte da chave. O comparativo do Dashboard usa
+ * esta versão porque agregar por mês descartava a resolução que já existia no banco: com
+ * janela de dois meses sobravam dois pontos, e dois pontos ligados viram uma reta que não
+ * mostra percurso nenhum.
+ *
+ * Dia sem medição não aparece no mapa. Como `recordSnapshot` só grava quando a pessoa
+ * abre o app, essa ausência é frequente e é a razão de o gráfico ligar pontos distantes
+ * em vez de fingir medição diária contínua.
+ */
+export function computeDailyTwr(
+  snapshots: PortfolioSnapshot[],
+  sales: Sale[],
+  live: PortfolioPoint | null,
+): Map<string, MonthlyTwr> {
+  return computeTwr(snapshots, sales, live, (date) => date);
+}
+
+/**
+ * Implementação única das duas granularidades. Existe para que mensal e diário não possam
+ * divergir: a única diferença entre eles é `keyOf`, e deixar duas cópias do encadeamento
+ * seria garantir que uma correção futura entrasse só em uma delas.
+ */
+function computeTwr(
+  snapshots: PortfolioSnapshot[],
+  sales: Sale[],
+  live: PortfolioPoint | null,
+  keyOf: (date: string) => string,
+): Map<string, MonthlyTwr> {
   const series = buildSeries(snapshots, live);
   const flows = toSaleFlows(sales);
 
@@ -144,7 +179,7 @@ export function computeMonthlyTwr(
 
     if (previous == null) {
       running = 1;
-      byMonth.set(point.date.slice(0, 7), { factor: running, value: point.value });
+      byMonth.set(keyOf(point.date), { factor: running, value: point.value });
       previous = point;
       while (flowIdx < flows.length && flows[flowIdx].date <= point.date) flowIdx++;
       continue;
@@ -169,14 +204,15 @@ export function computeMonthlyTwr(
       // vez de produzir um fator que pareceria medido.
       byMonth = new Map();
       running = 1;
-      byMonth.set(point.date.slice(0, 7), { factor: running, value: point.value });
+      byMonth.set(keyOf(point.date), { factor: running, value: point.value });
       previous = point;
       continue;
     }
 
     running *= point.value / opening;
-    // Sobrescreve o mês a cada medição: sobra a última do mês, que é o fechamento.
-    byMonth.set(point.date.slice(0, 7), { factor: running, value: point.value });
+    // Sobrescreve a chave a cada medição: no mensal sobra o fechamento do mês; no
+    // diário há no máximo uma medição por dia, então a sobrescrita é inócua.
+    byMonth.set(keyOf(point.date), { factor: running, value: point.value });
     previous = point;
   }
 

@@ -1773,12 +1773,22 @@ components:
 
     BenchmarkPoint:
       type: object
-      required: [label, portfolio, cdi, ibov, ifix]
+      required: [date, label, portfolio, cdi, ibov, ifix]
       properties:
+        # Data do pregão em ISO. O eixo é diário: o calendário vem dos dias com
+        # fechamento de IBOV e CDI publicado.
+        date:
+          type: string
+          format: date
         label:
           type: string
+          description: Rótulo curto do eixo, no formato dd/mm.
+        # Null nos dias sem medição da carteira. `recordSnapshot` só grava quando a
+        # pessoa abre o app, então a série da carteira é esparsa por construção — e o
+        # dia sem acesso fica vazio em vez de repetir o valor da véspera, que pareceria
+        # medição e não é. O gráfico liga os pontos existentes.
         portfolio:
-          type: number
+          type: ["number", "null"]
         cdi:
           type: number
         ibov:
@@ -1792,17 +1802,27 @@ components:
     BenchmarkComparison:
       type: object
       required:
-        [points, windowMonths, windowNote, portfolioTotal, cdiTotal, ibovTotal, ifixTotal,
-         baseLabel, baseValue]
+        [points, granularity, windowDays, windowMonths, windowNote, portfolioTotal,
+         cdiTotal, ibovTotal, ifixTotal, baseLabel, baseValue]
       properties:
         points:
           type: array
           items:
             $ref: "#/components/schemas/BenchmarkPoint"
-        # Quantos meses o comparativo cobre. Retorno acumulado só é comparável entre
-        # séries medidas no mesmo intervalo, então a janela é o trecho contíguo em que
-        # todas têm dado real — pode ser menor que 12, e `points` fica vazio quando não
-        # há sequer dois meses comparáveis.
+        granularity:
+          type: string
+          enum: [diario]
+          description: >-
+            Resolução dos pontos. Era mensal até o comparativo passar a usar a série
+            diária que já existia no banco — com janela curta, o gráfico mensal tinha
+            dois pontos e virava uma reta sem percurso.
+        # Quantos pontos (pregões) o comparativo cobre.
+        windowDays:
+          type: integer
+        # O mesmo intervalo expresso em meses aproximados, para o texto da tela.
+        # Retorno acumulado só é comparável entre séries medidas no mesmo intervalo,
+        # então a janela é o trecho em que todas têm dado real — e `points` fica vazio
+        # quando não há sequer dois pregões comparáveis.
         windowMonths:
           type: integer
         windowNote:
@@ -1815,8 +1835,9 @@ components:
           type: ["number", "null"]
         ifixTotal:
           type: ["number", "null"]
-        # Mês que abre a janela e patrimônio no fechamento dele — o ponto de onde
-        # TODAS as séries partem de 0%. Exposto porque sem ele a diferença entre o
+        # Dia que abre a janela (dd/mm) e patrimônio nele — o ponto de onde TODAS as
+        # séries partem de 0%. É sempre um dia com medição real da carteira, nunca
+        # interpolado, porque é o denominador do rebase. Exposto porque sem ele a diferença entre o
         # percentual do gráfico e o do card Resultado (que mede contra o custo, não
         # contra o valor de partida) só se resolve refazendo a conta à mão. Null
         # quando não há janela comparável.

@@ -40,6 +40,7 @@ export * from './assetUpdate';
 export * from './assetUpdateCategory';
 export * from './authResponse';
 export * from './benchmarkComparison';
+export * from './benchmarkComparisonGranularity';
 export * from './benchmarkPoint';
 export * from './compositionRisk';
 export * from './corporateEventWarning';
