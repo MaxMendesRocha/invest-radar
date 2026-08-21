@@ -70,23 +70,35 @@ export async function syncFiiMonthlyReports(): Promise<{ summary: string }> {
     : [currentYear];
 
   let total = 0;
-  const failed: number[] = [];
+  const failures: string[] = [];
   for (const year of years) {
     try {
       const written = await upsertYear(year);
-      if (written === 0) failed.push(year);
+      if (written === 0) failures.push(`CVM ${year}: arquivo sem linhas`);
       total += written;
     } catch (err) {
       // Um ano que falha não derruba os outros — o detector funciona com histórico
       // parcial, só enxerga menos longe.
       logger.warn({ err, year }, "ano do informe de FII da CVM falhou");
-      failed.push(year);
+      failures.push(err instanceof Error ? err.message : String(err));
     }
   }
 
-  const summary = `${total} linhas de informe mensal de FII em ${years.length - failed.length}/${years.length} anos`
-    + (failed.length > 0 ? ` (sem dado: ${failed.join(", ")})` : "");
-  logger.info({ total, years, failed }, "sync de informe mensal de FII concluído");
+  // Zero linha gravada não é execução bem-sucedida com pouco resultado: é o job não
+  // ter conseguido dado nenhum. Registrar isso como "sucesso" fazia a falha sumir —
+  // o job_runs mostrava sucesso, last_error nulo, e a tabela vazia sem explicação, que
+  // é exatamente o tipo de silêncio que este projeto existe pra não ter. Lançar aqui
+  // faz o motivo de cada ano parar em job_runs.last_error, visível numa consulta SQL.
+  if (total === 0) {
+    throw new Error(
+      `nenhuma linha gravada em ${years.length} ano(s) tentado(s) — ${failures.join(" | ")}`,
+    );
+  }
+
+  const succeeded = years.length - failures.length;
+  const summary = `${total} linhas de informe mensal de FII em ${succeeded}/${years.length} anos`
+    + (failures.length > 0 ? ` (falhas: ${failures.join(" | ")})` : "");
+  logger.info({ total, years, failures }, "sync de informe mensal de FII concluído");
   return { summary };
 }
 
