@@ -59,6 +59,58 @@ export async function getCdiMonthlyReturns(): Promise<Map<string, number>> {
   return returns;
 }
 
+/** Série 12 do SGS: CDI em % AO DIA, um ponto por dia útil. */
+const CDI_DAILY_SERIES = "12";
+
+let cdiDailyCache: { returns: Map<string, number>; fetchedAt: number } | null = null;
+
+/**
+ * Map "YYYY-MM-DD" -> retorno do CDI (%) NAQUELE DIA, dado real do BCB.
+ *
+ * Conferido contra a série mensal antes de entrar em uso: compondo os 23 pregões de
+ * julho/2026 dá 1,2152%, contra 1,22% publicado na 4390 — a diferença de 0,0048 p.p. é o
+ * arredondamento de duas casas da série mensal. Trocar a base de mensal para diário não
+ * muda o número, só a resolução.
+ */
+export async function getCdiDailyReturns(): Promise<Map<string, number>> {
+  const now = Date.now();
+  if (cdiDailyCache && now - cdiDailyCache.fetchedAt < CACHE_TTL_MS) return cdiDailyCache.returns;
+
+  const returns = new Map<string, number>();
+  try {
+    const points = await fetchSeriesRange(CDI_DAILY_SERIES, 400);
+    for (const p of points) {
+      const value = parseFloat(p.valor);
+      // Banda de plausibilidade recalibrada para o dia. Reusar a mensal (0,1% a 4%)
+      // rejeitaria TODO dado diário válido — o CDI diário roda na casa de 0,05%.
+      if (!Number.isNaN(value) && value >= CDI_DAILY_MIN && value <= CDI_DAILY_MAX) {
+        returns.set(isoFromBcbDate(p.data), value);
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "BCB CDI diário (série 12) request errored");
+  }
+
+  // Mesma regra da série mensal: mapa vazio é falha, nunca "não há dado" — o BCB publica
+  // anos de histórico. Cachear vazio deixaria o comparativo apagado por 6 horas depois de
+  // a fonte já ter voltado.
+  if (returns.size > 0) cdiDailyCache = { returns, fetchedAt: now };
+  return returns;
+}
+
+/**
+ * CDI diário fica na casa de 0,05% ao dia com a Selic em dois dígitos. O piso exclui zero
+ * e valores degenerados; o teto de 0,5% ao dia equivale a ~250% ao ano, folgado acima de
+ * qualquer pico histórico e ainda assim capaz de barrar um campo lido na escala errada.
+ */
+const CDI_DAILY_MIN = 0.001;
+const CDI_DAILY_MAX = 0.5;
+
+function isoFromBcbDate(ddmmyyyy: string): string {
+  const [dd, mm, yyyy] = ddmmyyyy.split("/");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 /**
  * Faixa plausível para o CDI acumulado em UM mês, em %.
  *
@@ -244,12 +296,14 @@ async function upsertCloses(indexName: string, closesByDate: Map<string, number>
 }
 
 /**
- * Fetches whatever real daily closes brapi.dev will give us for `ticker` right now,
- * persists them into index_snapshots (so they survive after aging out of brapi's
- * 3-month free window), then returns the full accumulated history we have on file —
- * which can span further back than what brapi returned today.
+ * Igual à função acima, sem a agregação por mês: devolve "YYYY-MM-DD" -> fechamento.
+ *
+ * `index_snapshots` sempre guardou fechamento diário — o mês era só o recorte da chave na
+ * leitura. O comparativo do Dashboard usa esta versão porque agregar por mês descartava
+ * justamente a resolução que faz o gráfico mostrar percurso em vez de uma reta entre dois
+ * pontos.
  */
-export async function syncAndGetIndexCloses(ticker: string, indexName: string): Promise<Map<string, number>> {
+export async function syncAndGetDailyIndexCloses(ticker: string, indexName: string): Promise<Map<string, number>> {
   try {
     const { current, history } = await fetchIndexHistory(ticker);
     const closesByDate = new Map<string, number>();
@@ -266,11 +320,7 @@ export async function syncAndGetIndexCloses(ticker: string, indexName: string): 
 
   const rows = await db.select().from(indexSnapshotsTable).where(eq(indexSnapshotsTable.indexName, indexName)).orderBy(indexSnapshotsTable.date);
 
-  const monthlyCloses = new Map<string, number>();
-  for (const row of rows) {
-    // Rows come back sorted by date ascending — the last one written per month wins,
-    // which is exactly "closing value for that month" (or month-to-date if ongoing).
-    monthlyCloses.set(row.date.slice(0, 7), parseFloat(row.closeValue));
-  }
-  return monthlyCloses;
+  const dailyCloses = new Map<string, number>();
+  for (const row of rows) dailyCloses.set(row.date, parseFloat(row.closeValue));
+  return dailyCloses;
 }

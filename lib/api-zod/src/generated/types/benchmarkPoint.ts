@@ -7,8 +7,11 @@
  */
 
 export interface BenchmarkPoint {
+  date: Date;
+  /** Rótulo curto do eixo, no formato dd/mm. */
   label: string;
-  portfolio: number;
+  /** @nullable */
+  portfolio: number | null;
   cdi: number;
   ibov: number;
   /** @nullable */

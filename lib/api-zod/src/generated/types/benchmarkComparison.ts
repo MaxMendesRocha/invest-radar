@@ -5,10 +5,14 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { BenchmarkComparisonGranularity } from './benchmarkComparisonGranularity';
 import type { BenchmarkPoint } from './benchmarkPoint';
 
 export interface BenchmarkComparison {
   points: BenchmarkPoint[];
+  /** Resolução dos pontos. Era mensal até o comparativo passar a usar a série diária que já existia no banco — com janela curta, o gráfico mensal tinha dois pontos e virava uma reta sem percurso. */
+  granularity: BenchmarkComparisonGranularity;
+  windowDays: number;
   windowMonths: number;
   /** @nullable */
   windowNote: string | null;

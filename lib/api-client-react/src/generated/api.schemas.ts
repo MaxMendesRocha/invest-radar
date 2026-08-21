@@ -798,16 +798,32 @@ export interface NewsItem {
 }
 
 export interface BenchmarkPoint {
+  date: string;
+  /** Rótulo curto do eixo, no formato dd/mm. */
   label: string;
-  portfolio: number;
+  /** @nullable */
+  portfolio: number | null;
   cdi: number;
   ibov: number;
   /** @nullable */
   ifix: number | null;
 }
 
+/**
+ * Resolução dos pontos. Era mensal até o comparativo passar a usar a série diária que já existia no banco — com janela curta, o gráfico mensal tinha dois pontos e virava uma reta sem percurso.
+ */
+export type BenchmarkComparisonGranularity = typeof BenchmarkComparisonGranularity[keyof typeof BenchmarkComparisonGranularity];
+
+
+export const BenchmarkComparisonGranularity = {
+  diario: 'diario',
+} as const;
+
 export interface BenchmarkComparison {
   points: BenchmarkPoint[];
+  /** Resolução dos pontos. Era mensal até o comparativo passar a usar a série diária que já existia no banco — com janela curta, o gráfico mensal tinha dois pontos e virava uma reta sem percurso. */
+  granularity: BenchmarkComparisonGranularity;
+  windowDays: number;
   windowMonths: number;
   /** @nullable */
   windowNote: string | null;

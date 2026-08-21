@@ -406,7 +406,7 @@ export default function Dashboard() {
                 /* A reconciliação com o card Resultado saiu daqui: o rodapé abaixo do
                    gráfico diz a mesma coisa com o mês e o valor concretos, e repetir
                    em prosa antes de mostrar o número era dizer duas vezes. */
-                : `Rendimento dentro da janela, com todas as séries partindo de 0% — é isso que as torna comparáveis. Aporte e resgate saem da conta, porque índice não recebe aporte. ${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}CDI do Banco Central, IBOV pelo fechamento real do índice.`}
+                : `Rendimento dentro da janela, pregão a pregão, com todas as séries partindo de 0% — é isso que as torna comparáveis. Aporte e resgate saem da conta, porque índice não recebe aporte. ${benchmarks.windowNote ? `${benchmarks.windowNote} ` : ""}CDI do Banco Central, IBOV pelo fechamento real do índice. A carteira tem ponto nos dias em que você abriu o app; entre eles a linha liga as medições, não mede.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -417,7 +417,7 @@ export default function Dashboard() {
                 title="Sem janela comparável ainda"
                 detail={
                   benchmarks?.windowNote ??
-                  "É preciso ter pelo menos dois meses seguidos com dado real de todas as séries para comparar rentabilidade acumulada."
+                  "É preciso ter pelo menos dois pregões com dado real de todas as séries para comparar rentabilidade acumulada."
                 }
               />
             ) : (
@@ -425,10 +425,16 @@ export default function Dashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={benchmarks?.points || []} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                    <XAxis 
-                      dataKey="label" 
-                      tick={{ fontSize: 12 }} 
+                    {/* interval + minTickGap são obrigatórios agora que o eixo é diário:
+                        sem eles o Recharts desenha um rótulo por ponto, e 60 a 250 datas
+                        viram um borrão preto na base do gráfico. preserveStartEnd garante
+                        que o primeiro e o último dia apareçam sempre. */}
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 12 }}
                       stroke="hsl(var(--muted-foreground))"
+                      interval="preserveStartEnd"
+                      minTickGap={48}
                     />
                     <YAxis 
                       tick={{ fontSize: 12, fontFamily: 'var(--font-mono)' }} 
@@ -440,12 +446,24 @@ export default function Dashboard() {
                         deixando só a cor para distinguir carteira de CDI e de IBOV. */}
                     <RechartsTooltip
                       formatter={(value: number, name: string) => [`${value.toFixed(2)}%`, name]}
+                      labelFormatter={(_label, payload) => {
+                        // O eixo mostra dd/mm por espaço; o tooltip mostra a data cheia,
+                        // porque a janela pode cruzar o ano.
+                        const iso = payload?.[0]?.payload?.date;
+                        return typeof iso === "string"
+                          ? new Date(`${iso}T00:00:00`).toLocaleDateString("pt-BR")
+                          : String(_label);
+                      }}
                       contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '6px' }}
                     />
                     <Legend />
                     {/* "(no período)" na própria legenda: é o único lugar que o olho
                         cruza ao comparar a linha com o card Resultado logo acima. */}
-                    <Line type="linear" name="Carteira (no período)" dataKey="portfolio" stroke="hsl(var(--primary))" strokeWidth={3} dot={false} />
+                    {/* connectNulls: a carteira só tem ponto nos dias de uso do app. Sem isto a
+                        linha viraria um tracejado de segmentos soltos; com isto ela liga as
+                        medições — que é o que o gráfico mensal já fazia entre fechamentos,
+                        só que em saltos de 30 dias. A descrição acima diz isso ao leitor. */}
+                    <Line type="linear" name="Carteira (no período)" dataKey="portfolio" stroke="hsl(var(--primary))" strokeWidth={3} dot={false} connectNulls />
                     <Line type="linear" name="CDI" dataKey="cdi" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={false} strokeDasharray="5 5" />
                     <Line type="linear" name="IBOV" dataKey="ibov" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} strokeDasharray="5 5" />
                   </LineChart>

@@ -799,12 +799,33 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   um ponto por mês com snapshot real, mais o mês corrente (que é medição: posições de hoje
   pelas cotações de hoje). Meses anteriores ao primeiro acesso não são estimados — a tela
   diz quantos meses existem e explica por que a curva é curta.
-- **O comparativo usa a janela comum.** Retorno acumulado só é comparável entre séries
-  medidas no mesmo intervalo, então a janela é o trecho contíguo em que carteira, CDI e
-  IBOV têm dado real, com todas rebaseadas a 0% no início dela. Na prática o limitante é o
-  IBOV, cujo plano gratuito cobre poucos meses. Sem dois meses comparáveis, o gráfico não
-  é desenhado. O IFIX fica `null` quando não cobre a janela inteira: uma lacuna invalida a
-  série, porque acumular por cima de um buraco produz um número que parece medido e não é.
+- **O comparativo usa a janela comum, em granularidade DIÁRIA.** Retorno acumulado só é
+  comparável entre séries medidas no mesmo intervalo, então a janela é o trecho em que
+  carteira, CDI e IBOV têm dado real, com todas rebaseadas a 0% no início dela. O eixo é o
+  calendário de pregão: dias com fechamento de IBOV **e** CDI publicado (série 12 do BCB, o
+  CDI diário). Sem dois pregões comparáveis, o gráfico não é desenhado. O IFIX fica `null`
+  no ponto em que falta fechamento — como o rebase é divisão direta contra o dia-base, e não
+  acumulação encadeada, um buraco anula só aquele ponto em vez de contaminar os seguintes.
+
+  Era mensal até perceber-se que a agregação descartava resolução que já existia no banco:
+  `portfolio_snapshots` e `index_snapshots` sempre guardaram dado diário, e o mês era só o
+  recorte da chave na leitura. Com janela curta o resultado eram **dois pontos** — e dois
+  pontos ligados viram uma reta que não mostra percurso nenhum. A mesma janela em dias
+  rende dezenas de pontos sobre exatamente o mesmo dado.
+
+  A troca da série mensal do CDI (4390) pela diária (12) foi conferida antes de entrar: os
+  23 pregões de julho/2026 compostos dão 1,2152% contra 1,22% publicado na mensal — a
+  diferença de 0,0048 p.p. é o arredondamento de duas casas da 4390. Muda a resolução, não
+  o número. A banda de plausibilidade precisou ser recalibrada junto: a mensal (0,1% a 4%)
+  rejeitaria **todo** dado diário válido, que roda na casa de 0,05% ao dia.
+- **A linha da carteira é esparsa por construção, e o gráfico não disfarça.** `recordSnapshot`
+  só grava quando a pessoa abre o app, então dia sem acesso não tem medição. Esses dias ficam
+  `null` em vez de repetir o valor da véspera — repetir pareceria medição e não é. A janela
+  **não** é decidida pela carteira: exigir medição em todo dia do eixo cortaria tudo no
+  primeiro dia sem acesso. Quem decide são os índices; a carteira só precisa existir no
+  dia-base, que é o denominador do rebase e por isso tem de ser um dia realmente medido. O
+  gráfico liga os pontos existentes e a legenda diz que entre eles a linha liga medições, não
+  mede.
 - **Fonte fora do ar não é o mesmo que histórico curto, e a tela diz qual dos dois é.** Como o
   BCB publica anos de CDI de graça, série vazia só acontece quando a API dele cai — e escrever
   "*ainda* não há dois meses seguidos" nesse caso joga a culpa no histórico do usuário, que
