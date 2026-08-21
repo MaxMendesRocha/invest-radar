@@ -108,12 +108,30 @@ export class CvmDownloadError extends Error {
   }
 }
 
+/**
+ * Generoso de propósito: o arquivo tem ~1,5 MB e o servidor da CVM é lento em horário
+ * de pico. Serve só pra impedir que um ano pendurado trave o job pra sempre.
+ */
+const DOWNLOAD_TIMEOUT_MS = 60 * 1000;
+
 /** Baixa e descompacta o ZIP de um ano. Lança CvmDownloadError com o motivo. */
 async function downloadYear(year: number): Promise<Record<string, Uint8Array>> {
   const url = `https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_${year}.zip`;
   let response: Response;
   try {
-    response = await fetch(url);
+    // User-Agent explícito e timeout próprio. O fetch do Node manda "undici" como
+    // agente e não tem timeout padrão, e servidor de órgão público costuma tratar
+    // requisição sem agente identificado de forma diferente da de um navegador —
+    // suspeita levantada por uma execução em produção que gastou ~3,4s por ano e não
+    // trouxe arquivo nenhum, contra ~0,9s por ano funcionando fora dali. O timeout é
+    // pra falhar com motivo em vez de pendurar o job indefinidamente.
+    response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; invest-radar/1.0; +https://github.com/MaxMendesRocha/invest-radar)",
+        "Accept": "application/zip,application/octet-stream,*/*",
+      },
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    });
   } catch (err) {
     // Falha de rede (DNS, recusa de conexão, TLS, timeout) não tem status HTTP — sem
     // isto aqui a causa mais provável de falhar em produção seria justamente a que não
