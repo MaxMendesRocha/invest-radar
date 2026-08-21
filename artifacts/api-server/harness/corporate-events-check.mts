@@ -1,5 +1,5 @@
 import { detectCorporateEvents, type FiiMonthlyPoint } from "../src/lib/corporate-events-engine";
-import { isinPrefixForTicker, fetchFiiMonthlyRows } from "../src/lib/cvm-data";
+import { isinPrefixForTicker, fetchFiiMonthlyRows, CvmDownloadError } from "../src/lib/cvm-data";
 
 let failures = 0;
 function check(label: string, condition: boolean, detail: string): void {
@@ -141,6 +141,21 @@ if (process.env.SKIP_LIVE_CHECKS !== "1") {
       dvff.every((r) => r.isin === null) && comIsin.length > 0,
       `2023 com ISIN: ${dvff.filter((r) => r.isin).length}, ano corrente com ISIN: ${comIsin.length}`);
   }
+}
+
+// ── Falha de download não pode virar lista vazia ────────────────────────────
+// Uma execução em produção terminou com status "sucesso", last_error nulo e a tabela
+// vazia, porque download indisponível devolvia [] e o job tratava isso como "ano sem
+// linhas". Vazio e indisponível são coisas diferentes; confundir as duas apagou a causa.
+{
+  let threw = false;
+  try {
+    await fetchFiiMonthlyRows(1998); // ano que não existe no acervo da CVM
+  } catch (err) {
+    threw = err instanceof CvmDownloadError;
+  }
+  check("ano indisponível lança CvmDownloadError em vez de devolver lista vazia", threw,
+    "fetchFiiMonthlyRows devolveu sem lançar");
 }
 
 if (failures > 0) {

@@ -97,22 +97,39 @@ function keepLatestPerCnpj(rows: CvmRow[]): Map<string, CvmRow> {
 }
 
 /**
- * Baixa e descompacta o ZIP de um ano. `null` quando a CVM está fora do ar ou o ano
- * não existe — quem chama decide o que fazer, ninguém inventa dado pra cobrir a falha.
+ * Erro de download/leitura do arquivo da CVM, com o motivo legível. Existe pra que a
+ * falha chegue inteira em quem chamou em vez de virar um `null` mudo: um job que não
+ * consegue baixar nada precisa registrar POR QUE, não terminar em silêncio.
  */
-async function downloadYear(year: number): Promise<Record<string, Uint8Array> | null> {
+export class CvmDownloadError extends Error {
+  constructor(public readonly year: number, reason: string) {
+    super(`CVM ${year}: ${reason}`);
+    this.name = "CvmDownloadError";
+  }
+}
+
+/** Baixa e descompacta o ZIP de um ano. Lança CvmDownloadError com o motivo. */
+async function downloadYear(year: number): Promise<Record<string, Uint8Array>> {
   const url = `https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_${year}.zip`;
-  const response = await fetch(url);
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (err) {
+    // Falha de rede (DNS, recusa de conexão, TLS, timeout) não tem status HTTP — sem
+    // isto aqui a causa mais provável de falhar em produção seria justamente a que não
+    // apareceria em lugar nenhum.
+    throw new CvmDownloadError(year, `falha de rede: ${err instanceof Error ? err.message : String(err)}`);
+  }
   if (!response.ok) {
     logger.warn({ status: response.status, url }, "download do informe mensal FII da CVM falhou");
-    return null;
+    throw new CvmDownloadError(year, `HTTP ${response.status}`);
   }
   const buffer = new Uint8Array(await response.arrayBuffer());
   try {
     return unzipSync(buffer);
   } catch (err) {
     logger.warn({ err, year }, "ZIP do informe mensal FII da CVM não pôde ser lido");
-    return null;
+    throw new CvmDownloadError(year, `ZIP ilegível (${buffer.byteLength} bytes)`);
   }
 }
 
@@ -124,8 +141,16 @@ function readEntry(entries: Record<string, Uint8Array>, needle: string): CvmRow[
 
 async function downloadAndParse(): Promise<Map<string, FiiCvmData>> {
   const year = new Date().getUTCFullYear();
-  const entries = await downloadYear(year);
-  if (!entries) return new Map();
+  // A composição de FII degrada em silêncio de propósito: é um enfeite de tela, não vale
+  // derrubar nada. Quem precisa da falha visível é o job de evento corporativo, que
+  // chama downloadYear direto e deixa o CvmDownloadError subir.
+  let entries: Record<string, Uint8Array>;
+  try {
+    entries = await downloadYear(year);
+  } catch (err) {
+    logger.warn({ err, year }, "snapshot de composição de FII da CVM indisponível");
+    return new Map();
+  }
 
   const ativoPassivoRows = readEntry(entries, "ativo_passivo");
   const complementoRows = readEntry(entries, "complemento");
@@ -243,18 +268,18 @@ export interface FiiMonthlyRow {
 
 /**
  * Toda a série mensal de um ano, uma linha por fundo por mês de referência (retificações
- * colapsadas na maior Versao). Devolve vazio quando a CVM está fora do ar — nunca
- * parcial silencioso: quem chama compara o tamanho com o esperado se quiser.
+ * colapsadas na maior Versao). **Lança** CvmDownloadError quando não consegue o arquivo,
+ * em vez de devolver lista vazia: vazio e indisponível são coisas diferentes, e confundir
+ * as duas foi exatamente o que fez uma execução em produção terminar com "sucesso" sem
+ * ter gravado uma linha sequer.
  */
 export async function fetchFiiMonthlyRows(year: number): Promise<FiiMonthlyRow[]> {
   const entries = await downloadYear(year);
-  if (!entries) return [];
 
   const geralRows = readEntry(entries, "geral");
   const complementoRows = readEntry(entries, "complemento");
   if (!geralRows || !complementoRows) {
-    logger.warn({ year, entries: Object.keys(entries) }, "ZIP da CVM sem geral/complemento");
-    return [];
+    throw new CvmDownloadError(year, `ZIP sem geral/complemento (tem: ${Object.keys(entries).join(", ")})`);
   }
 
   // Chave é (CNPJ, mês) e não só CNPJ — é justamente a série que interessa aqui.
