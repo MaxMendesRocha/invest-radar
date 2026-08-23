@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 55 endpoints · 21 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
+**Superfície atual:** 59 endpoints · 21 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
 
 ---
 
@@ -437,6 +437,10 @@ faria (`POST /assets`, `routes/assets.ts`). A consolidação exige ticker **e** 
 posição existente; ticker sozinho não basta, porque o mesmo papel jamais deveria ter preço médio
 misturado entre categorias diferentes.
 
+O número é o mesmo de sempre, mas deixou de ser um `update` que sobrescreve o anterior: consolidar
+agora é **consequência** de registrar mais um lançamento e reproduzir a posição inteira — ver a
+seção abaixo.
+
 Essa exigência de igualdade exata tem um lado frágil: um erro de digitação no ticker ("DVF11" em vez
 de "DVFF11", por exemplo) não dá erro nenhum — vira uma posição de verdade, só que sem cotação, sem
 provento, sem nada, e nunca se junta com a posição correta porque as strings são diferentes. A pessoa
@@ -452,6 +456,51 @@ salva, o segundo, com o mesmo ticker, prossegue. Só roda para categorias cotada
 tem sua própria validação por família+vencimento (`findTreasuryBond`), e renda fixa privada não tem
 ticker de mercado pra checar. No formulário de edição o ticker vem travado (não digitável), então o
 risco de digitação só existe no cadastro.
+
+
+### Lançamentos: o preço médio deixou de ser um número digitado
+
+`assets.average_price` era um valor que alguém digitava, sem procedência e sem como conferir. O
+custo disso apareceu inteiro numa investigação real: uma posição de DVFF11 mostrava R$ 5,68 contra
+R$ 5,04 na corretora, e foram necessárias **três hipóteses erradas** — amortização (descartada com
+51 meses de dado da CVM), desdobramento (real, mas de 2023, anterior à compra) e uma compra antiga
+a R$ 5,68 (impossível: o papel nunca negociou nessa faixa na janela) — até a nota de corretagem
+mostrar que era simples erro de digitação no cadastro.
+
+Agora cada compra é um lançamento (`asset_purchases`), e quantidade, preço médio e data de compra
+são **calculados** a partir deles. Nenhuma das três hipóteses teria sido necessária.
+
+**Só compra entra na tabela.** Venda já é conceito de primeira classe em `sales`, com IR e resultado
+realizado na tela "Operações Encerradas", e a regra brasileira é que venda não altera preço médio —
+só reduz quantidade. Duplicá-la criaria duas verdades sobre o mesmo fato.
+
+**As três colunas de `assets` continuam existindo, como CACHE.** São lidas em cerca de trinta
+lugares — totais, distribuição, saúde, alocação, meta de renda, proventos, score, IR, TWR, risco,
+perfil revelado, prompts de IA e o frontend inteiro — e nenhum deles reconstrói histórico. Fazer
+todos calcularem a partir dos lançamentos seria reescrever meia aplicação para resolver um problema
+que é de escrita. Do lado da escrita o quadro se inverte e é o que torna o cache seguro: as sete
+mutações de posição vivem todas em `routes/assets.ts`, e a regra passa a ser que **nenhum `update`
+de quantidade ou preço médio existe fora de `recomputeAssetCache`**.
+
+**Editar a posição edita o lançamento inicial.** Enquanto só existe o saldo informado, o diálogo se
+comporta como sempre. A partir do primeiro lançamento real, quantidade, preço médio e data ficam
+somente-leitura: a correção passa a ser na linha errada, não no total. Sem isso o cache voltaria a
+poder divergir da fonte, reabrindo exatamente a porta que o recurso fecha.
+
+**Poupança fica de fora, e a exceção é explícita.** Ali `quantity` é sempre 1 e `average_price` é o
+**saldo**, não preço de compra. Lançamento de compra não descreve nada, e o diálogo "Movimentar
+Poupança" grava pelo mesmo `PATCH /assets/:id` — se o desvio para lançamento valesse pra todo mundo,
+depósito e saque quebrariam.
+
+**Posições anteriores ganham um lançamento de saldo inicial**, marcado como tal — não é uma nota de
+corretagem, é o que a pessoa informou, e a interface diz isso. O backfill confere posição por
+posição e falha se alguma divergir: o TWR deriva fluxo da variação de custo entre snapshots, então
+um backfill que mexesse no custo faria a diferença aparecer como **aporte retroativo**, mudando
+sozinha a rentabilidade histórica já gravada.
+
+Fica de fora, deliberadamente: reescrever o TWR para usar fluxo exato (destravado por isto, mas é
+outro trabalho), IR por lote (o app usa preço médio, que é a regra brasileira padrão) e aplicar
+evento corporativo aos lançamentos.
 
 ---
 
@@ -969,11 +1018,13 @@ para decidir nada.
   continuam sem marcação a mercado. Casar texto livre com um título real seria adivinhação.
 - **O fluxo do time-weighted é posicionado no início do subperíodo.** O dado tem o dia do
   aporte, não a hora, então ponderar pelo tempo dentro do período (Dietz modificado) não é
-  possível. Com snapshot quase diário — um por dia em que o app é aberto — o subperíodo é
-  curto e o erro é pequeno; entre medições distantes, cresce.
-- **Editar quantidade ou preço médio conta como aporte.** O fluxo é derivado da variação do
-  custo, então corrigir um preço médio digitado errado é indistinguível de dinheiro entrando.
-  Some quando houver extrato de movimentações em vez de posição consolidada.
+  possível. Com o snapshot diário por job, o subperíodo é de 24h e o erro dessa aproximação
+  fica pequeno; nos dias anteriores ao job, em que só havia medição quando o app era aberto,
+  os subperíodos longos ainda carregam erro maior.
+- **O TWR ainda deriva o fluxo da variação de custo, e por isso editar a posição conta como
+  aporte.** Corrigir um preço médio errado é, para ele, indistinguível de dinheiro entrando.
+  Os lançamentos (seção "Lançamentos", acima) já guardam o fluxo real e destravam a correção
+  — passar o TWR a usá-los é trabalho ainda não feito, deliberadamente separado.
 
 ---
 

@@ -18,3 +18,4 @@ export * from "./sector-benchmarks";
 export * from "./price-targets";
 export * from "./dividend-dismissals";
 export * from "./fii-monthly-reports";
+export * from "./asset-purchases";

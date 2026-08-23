@@ -6,6 +6,10 @@ import {
   useDeleteAsset,
   useSellAsset,
   useListAssetAnalyses,
+  useListAssetPurchases,
+  getListAssetPurchasesQueryKey,
+  useCreateAssetPurchase,
+  useDeleteAssetPurchase,
   useListTreasuryBonds,
   getListTreasuryBondsQueryKey,
   useGetTreasuryPriceOnDate,
@@ -170,6 +174,12 @@ export default function Carteira() {
 
   // "Movimentar Poupança" — depósito/saque calculado a partir do saldo estimado de
   // hoje, pra não obrigar a pessoa a fazer a conta de cabeça antes de editar a posição.
+  // Lançamentos da posição em edição. A lista só é buscada com o diálogo aberto e fora de
+  // poupança — ali "preço médio" é saldo, não preço de compra, e não há o que listar.
+  const [purchaseQty, setPurchaseQty] = useState("");
+  const [purchasePrice, setPurchasePrice] = useState("");
+  const [purchaseDateNew, setPurchaseDateNew] = useState("");
+
   const [movingSavingsAsset, setMovingSavingsAsset] = useState<Asset | null>(null);
   const [moveType, setMoveType] = useState<"deposito" | "saque">("deposito");
   const [moveAmount, setMoveAmount] = useState("");
@@ -373,6 +383,57 @@ export default function Carteira() {
   };
 
   const editingAsset = assets?.find((a) => a.id === editingId) ?? null;
+
+  // Só busca com o diálogo aberto e fora de poupança: ali o "preço médio" é um saldo, não
+  // preço de compra, e não existe lançamento a listar.
+  // Um lançamento que não seja o saldo inicial significa que a posição tem origem
+  // registrada de verdade — e a partir daí o total deixa de ser editável direto, para não
+  // existirem duas formas de definir o mesmo número.
+  const purchasesEnabled = isEditOpen && editingId != null && !editingAsset?.isSavingsAccount;
+  const { data: purchases } = useListAssetPurchases(editingId ?? 0, {
+    query: { queryKey: getListAssetPurchasesQueryKey(editingId ?? 0), enabled: purchasesEnabled },
+  });
+  const hasRealPurchase = (purchases ?? []).some((p) => !p.isInitialBalance);
+  const createPurchase = useCreateAssetPurchase();
+  const deletePurchase = useDeleteAssetPurchase();
+
+  const refreshAfterPurchase = () => {
+    queryClient.invalidateQueries({ queryKey: getListAssetsQueryKey() });
+    if (editingId != null) queryClient.invalidateQueries({ queryKey: getListAssetPurchasesQueryKey(editingId) });
+  };
+
+  const handleAddPurchase = () => {
+    if (editingId == null) return;
+    const qty = Number(purchaseQty);
+    const price = Number(purchasePrice);
+    if (!(qty > 0) || !(price > 0) || !purchaseDateNew) {
+      toast({ title: "Preencha quantidade, preço e data do lançamento.", variant: "destructive" });
+      return;
+    }
+    createPurchase.mutate(
+      { id: editingId, data: { quantity: qty, unitPrice: price, tradeDate: purchaseDateNew } },
+      {
+        onSuccess: () => {
+          setPurchaseQty(""); setPurchasePrice(""); setPurchaseDateNew("");
+          refreshAfterPurchase();
+          toast({ title: "Lançamento registrado — preço médio recalculado." });
+        },
+        onError: () => toast({ title: "Erro ao registrar o lançamento.", variant: "destructive" }),
+      },
+    );
+  };
+
+  const handleDeletePurchase = (purchaseId: number) => {
+    if (editingId == null) return;
+    deletePurchase.mutate({ id: editingId, purchaseId }, {
+      onSuccess: () => { refreshAfterPurchase(); toast({ title: "Lançamento removido — preço médio recalculado." }); },
+      onError: () => toast({
+        title: "Não foi possível remover.",
+        description: "A posição precisa de pelo menos um lançamento. Para encerrá-la, exclua a posição.",
+        variant: "destructive",
+      }),
+    });
+  };
 
   const handleEditOpen = (asset: any) => {
     setEditingId(asset.id);
@@ -1028,14 +1089,21 @@ export default function Carteira() {
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
                   required
-                  disabled={!!editingAsset?.isSavingsAccount}
+                  disabled={!!editingAsset?.isSavingsAccount || hasRealPurchase}
                 />
               </div>
               <div className="space-y-2">
                 <Label>{editingAsset?.isSavingsAccount ? "Saldo" : "Preço Médio"}</Label>
-                <Input type="number" step="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
+                <Input type="number" step="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required
+                  disabled={hasRealPurchase} />
               </div>
             </div>
+            {hasRealPurchase && (
+              <p className="text-xs text-muted-foreground text-pretty">
+                Quantidade, preço médio e data de compra são calculados a partir dos {purchases?.length} lançamentos abaixo.
+                Para corrigir, edite o lançamento errado em vez do total.
+              </p>
+            )}
             <div className="space-y-2">
               <Label>Categoria</Label>
               <Select value={category} onValueChange={setCategory}>
@@ -1064,13 +1132,82 @@ export default function Carteira() {
                 value={purchaseDate}
                 max={new Date().toISOString().slice(0, 10)}
                 onChange={(e) => setPurchaseDate(e.target.value)}
+                disabled={hasRealPurchase}
               />
               <p className="text-xs text-muted-foreground text-pretty">
                 {editingAsset?.isSavingsAccount
                   ? "Atualize saldo e data sempre que depositar ou sacar — é assim que se mantém a estimativa em dia."
-                  : "Preenchendo, o app passa a saber a quais proventos você tinha direito e para de pedir conferência em cada um."}
+                  : hasRealPurchase
+                    ? "É a data do lançamento mais antigo. Para mudá-la, edite aquele lançamento."
+                    : "Preenchendo, o app passa a saber a quais proventos você tinha direito e para de pedir conferência em cada um."}
               </p>
             </div>
+            {/* Lançamentos: é o que dá procedência ao preço médio. Sem esta lista, o número
+                era só o que alguém digitou — e uma divergência com a corretora não tinha
+                como ser investigada senão por eliminação. */}
+            {purchasesEnabled && (
+              <div className="space-y-3 rounded-md border border-border/60 p-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <Label className="text-sm">Lançamentos</Label>
+                  <span className="text-xs text-muted-foreground">
+                    preço médio <strong className="font-mono font-medium text-foreground">
+                      {formatCurrency(editingAsset?.averagePrice ?? 0)}
+                    </strong>
+                  </span>
+                </div>
+
+                {(purchases ?? []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-pretty">
+                    Sem lançamentos registrados ainda.
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {(purchases ?? []).map((p) => (
+                      <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
+                        <div className="min-w-0">
+                          <span className="font-mono">{formatShortDate(p.tradeDate)}</span>
+                          <span className="text-muted-foreground"> · </span>
+                          <span className="font-mono">{p.quantity}</span>
+                          <span className="text-muted-foreground"> × </span>
+                          <span className="font-mono">{formatCurrency(p.unitPrice)}</span>
+                          {p.isInitialBalance && (
+                            <span className="ml-1.5 text-[11px] text-muted-foreground">saldo informado</span>
+                          )}
+                        </div>
+                        <Button
+                          type="button" variant="ghost" size="icon"
+                          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDeletePurchase(p.id)}
+                          disabled={deletePurchase.isPending}
+                          title="Remover lançamento"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-2">
+                  <Input type="number" step="0.000001" min="0" placeholder="Qtd"
+                    value={purchaseQty} onChange={(e) => setPurchaseQty(e.target.value)} />
+                  <Input type="number" step="0.01" min="0" placeholder="Preço"
+                    value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} />
+                  <Input type="date" max={new Date().toISOString().slice(0, 10)}
+                    value={purchaseDateNew} onChange={(e) => setPurchaseDateNew(e.target.value)} />
+                </div>
+                <Button type="button" variant="outline" size="sm" className="w-full"
+                  onClick={handleAddPurchase} disabled={createPurchase.isPending}>
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  {createPurchase.isPending ? "Registrando..." : "Adicionar lançamento"}
+                </Button>
+                <p className="text-[11px] text-muted-foreground text-pretty">
+                  Use a data da NEGOCIAÇÃO, não a da liquidação — a corretora costuma mostrar
+                  a segunda, que cai dois dias úteis depois.
+                </p>
+              </div>
+            )}
+
             <DialogFooter>
               <Button type="submit" disabled={updateAsset.isPending}>
                 {updateAsset.isPending ? "Salvando..." : "Salvar Alterações"}

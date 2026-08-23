@@ -28,6 +28,8 @@ import type {
   AssetAnalysis,
   AssetInput,
   AssetOpinion,
+  AssetPurchase,
+  AssetPurchaseInput,
   AssetUpdate,
   AuthResponse,
   BenchmarkComparison,
@@ -916,6 +918,228 @@ export const useDeleteAsset = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteAssetMutationOptions(options));
+    }
+
+export const getListAssetPurchasesUrl = (id: number,) => {
+
+
+
+
+  return `/api/assets/${id}/purchases`
+}
+
+/**
+ * @summary Lançamentos de compra que produzem o preço médio da posição
+ */
+export const listAssetPurchases = async (id: number, options?: RequestInit): Promise<AssetPurchase[]> => {
+
+  return customFetch<AssetPurchase[]>(getListAssetPurchasesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAssetPurchasesQueryKey = (id: number,) => {
+    return [
+    `/api/assets/${id}/purchases`
+    ] as const;
+    }
+
+
+export const getListAssetPurchasesQueryOptions = <TData = Awaited<ReturnType<typeof listAssetPurchases>>, TError = ErrorType<ErrorResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAssetPurchases>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAssetPurchasesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAssetPurchases>>> = ({ signal }) => listAssetPurchases(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAssetPurchases>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAssetPurchasesQueryResult = NonNullable<Awaited<ReturnType<typeof listAssetPurchases>>>
+export type ListAssetPurchasesQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Lançamentos de compra que produzem o preço médio da posição
+ */
+
+export function useListAssetPurchases<TData = Awaited<ReturnType<typeof listAssetPurchases>>, TError = ErrorType<ErrorResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAssetPurchases>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAssetPurchasesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateAssetPurchaseUrl = (id: number,) => {
+
+
+
+
+  return `/api/assets/${id}/purchases`
+}
+
+/**
+ * @summary Registra uma compra e recalcula quantidade e preço médio
+ */
+export const createAssetPurchase = async (id: number,
+    assetPurchaseInput: AssetPurchaseInput, options?: RequestInit): Promise<Asset> => {
+
+  return customFetch<Asset>(getCreateAssetPurchaseUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assetPurchaseInput)
+  }
+);}
+
+
+
+
+
+export const getCreateAssetPurchaseMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssetPurchase>>, TError,{id: number;data: BodyType<AssetPurchaseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAssetPurchase>>, TError,{id: number;data: BodyType<AssetPurchaseInput>}, TContext> => {
+
+const mutationKey = ['createAssetPurchase'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAssetPurchase>>, {id: number;data: BodyType<AssetPurchaseInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createAssetPurchase(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAssetPurchaseMutationResult = NonNullable<Awaited<ReturnType<typeof createAssetPurchase>>>
+    export type CreateAssetPurchaseMutationBody = BodyType<AssetPurchaseInput>
+    export type CreateAssetPurchaseMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Registra uma compra e recalcula quantidade e preço médio
+ */
+export const useCreateAssetPurchase = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssetPurchase>>, TError,{id: number;data: BodyType<AssetPurchaseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAssetPurchase>>,
+        TError,
+        {id: number;data: BodyType<AssetPurchaseInput>},
+        TContext
+      > => {
+      return useMutation(getCreateAssetPurchaseMutationOptions(options));
+    }
+
+export const getDeleteAssetPurchaseUrl = (id: number,
+    purchaseId: number,) => {
+
+
+
+
+  return `/api/assets/${id}/purchases/${purchaseId}`
+}
+
+/**
+ * @summary Remove um lançamento e recalcula a posição
+ */
+export const deleteAssetPurchase = async (id: number,
+    purchaseId: number, options?: RequestInit): Promise<Asset> => {
+
+  return customFetch<Asset>(getDeleteAssetPurchaseUrl(id,purchaseId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteAssetPurchaseMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAssetPurchase>>, TError,{id: number;purchaseId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAssetPurchase>>, TError,{id: number;purchaseId: number}, TContext> => {
+
+const mutationKey = ['deleteAssetPurchase'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAssetPurchase>>, {id: number;purchaseId: number}> = (props) => {
+          const {id,purchaseId} = props ?? {};
+
+          return  deleteAssetPurchase(id,purchaseId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteAssetPurchaseMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAssetPurchase>>>
+
+    export type DeleteAssetPurchaseMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Remove um lançamento e recalcula a posição
+ */
+export const useDeleteAssetPurchase = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAssetPurchase>>, TError,{id: number;purchaseId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteAssetPurchase>>,
+        TError,
+        {id: number;purchaseId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteAssetPurchaseMutationOptions(options));
     }
 
 export const getSellAssetUrl = (id: number,) => {

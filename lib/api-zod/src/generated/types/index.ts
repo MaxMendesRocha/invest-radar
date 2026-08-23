@@ -36,6 +36,8 @@ export * from './assetOpinion';
 export * from './assetOpinionDividendFrequency';
 export * from './assetOpinionDividendTrend';
 export * from './assetOpinionScoreClassification';
+export * from './assetPurchase';
+export * from './assetPurchaseInput';
 export * from './assetUpdate';
 export * from './assetUpdateCategory';
 export * from './authResponse';
