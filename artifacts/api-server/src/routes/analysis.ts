@@ -28,6 +28,7 @@ import { getNewsFor, resolveSearchTerm, type NewsHeadline, type NewsImpact } fro
 import { getMacroSnapshot } from "../lib/macro-data";
 import { getCdiTrailingAnnual } from "../lib/benchmark-data";
 import { synthesizeAssetRecommendation } from "../lib/analysis-ai";
+import { toProfileContext, type InvestorProfileContext } from "../lib/investor-profile-context";
 import { synthesizePrePurchaseOpinion } from "../lib/opinion-ai";
 import { estimateCapitalGainsTax, type TaxEstimate } from "../lib/tax-engine";
 import { computeTechnicalIndicators, type TechnicalIndicators } from "../lib/technical-engine";
@@ -229,8 +230,26 @@ function computeAnalysis(
  * Moderado — ver concentrationLimitsFor.
  */
 async function concentrationLimitsForUser(userId: number): Promise<ConcentrationLimits> {
+  return (await profileContextForUser(userId)).limits;
+}
+
+/**
+ * Perfil do usuário nas duas formas que o app precisa: os limiares determinísticos, que
+ * entram no score, e o contexto declarado, que vai para o prompt.
+ *
+ * As duas saem da MESMA leitura de propósito. Antes só os limiares eram aproveitados —
+ * a linha inteira era buscada e o resto (objetivo, horizonte, reserva de emergência)
+ * jogado fora —, e o texto da IA saía igual para quem acumula e para quem vive de renda.
+ */
+async function profileContextForUser(userId: number): Promise<{
+  limits: ConcentrationLimits;
+  profile: InvestorProfileContext | null;
+}> {
   const [profile] = await db.select().from(investorProfilesTable).where(eq(investorProfilesTable.userId, userId));
-  return concentrationLimitsFor(profile?.classification ?? null);
+  return {
+    limits: concentrationLimitsFor(profile?.classification ?? null),
+    profile: toProfileContext(profile),
+  };
 }
 
 /**
@@ -669,7 +688,9 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     fundamentals?.sector ?? null,
   );
 
+  const { profile: investorProfile } = await profileContextForUser(req.session.userId!);
   const aiOpinion = await synthesizePrePurchaseOpinion({
+    investorProfile,
     ticker,
     name,
     available: analysis.available,
@@ -807,7 +828,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   // isso não custa uma segunda ida à rede.
   const positionContext = await buildPositionContext(assets);
   const positionPercentByTicker = positionContext.percents;
-  const concentrationLimits = await concentrationLimitsForUser(req.session.userId!);
+  const { limits: concentrationLimits, profile: investorProfile } = await profileContextForUser(req.session.userId!);
 
   const fiiContext = await buildFiiContext(
     assets.map((a) => ({ ticker: a.ticker, category: a.category })),
@@ -926,6 +947,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         tax,
         positionPercent,
         concentrationLimits,
+        investorProfile,
         dividendTrend,
         technical,
         riskAdjusted,

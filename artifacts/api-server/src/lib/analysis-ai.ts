@@ -11,6 +11,7 @@ import { describeFiiProfile, describeFiiInterestRateSensitivity, describeFiiCvmC
 import { describeFiiPeers, type FiiPeer } from "./sector-benchmarks";
 import type { FiiProfile } from "./market-data";
 import type { FiiCvmData } from "./cvm-data";
+import { describeInvestorProfile, PROFILE_PROMPT_GUIDANCE, type InvestorProfileContext } from "./investor-profile-context";
 
 const RECOMMENDATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // score/status não mudam mais de uma vez por dia
 
@@ -26,6 +27,7 @@ export interface AssetRecommendationInput {
   tax: TaxEstimate | null; // null pra renda_fixa/fundos (regras de IR diferentes, fora do escopo daqui)
   positionPercent: number; // % do patrimônio total da carteira que esse ativo representa
   concentrationLimits?: ConcentrationLimits; // varia por perfil de investidor; sem perfil definido usa a régua do Moderado
+  investorProfile?: InvestorProfileContext | null; // perfil declarado — calibra o tom, nunca o status nem o score (ver investor-profile-context.ts)
   dividendTrend: DividendTrend | null; // null quando não há histórico real dos dois períodos (ver computeDividendTrend em market-data.ts) — nunca estimado
   technical: TechnicalIndicators | null; // null quando não há candles suficientes (technical-engine.ts)
   riskAdjusted: RiskAdjustedMetrics | null; // null quando não há candles suficientes (risk-metrics-engine.ts)
@@ -54,7 +56,7 @@ const recommendationCache = new Map<string, { text: string; fetchedAt: number }>
 
 
 function buildPrompt(input: AssetRecommendationInput): string {
-  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, fiiPeers, sectorComparison, dividendValue } = input;
+  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, fiiPeers, sectorComparison, dividendValue, investorProfile } = input;
 
   const taxLine = tax
     ? tax.exempt
@@ -74,6 +76,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     ? `Proventos pagos nos últimos 12 meses: R$${dividendTrend.last12mTotal.toFixed(2)}/unidade, vs. R$${dividendTrend.prior12mTotal.toFixed(2)}/unidade nos 12 meses anteriores (variação de ${dividendTrend.growthPercent >= 0 ? "+" : ""}${dividendTrend.growthPercent.toFixed(1)}%). Provento crescendo de forma consistente é, historicamente, um sinal de qualidade mais forte que só o yield atual estar alto.`
     : "Histórico de provento nos últimos 24 meses insuficiente para avaliar tendência de crescimento (não avalie isso, apenas não mencione).";
 
+  const profileLine = describeInvestorProfile(investorProfile ?? null);
   const technicalLine = describeTechnicalIndicators(technical);
   const riskAdjustedLine = describeRiskAdjustedMetrics(riskAdjusted);
   const duPontLine = describeDuPontBreakdown(duPont);
@@ -97,6 +100,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `${describeMacroContext(macro)}\n` +
     `${taxLine}\n` +
     `${concentrationLine}\n` +
+    (profileLine ? `${profileLine}\n` : "") +
     `${dividendTrendLine}\n` +
     `Indicadores técnicos (candles reais, 1 ano): ${technicalLine}\n` +
     `Retorno ajustado ao risco (1 ano, CDI como taxa livre de risco): ${riskAdjustedLine}\n` +
@@ -109,6 +113,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     (fiiPeersLine ? `${fiiPeersLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n` +
     `${dividendValue}\n\n` +
+    (profileLine ? `${PROFILE_PROMPT_GUIDANCE}\n\n` : "") +
     `Escreva um parágrafo curto (2-6 frases) cruzando TODOS os fatores acima. Quando os fundamentos ` +
     `justificarem (status VENDER, ou risco relevante nos pontos de atenção), pode ` +
     `dizer explicitamente que faz sentido considerar reduzir ou encerrar a posição — não fique só em ` +

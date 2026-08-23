@@ -580,6 +580,33 @@ médio está escrito, e não como alerta no Radar — o questionamento vale mais
 questiona. Sem a sincronização ter rodado, a tabela está vazia e ninguém recebe aviso: silêncio
 honesto, nunca palpite.
 
+
+### O perfil declarado calibra o texto, nunca o veredito
+
+O questionário de perfil guarda objetivo, horizonte, tolerância a perda, experiência, necessidade
+de liquidez, reserva de emergência, estabilidade de renda e que fatia do patrimônio esta carteira
+representa. Durante muito tempo **só `classification` era aproveitado** — o app lia a linha inteira
+para derivar os limiares de concentração e descartava o resto. O efeito era um parecer idêntico
+para quem acumula com trinta anos pela frente e para quem já vive da renda da carteira.
+
+Agora o perfil entra no prompt dos dois pareceres. Medido com o mesmo ativo, mesmo score e mesma
+concentração de 32%, mudando só o perfil:
+
+- **Conservador, renda, horizonte de 2 anos, sem reserva de emergência** → a leitura abre pela falta
+  de reserva, liga isso a risco de venda forçada e trata reduzir a concentração como prioridade
+  prática.
+- **Arrojado, crescimento, horizonte de 25 anos, com reserva** → a mesma concentração vira
+  recomendação de direcionar novos aportes para outros ativos, "não vender à força".
+
+O **status continuou MANTER nos dois**, que é a regra que não se negocia: o perfil calibra tom e
+prioridade, e a régua determinística segue decidindo score e status sozinha. A diretriz que diz
+isso está no próprio prompt (`PROFILE_PROMPT_GUIDANCE`) e é verificada por teste — se ela sumir, o
+perfil deixa de ser calibragem e passa a poder contaminar o veredito.
+
+Campo não preenchido não vira linha. "Horizonte não declarado" e "horizonte curto" levam a
+conselhos opostos, e chutar entre os dois seria pior que omitir. Sem perfil nenhum, o prompt fica
+exatamente como era antes.
+
 ---
 
 ## Meta de renda passiva
@@ -634,7 +661,7 @@ custo/latência extra. Os prompts exatos estão em [`analises-ia.md`](./analises
 
 | Ponto | Recebe | Devolve | Decide |
 |---|---|---|---|
-| **Parecer de ativo** | Score, positivos, riscos, notícias, macro, imposto, concentração, técnico, DuPont, saúde financeira, zonas de preço e pares reais de FII | 2–6 frases de leitura cruzada | **nada** |
+| **Parecer de ativo** | Score, positivos, riscos, notícias, macro, imposto, concentração, **perfil declarado do investidor**, técnico, DuPont, saúde financeira, zonas de preço e pares reais de FII | 2–6 frases de leitura cruzada | **nada** |
 | **Parecer pré-compra** | O mesmo conjunto, sem posição | 2–6 frases | **nada** |
 | **Diagnóstico da carteira** | Score de saúde e as 5 dimensões, composição, macro | 3–6 frases interpretando sem repetir os números | **nada** |
 | **Narrativa de mercado** | Janelas de variação, atribuição por contribuição, manchetes reais, macro | 2–4 frases, com permissão de dizer "não sei" | **nada** |
