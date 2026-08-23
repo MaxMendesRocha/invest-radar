@@ -36,6 +36,7 @@ Modelo usado em todos os pontos: `claude-haiku-4-5-20251001`.
 - Cenário macro (Selic, tendência, IPCA 12m, juro real, IGP-M 12m)
 - Estimativa de IR se vender agora (`tax-engine.ts`)
 - % que o ativo representa do patrimônio total (concentração)
+- Perfil declarado do investidor — objetivo, horizonte (com anos, quando informado), tolerância a perda, experiência, necessidade de liquidez, reserva de emergência, estabilidade de renda e fatia do patrimônio que esta carteira representa (`investor-profile-context.ts`). Acompanha uma diretriz explícita de que o perfil CALIBRA tom e prioridade e **nunca** muda status ou score, que seguem determinísticos. Campo não preenchido não vira linha, e sem perfil declarado nem a linha nem a diretriz entram no prompt
 - Tendência de dividendo (últimos 12 meses vs. 12 meses anteriores)
 - Indicadores técnicos (SMA20/50/200, RSI14, MACD, Bandas de Bollinger, cruzamento de médias)
 - Retorno ajustado ao risco: Sharpe, Sortino e Treynor, com CDI acumulado (nominal) como taxa livre de risco (`risk-metrics-engine.ts`)
@@ -153,6 +154,7 @@ Texto determinístico genérico citando o primeiro risco calculado (`buildRecomm
 - Comparação com pares do setor
 - Notícias recentes classificadas
 - Cenário macro (Selic, tendência, IPCA 12m, juro real, IGP-M 12m)
+- Perfil declarado do investidor — objetivo, horizonte (com anos, quando informado), tolerância a perda, experiência, necessidade de liquidez, reserva de emergência, estabilidade de renda e fatia do patrimônio que esta carteira representa (`investor-profile-context.ts`). Acompanha uma diretriz explícita de que o perfil CALIBRA tom e prioridade e **nunca** muda status ou score, que seguem determinísticos. Campo não preenchido não vira linha, e sem perfil declarado nem a linha nem a diretriz entram no prompt
 
 ### Prompt
 

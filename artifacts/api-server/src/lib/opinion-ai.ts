@@ -10,10 +10,16 @@ import { describeFiiProfile, describeFiiInterestRateSensitivity, describeFiiCvmC
 import { describeFiiPeers, type FiiPeer } from "./sector-benchmarks";
 import type { FiiProfile } from "./market-data";
 import type { FiiCvmData } from "./cvm-data";
+import { describeInvestorProfile, PROFILE_PROMPT_GUIDANCE, type InvestorProfileContext } from "./investor-profile-context";
 
 const OPINION_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // preço/notícias mudam ao longo do dia, mas não a ponto de justificar cache mais curto pra um parecer sob demanda
 
 export interface PrePurchaseOpinionInput {
+  /**
+   * Perfil declarado de quem consulta. Calibra o tom, nunca o score nem a triagem — que
+   * seguem determinísticos. Null quando a pessoa ainda não preencheu o questionário.
+   */
+  investorProfile?: InvestorProfileContext | null;
   ticker: string;
   name: string | null;
   available: boolean; // fundamentos disponíveis (analyzeFundamentals)
@@ -53,7 +59,7 @@ function getClient(): Anthropic | null {
 const opinionCache = new Map<string, { text: string; fetchedAt: number }>();
 
 function buildPrompt(input: PrePurchaseOpinionInput): string {
-  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, fiiPeers, sectorComparison, dividendValue, newsItems, macro } = input;
+  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, fiiPeers, sectorComparison, dividendValue, newsItems, macro, investorProfile } = input;
 
   const fundamentalsLine = available
     ? `Score do Radar: ${score}/100 (${scoreClassification})\nPontos positivos (fundamentos reais): ${positives.join("; ") || "nenhum"}\nPontos de atenção (fundamentos reais): ${risks.join("; ") || "nenhum"}`
@@ -68,6 +74,7 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     ? `Proventos pagos nos últimos 12 meses: R$${dividendTrend.last12mTotal.toFixed(2)}/unidade, vs. R$${dividendTrend.prior12mTotal.toFixed(2)}/unidade nos 12 meses anteriores (variação de ${dividendTrend.growthPercent >= 0 ? "+" : ""}${dividendTrend.growthPercent.toFixed(1)}%).`
     : "Histórico de provento insuficiente pra avaliar tendência (não avalie isso, apenas não mencione).";
 
+  const profileLine = describeInvestorProfile(investorProfile ?? null);
   const technicalLine = describeTechnicalIndicators(technical);
   const riskAdjustedLine = describeRiskAdjustedMetrics(riskAdjusted);
   const duPontLine = describeDuPontBreakdown(duPont);
@@ -100,7 +107,10 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     `Comparação com pares do setor: ${sectorComparison}\n` +
     `${dividendValue}\n` +
     `Notícias recentes classificadas: ${newsItems.join(" | ") || "nenhuma"}\n` +
-    `${describeMacroContext(macro)}\n\n` +
+    `${describeMacroContext(macro)}\n` +
+    (profileLine ? `${profileLine}\n` : "") +
+    `\n` +
+    (profileLine ? `${PROFILE_PROMPT_GUIDANCE}\n\n` : "") +
     `Escreva um parecer curto (2-6 frases) cruzando TODOS os fatores acima. Pode dizer diretamente se o ` +
     `momento parece bom pra entrada ou se vale esperar — cruze a posição do preço no range de 52 semanas ` +
     `com os fundamentos (quando disponíveis): comprar perto da máxima de 52 semanas com fundamentos ` +
