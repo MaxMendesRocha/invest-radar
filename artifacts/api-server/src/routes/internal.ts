@@ -3,6 +3,7 @@ import { requireInternalToken } from "../middlewares/internal-auth";
 import { OPPORTUNITIES_JOB } from "../lib/opportunities-engine";
 import { TREASURY_JOB } from "../lib/treasury-data";
 import { FII_EVENTS_JOB } from "../lib/fii-events-sync";
+import { PORTFOLIO_SNAPSHOT_JOB } from "../lib/portfolio-snapshot-job";
 import { runJobAndRecord } from "../lib/scheduler";
 import { logger } from "../lib/logger";
 
@@ -59,6 +60,22 @@ router.post("/internal/fii-events/sync", requireInternalToken, async (req, res):
   } catch (err) {
     logger.error({ err }, "POST /internal/fii-events/sync falhou");
     res.status(500).json({ error: "Falha ao sincronizar o informe mensal de FII — ver logs do servidor" });
+  }
+});
+
+// Mesmo padrão. Útil para fechar o dia sob demanda, ou para conferir num ambiente novo
+// que o job consegue precificar todas as carteiras antes de esperar a janela diária.
+router.post("/internal/portfolio-snapshots/record", requireInternalToken, async (req, res): Promise<void> => {
+  try {
+    const result = await runJobAndRecord(PORTFOLIO_SNAPSHOT_JOB);
+    if (!result) {
+      res.status(409).json({ error: "Job já está em execução" });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "POST /internal/portfolio-snapshots/record falhou");
+    res.status(500).json({ error: "Falha ao gravar snapshots — ver logs do servidor" });
   }
 });
 

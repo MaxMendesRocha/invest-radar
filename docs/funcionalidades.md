@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 54 endpoints · 21 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
+**Superfície atual:** 55 endpoints · 21 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
 
 ---
 
@@ -731,7 +731,7 @@ sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela int
 
 ## O que acontece sozinho
 
-Dois trabalhos rodam sem intervenção, agendados por um scheduler dentro do próprio processo. O
+Quatro trabalhos rodam sem intervenção, agendados por um scheduler dentro do próprio processo. O
 estado da última execução fica **no banco, não em memória** — é o que permite o serviço reiniciar
 sem redisparar o trabalho nem pular um ciclo.
 
@@ -761,6 +761,17 @@ provedor deixe de preencher no futuro.
 
 **Sincronização do Tesouro** (diária) — ingere o arquivo oficial de PU. Na primeira execução carrega
 o histórico completo; depois, apenas o incremento a partir da última data conhecida.
+
+**Snapshot diário de carteira** (diário) — fotografa patrimônio e custo de todas as carteiras com
+posição, sem depender de alguém abrir o app. Até então `recordSnapshot` só era chamado de dentro de
+`/portfolio/summary`, o que amarrava o histórico ao hábito de uso: dia sem acesso não virava ponto.
+O efeito apareceu inteiro no comparativo de benchmarks — numa janela real de 49 pregões, **16 dias
+não tinham medição**. E o buraco não era só estético: o TWR divide a série nas datas de medição e
+assume o fluxo no início de cada subperíodo, então subperíodo longo aumenta o erro dessa aproximação.
+Medir todo dia encurta cada um para 24h. Usuário sem posição não vira linha — patrimônio zero
+quebraria a cadeia de TWR (custo não-positivo é fronteira) e encheria a tabela de quem nunca
+cadastrou nada. A chave (usuário, dia) é um upsert, então job, gatilho manual e visita ao app
+convergem para uma linha só.
 
 **Informe mensal de FII da CVM** (semanal) — alimenta `fii_monthly_reports` com a série de cotas
 emitidas e amortização por fundo por mês, base do detector de evento corporativo (seção própria
@@ -845,8 +856,10 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   diferença de 0,0048 p.p. é o arredondamento de duas casas da 4390. Muda a resolução, não
   o número. A banda de plausibilidade precisou ser recalibrada junto: a mensal (0,1% a 4%)
   rejeitaria **todo** dado diário válido, que roda na casa de 0,05% ao dia.
-- **A linha da carteira é esparsa por construção, e o gráfico não disfarça.** `recordSnapshot`
-  só grava quando a pessoa abre o app, então dia sem acesso não tem medição. Esses dias ficam
+- **A linha da carteira pode ter buracos, e o gráfico não disfarça.** Um job diário fotografa todas
+  as carteiras (ver "O que acontece sozinho"), então a série é densa a partir de quando ele passou a
+  rodar; dias anteriores a isso só têm ponto se o app foi aberto naquele dia, e não são preenchidos
+  retroativamente porque ninguém mediu. Esses dias ficam
   `null` em vez de repetir o valor da véspera — repetir pareceria medição e não é. A janela
   **não** é decidida pela carteira: exigir medição em todo dia do eixo cortaria tudo no
   primeiro dia sem acesso. Quem decide são os índices; a carteira só precisa existir no
