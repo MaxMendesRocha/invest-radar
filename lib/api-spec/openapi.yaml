@@ -682,6 +682,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /portfolio/starter-portfolios:
+    get:
+      operationId: getStarterPortfolios
+      tags: [portfolio]
+      summary: As três carteiras-alvo por perfil, para quem ainda não tem posição
+      parameters:
+        - name: amount
+          in: query
+          required: false
+          description: >-
+            Valor de partida. Opcional de propósito: sem ele a resposta traz só os
+            percentuais-alvo, porque qualquer valor padrão seria um número inventado.
+          schema:
+            type: number
+            minimum: 0.01
+      responses:
+        "200":
+          description: Uma carteira-alvo por perfil, mais o título do Tesouro comum às três
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarterPortfolios"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /portfolio/income-goal:
     get:
       operationId: getIncomeGoal
@@ -3034,6 +3063,97 @@ components:
         deviationAfter:
           type: number
           description: Soma dos desvios absolutos (pp) depois do aporte sugerido.
+
+    StarterPortfolioItem:
+      type: object
+      required: [category, targetPercent, amount, suggestions, suggestionsStatus]
+      properties:
+        category:
+          type: string
+        targetPercent:
+          type: number
+          description: >-
+            Peso da classe na carteira-alvo do perfil — não a fatia do valor de partida.
+            Os dois divergem quando o piso por fatia derruba uma classe, e nesse caso
+            `amount` vem 0 com `targetPercent` maior que zero.
+        amount:
+          type: ["number", "null"]
+          description: >-
+            Null quando nenhum valor de partida foi informado. Zero quando foi, e a
+            classe não alcançou o piso mínimo de compra — o valor dela foi redistribuído.
+        suggestionsStatus:
+          type: string
+          enum: [ok, sem_ticker_de_bolsa, sem_candidato, tesouro_indisponivel]
+          description: Mesmos valores e mesmos significados de AllocationPlanItem.
+        suggestions:
+          type: array
+          description: >-
+            Candidatos da classe, na ordem de risco do perfil desta coluna — o mesmo
+            critério da tela de Oportunidades, ver lib/opportunity-ranking.ts.
+          items:
+            $ref: "#/components/schemas/AllocationPlanSuggestion"
+
+    StarterPortfolio:
+      type: object
+      required: [classification, fixedIncomePercent, items]
+      properties:
+        classification:
+          type: string
+          enum: [Conservador, Moderado, Arrojado]
+        fixedIncomePercent:
+          type: number
+          description: >-
+            O número de destaque da coluna, e o único com respaldo de praxe de mercado
+            (ver fixedIncomeBasis).
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StarterPortfolioItem"
+
+    StarterPortfolios:
+      type: object
+      required: [amount, declaredClassification, hasAssets, fixedIncomeBasis, variableSplitBasis, treasury, profiles]
+      description: >-
+        As três carteiras-alvo lado a lado. `treasury` fica fora de `profiles` porque o
+        título sugerido depende das respostas do questionário (liquidez, reserva,
+        horizonte), não da classificação de risco — é o mesmo nas três colunas, e a
+        forma da resposta afirma isso.
+      properties:
+        amount:
+          type: ["number", "null"]
+        declaredClassification:
+          type: ["string", "null"]
+          enum: [Conservador, Moderado, Arrojado, null]
+          description: >-
+            Perfil já declarado pelo usuário, para a tela destacar a coluna dele. Null
+            quando o questionário ainda não foi respondido — o caso que motiva a tela.
+        hasAssets:
+          type: boolean
+          description: >-
+            A tela ignora a carteira existente por construção. Quando isto é true ela
+            precisa dizer que o ajuste do que já existe é em Saúde do Portfólio.
+        fixedIncomeBasis:
+          type: string
+          enum: [praxe_de_mercado]
+          description: Origem da divisão renda fixa x variável (80/60/30).
+        variableSplitBasis:
+          type: string
+          enum: [convencao_do_app]
+          description: >-
+            Origem da divisão da parte variável entre ações, FIIs e ETFs. Não é praxe
+            consagrada, e a tela precisa apresentá-la com peso menor que o campo acima.
+        treasury:
+          type: object
+          required: [suggestions]
+          properties:
+            suggestions:
+              type: array
+              items:
+                $ref: "#/components/schemas/TreasurySuggestion"
+        profiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/StarterPortfolio"
 
     IncomeGoalInput:
       type: object

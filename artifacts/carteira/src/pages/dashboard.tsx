@@ -20,8 +20,10 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, BarChart, Bar
 } from "recharts";
-import { ArrowUpRight, Coins, Scale, Sparkles, TrendingUp, type LucideIcon } from "lucide-react";
+import { ArrowUpRight, Coins, Compass, Scale, Sparkles, TrendingUp, type LucideIcon } from "lucide-react";
 import { categoryLabel } from "@/lib/categories";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 
 /**
  * Eixo de valor em reais. O formatador anterior era `R$${(val/1000).toFixed(0)}k`, que
@@ -148,6 +150,24 @@ export default function Dashboard() {
         <h1 className="text-3xl font-bold tracking-tight">Visão Geral</h1>
         <p className="text-muted-foreground">Posição consolidada do seu portfólio.</p>
       </div>
+
+      {/* Primeiro acesso: esta é a tela onde a pessoa cai depois de se cadastrar, e sem
+          nenhum ativo ela mostra oito cartões vazios. O convite aparece só enquanto a
+          carteira está zerada — e some assim que o primeiro ativo é cadastrado. */}
+      {!isLoadingSummary && !hasAssets && (
+        <Card className="border-primary/40">
+          <CardContent className="pt-6 flex flex-col sm:flex-row sm:items-center gap-3">
+            <Compass className="w-5 h-5 shrink-0 text-primary" />
+            <p className="text-sm text-pretty flex-1">
+              Sua carteira ainda está vazia — por isso os números abaixo estão zerados. Se você não sabe por onde
+              começar, veja como um investidor de cada perfil montaria a carteira do zero.
+            </p>
+            <Button asChild className="shrink-0">
+              <Link href="/carteira-de-partida">Ver Carteira de Partida</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Indicadores do topo */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

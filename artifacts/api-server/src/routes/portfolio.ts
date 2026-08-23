@@ -16,18 +16,19 @@ import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/ana
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { computeIncomeGoalProgress } from "../lib/income-goal-engine";
-import { UpsertIncomeGoalBody, UpsertAllocationBody, GetAllocationPlanQueryParams, GetTreasuryPriceOnDateQueryParams, DismissPendingDividendBody } from "@workspace/api-zod";
+import { UpsertIncomeGoalBody, UpsertAllocationBody, GetAllocationPlanQueryParams, GetStarterPortfoliosQueryParams, GetTreasuryPriceOnDateQueryParams, DismissPendingDividendBody } from "@workspace/api-zod";
 import {
   ALLOCATION_CATEGORIES,
   defaultPolicyFor,
   computeAllocation,
   planContribution,
   type AllocationCategory,
+  type ContributionSlice,
   type PolicySource,
   type PolicyTargets,
 } from "../lib/allocation-engine";
-import { rankOpportunitiesFor } from "../lib/opportunity-ranking";
-import { suggestTreasuryBonds } from "../lib/treasury-engine";
+import { rankOpportunitiesFor, orderByRiskProfile, type RankedOpportunity } from "../lib/opportunity-ranking";
+import { suggestTreasuryBonds, type TreasurySuggestion } from "../lib/treasury-engine";
 import { sizeWholeUnits, sizeTreasuryFraction } from "../lib/purchase-sizing";
 import { classifyEntitlement, type EntitlementCertainty, type EntitlementUncertaintyKind } from "../lib/dividend-entitlement";
 import { listTreasuryBondOptions, latestTreasuryBonds, priceOnDate } from "../lib/treasury-identity";
@@ -1067,6 +1068,96 @@ router.put("/portfolio/allocation", requireAuth, async (req, res): Promise<void>
   res.json(await allocationOverview(req.session.userId!));
 });
 
+/** Quantos candidatos de bolsa por classe. Três cabe na tela e ainda mostra alternativa. */
+const CANDIDATES_PER_SLICE = 3;
+
+/**
+ * Os candidatos de bolsa de cada fatia, tirados do ranking já ordenado.
+ *
+ * Separado de `buildSliceItems` por causa da cotação: a busca de preço é UMA só, em
+ * lote, para todos os tickers — e a Carteira de Partida monta três conjuntos de fatias
+ * (um por perfil) que compartilham a mesma consulta.
+ */
+function candidatesBySlice(
+  slices: ContributionSlice[],
+  rankedItems: RankedOpportunity[],
+): Map<string, RankedOpportunity[]> {
+  return new Map(
+    slices.map((slice) => [
+      slice.category,
+      rankedItems.filter((item) => item.category === slice.category).slice(0, CANDIDATES_PER_SLICE),
+    ]),
+  );
+}
+
+/** Cotação de todos os candidatos de uma ou mais fatias, numa chamada só. */
+async function pricesForCandidates(...maps: Map<string, RankedOpportunity[]>[]) {
+  const tickers = new Map<string, { ticker: string; category: string }>();
+  for (const map of maps) {
+    for (const item of Array.from(map.values()).flat()) {
+      tickers.set(item.ticker.toUpperCase(), { ticker: item.ticker, category: "acoes" });
+    }
+  }
+  return tickers.size > 0 ? await getPricesFor(Array.from(tickers.values())) : new Map();
+}
+
+/**
+ * O item de resposta de cada fatia: valor, candidatos com quantidade, e por que a lista
+ * está vazia quando está.
+ *
+ * `attachTreasury: false` serve à Carteira de Partida, onde o título do Tesouro é o
+ * mesmo nas três colunas (ele depende das respostas do questionário, não da
+ * classificação de risco) e por isso viaja fora do array de perfis. O status continua
+ * olhando para `treasurySuggestions` — a fatia de renda fixa está atendida ou não pelo
+ * mesmo motivo, independente de onde a sugestão é renderizada.
+ */
+function buildSliceItems(
+  slices: ContributionSlice[],
+  candidates: Map<string, RankedOpportunity[]>,
+  prices: Map<string, { price: number } | undefined>,
+  treasurySuggestions: TreasurySuggestion[],
+  { attachTreasury = true }: { attachTreasury?: boolean } = {},
+) {
+  return slices.map((slice) => {
+    const suggestions = (candidates.get(slice.category) ?? []).map((item) => ({
+      ticker: item.ticker,
+      name: item.name,
+      score: item.score,
+      reason: item.reason,
+      // A fatia INTEIRA contra cada candidato, e não dividida entre eles: o app tem
+      // alvo por classe, não por ticker, então qualquer rateio interno seria invenção.
+      // Cada linha é uma alternativa — a tela precisa dizer isso, ou somam as três.
+      sizing: sizeWholeUnits(slice.amount, prices.get(item.ticker.toUpperCase())?.price ?? null),
+    }));
+
+    const hasTreasury = slice.category === "renda_fixa" && treasurySuggestions.length > 0;
+    const bondsForSlice = hasTreasury && attachTreasury
+      ? treasurySuggestions.map((bond) => ({ ...bond, sizing: sizeTreasuryFraction(slice.amount, bond.unitPrice) }))
+      : [];
+
+    // Lista vazia tem causas diferentes, e a tela precisa saber qual — deixar todas
+    // como "vazio" faria o app dar a mesma explicação para situações que não têm nada
+    // a ver entre si: ETF sem fundamento para triar, fundo sem fonte alguma, e Tesouro
+    // que só não sincronizou ainda (esse último se resolve sozinho, os outros não).
+    const suggestionsStatus = suggestions.length > 0 || hasTreasury
+      ? "ok"
+      : QUOTED_CATEGORIES.has(slice.category)
+        ? "sem_candidato"
+        : slice.category === "renda_fixa"
+          ? "tesouro_indisponivel"
+          : "sem_ticker_de_bolsa";
+
+    return {
+      category: slice.category,
+      amount: slice.amount,
+      sharePercent: slice.sharePercent,
+      suggestionsStatus,
+      suggestions,
+      treasurySuggestions: bondsForSlice,
+    };
+  });
+}
+
 router.get("/portfolio/allocation/plan", requireAuth, async (req, res): Promise<void> => {
   const parsed = GetAllocationPlanQueryParams.safeParse(req.query);
   if (!parsed.success) {
@@ -1113,57 +1204,9 @@ router.get("/portfolio/allocation/plan", requireAuth, async (req, res): Promise<
       })
     : [];
 
-  // Os candidatos de bolsa por fatia, antes das cotações: a busca de preço é uma só,
-  // em lote, para todos os tickers do plano — não uma por classe.
-  const candidatesBySlice = new Map(
-    slices.map((slice) => [
-      slice.category,
-      ranking.items.filter((item) => item.category === slice.category).slice(0, 3),
-    ]),
-  );
-  const suggestedTickers = Array.from(candidatesBySlice.values())
-    .flat()
-    .map((item) => ({ ticker: item.ticker, category: "acoes" }));
-  const suggestedPrices = suggestedTickers.length > 0 ? await getPricesFor(suggestedTickers) : new Map();
-
-  const items = slices.map((slice) => {
-    const suggestions = (candidatesBySlice.get(slice.category) ?? []).map((item) => ({
-      ticker: item.ticker,
-      name: item.name,
-      score: item.score,
-      reason: item.reason,
-      // A fatia INTEIRA contra cada candidato, e não dividida entre eles: o app tem
-      // alvo por classe, não por ticker, então qualquer rateio interno seria invenção.
-      // Cada linha é uma alternativa — a tela precisa dizer isso, ou somam as três.
-      sizing: sizeWholeUnits(slice.amount, suggestedPrices.get(item.ticker.toUpperCase())?.price ?? null),
-    }));
-
-    const bondsForSlice = (slice.category === "renda_fixa" ? treasurySuggestions : []).map((bond) => ({
-      ...bond,
-      sizing: sizeTreasuryFraction(slice.amount, bond.unitPrice),
-    }));
-
-    // Lista vazia tem causas diferentes, e a tela precisa saber qual — deixar todas
-    // como "vazio" faria o app dar a mesma explicação para situações que não têm nada
-    // a ver entre si: ETF sem fundamento para triar, fundo sem fonte alguma, e Tesouro
-    // que só não sincronizou ainda (esse último se resolve sozinho, os outros não).
-    const suggestionsStatus = suggestions.length > 0 || bondsForSlice.length > 0
-      ? "ok"
-      : QUOTED_CATEGORIES.has(slice.category)
-        ? "sem_candidato"
-        : slice.category === "renda_fixa"
-          ? "tesouro_indisponivel"
-          : "sem_ticker_de_bolsa";
-
-    return {
-      category: slice.category,
-      amount: slice.amount,
-      sharePercent: slice.sharePercent,
-      suggestionsStatus,
-      suggestions,
-      treasurySuggestions: bondsForSlice,
-    };
-  });
+  const candidates = candidatesBySlice(slices, ranking.items);
+  const suggestedPrices = await pricesForCandidates(candidates);
+  const items = buildSliceItems(slices, candidates, suggestedPrices, treasurySuggestions);
 
   res.json({
     amount,
@@ -1172,6 +1215,109 @@ router.get("/portfolio/allocation/plan", requireAuth, async (req, res): Promise<
     items,
     deviationBefore: sumAbsDeviation(before.items),
     deviationAfter: sumAbsDeviation(after.items),
+  });
+});
+
+/** Do mais defensivo ao mais exposto — a ordem em que as três colunas ensinam. */
+const STARTER_PROFILES: ProfileClassification[] = ["Conservador", "Moderado", "Arrojado"];
+
+/**
+ * As três carteiras-alvo lado a lado, para quem acabou de se cadastrar e ainda não tem
+ * posição nenhuma.
+ *
+ * Três decisões que a resposta precisa carregar, porque a tela não pode apresentar os
+ * números como se valessem todos a mesma coisa:
+ *
+ * 1. `fixedIncomeBasis` = praxe de mercado. A divisão renda fixa x variável (80/60/30)
+ *    é o único ponto da política com respaldo externo — ver allocation-engine.ts.
+ * 2. `variableSplitBasis` = convenção do app. Como se reparte a fatia variável entre
+ *    ações, FIIs e ETFs NÃO é praxe consagrada; é um ponto de partida declarado, e
+ *    editável em Saúde do Portfólio.
+ * 3. `treasury` fica FORA do array de perfis, e não é descuido de modelagem: o título
+ *    sugerido depende das respostas do questionário (liquidez, reserva, horizonte), não
+ *    da classificação de risco — então ele é literalmente o mesmo nas três colunas. Com
+ *    os quatro campos em branco, `indexerFor` cai no Tesouro Selic e a própria
+ *    justificativa do motor explica por quê. É a demonstração mais concreta do que a
+ *    pessoa ganha respondendo o questionário: o que muda entre as colunas é quanto vai
+ *    para renda fixa; QUAL título só o questionário resolve.
+ *
+ * A política personalizada do usuário é ignorada de propósito: esta tela é sobre os três
+ * perfis, não sobre a política de quem já configurou a sua.
+ */
+router.get("/portfolio/starter-portfolios", requireAuth, async (req, res): Promise<void> => {
+  const parsed = GetStarterPortfoliosQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const amount = parsed.data.amount ?? null;
+
+  const [assets, [profileRow], ranking, treasuryBonds] = await Promise.all([
+    db.select({ id: assetsTable.id }).from(assetsTable).where(eq(assetsTable.userId, req.session.userId!)),
+    db.select().from(investorProfilesTable).where(eq(investorProfilesTable.userId, req.session.userId!)),
+    rankOpportunitiesFor(req.session.userId!),
+    latestTreasuryBonds(),
+  ]);
+
+  // As respostas do questionário quando existem, em branco quando não. Nos dois casos
+  // a sugestão é UMA só para as três colunas, que é o ponto: o motor escolhe o título
+  // por liquidez, reserva e horizonte — nenhum deles é a classificação de risco.
+  //
+  // Sem respostas o motor cai no Tesouro Selic e justifica com "sem horizonte
+  // declarado no perfil", que é literalmente a situação de quem abre esta tela. Com
+  // respostas, a justificativa passa a citar o horizonte real — repetir os nulos aí
+  // faria a tela dizer que a pessoa não declarou horizonte logo depois de ela declarar.
+  const treasurySuggestions = suggestTreasuryBonds(treasuryBonds, {
+    liquidityNeed: profileRow?.liquidityNeed ?? null,
+    emergencyFund: profileRow?.emergencyFund ?? null,
+    horizonYears: profileRow?.horizonYears ?? null,
+    objective: profileRow?.objective ?? null,
+  });
+
+  // Uma ordenação por coluna sobre a MESMA lista já carregada, e uma busca de cotação
+  // só para a união dos candidatos das três.
+  const byProfile = STARTER_PROFILES.map((classification) => {
+    const targets = defaultPolicyFor(classification);
+    // Com a carteira vazia, planContribution distribui exatamente pelos pesos do
+    // perfil — e ainda aplica o piso por fatia, que é o que impede a tela de mandar
+    // alguém comprar R$ 24 de ETF num começo de R$ 300.
+    const planned = amount != null ? planContribution(amount, new Map(), targets) : [];
+    const plannedByCategory = new Map(planned.map((slice) => [slice.category as string, slice.amount]));
+    const slices: ContributionSlice[] = ALLOCATION_CATEGORIES.filter((category) => targets[category] > 0).map(
+      (category) => ({
+        category,
+        amount: plannedByCategory.get(category) ?? 0,
+        // O percentual exibido é o ALVO da classe na carteira, não a fatia deste
+        // valor de partida. Os dois divergem quando o piso derruba uma classe, e é o
+        // alvo que descreve o perfil — a diferença aparece no item com amount 0.
+        sharePercent: targets[category],
+      }),
+    );
+    return { classification, targets, slices, candidates: candidatesBySlice(slices, orderByRiskProfile([...ranking.items], classification)) };
+  });
+
+  const prices = await pricesForCandidates(...byProfile.map((p) => p.candidates));
+
+  res.json({
+    amount,
+    declaredClassification: (profileRow?.classification ?? null) as ProfileClassification | null,
+    hasAssets: assets.length > 0,
+    fixedIncomeBasis: "praxe_de_mercado",
+    variableSplitBasis: "convencao_do_app",
+    treasury: { suggestions: treasurySuggestions },
+    profiles: byProfile.map(({ classification, targets, slices, candidates }) => ({
+      classification,
+      fixedIncomePercent: targets.renda_fixa,
+      items: buildSliceItems(slices, candidates, prices, treasurySuggestions, { attachTreasury: false }).map((item) => ({
+        category: item.category,
+        targetPercent: item.sharePercent,
+        // null = não pediram valor de partida. 0 = pediram, e a classe não alcançou o
+        // piso — situações diferentes, e a tela explica cada uma do seu jeito.
+        amount: amount == null ? null : item.amount,
+        suggestionsStatus: item.suggestionsStatus,
+        suggestions: item.suggestions,
+      })),
+    })),
   });
 });
 

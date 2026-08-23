@@ -37,6 +37,7 @@ import type {
   ErrorResponse,
   EvolutionPoint,
   GetAllocationPlanParams,
+  GetStarterPortfoliosParams,
   GetTreasuryOpinionParams,
   GetTreasuryPriceOnDateParams,
   HealthStatus,
@@ -60,6 +61,7 @@ import type {
   PriceTargetInput,
   Sale,
   SellAssetInput,
+  StarterPortfolios,
   SuccessResponse,
   TickerValidation,
   Transaction,
@@ -2289,6 +2291,90 @@ export function useGetAllocationPlan<TData = Awaited<ReturnType<typeof getAlloca
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAllocationPlanQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetStarterPortfoliosUrl = (params?: GetStarterPortfoliosParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/portfolio/starter-portfolios?${stringifiedParams}` : `/api/portfolio/starter-portfolios`
+}
+
+/**
+ * @summary As três carteiras-alvo por perfil, para quem ainda não tem posição
+ */
+export const getStarterPortfolios = async (params?: GetStarterPortfoliosParams, options?: RequestInit): Promise<StarterPortfolios> => {
+
+  return customFetch<StarterPortfolios>(getGetStarterPortfoliosUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStarterPortfoliosQueryKey = (params?: GetStarterPortfoliosParams,) => {
+    return [
+    `/api/portfolio/starter-portfolios`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetStarterPortfoliosQueryOptions = <TData = Awaited<ReturnType<typeof getStarterPortfolios>>, TError = ErrorType<ErrorResponse>>(params?: GetStarterPortfoliosParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStarterPortfolios>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStarterPortfoliosQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStarterPortfolios>>> = ({ signal }) => getStarterPortfolios(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStarterPortfolios>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStarterPortfoliosQueryResult = NonNullable<Awaited<ReturnType<typeof getStarterPortfolios>>>
+export type GetStarterPortfoliosQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary As três carteiras-alvo por perfil, para quem ainda não tem posição
+ */
+
+export function useGetStarterPortfolios<TData = Awaited<ReturnType<typeof getStarterPortfolios>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetStarterPortfoliosParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStarterPortfolios>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStarterPortfoliosQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import {
   useListAssets,
   useCreateAsset,
@@ -159,6 +160,26 @@ function TickerValidationFeedback({ isChecking, result }: { isChecking: boolean;
     <p className="flex items-center gap-1.5 text-xs text-destructive">
       <TriangleAlert className="w-3.5 h-3.5 shrink-0" /> Nenhuma cotação encontrada — confira a digitação.
     </p>
+  );
+}
+
+/**
+ * Carteira vazia. A mensagem antiga mandava adicionar ativos sem dizer QUAIS — e quem
+ * acabou de se cadastrar está travado exatamente nessa pergunta. O app tem a resposta
+ * numa tela própria; a função aqui é não deixar essa tela escondida no menu.
+ */
+function EmptyPortfolioMessage() {
+  return (
+    <div className="space-y-2">
+      <p>Sua carteira está vazia. Adicione ativos para começar.</p>
+      <p className="text-sm">
+        Não sabe por onde começar?{" "}
+        <Link href="/carteira-de-partida" className="underline underline-offset-4 hover:text-foreground">
+          Veja a Carteira de Partida
+        </Link>{" "}
+        — como um investidor de cada perfil montaria a sua do zero.
+      </p>
+    </div>
   );
 }
 
@@ -877,7 +898,7 @@ export default function Carteira() {
               ) : assets?.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                    Sua carteira está vazia. Adicione ativos para começar.
+                    <EmptyPortfolioMessage />
                   </TableCell>
                 </TableRow>
               ) : (
@@ -974,7 +995,7 @@ export default function Carteira() {
         {isLoading ? (
           <Card><CardContent className="py-8 text-center text-muted-foreground">Carregando carteira...</CardContent></Card>
         ) : assets?.length === 0 ? (
-          <Card><CardContent className="py-8 text-center text-muted-foreground">Sua carteira está vazia. Adicione ativos para começar.</CardContent></Card>
+          <Card><CardContent className="py-8 text-center text-muted-foreground"><EmptyPortfolioMessage /></CardContent></Card>
         ) : (
           assets?.map((asset) => {
             const analysis = analyses?.find(a => a.ticker === asset.ticker);

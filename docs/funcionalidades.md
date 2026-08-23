@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 59 endpoints · 21 motores determinísticos · 6 pontos de IA · 13 telas · 5 fontes externas.
+**Superfície atual:** 60 endpoints · 21 motores determinísticos · 6 pontos de IA · 14 telas · 5 fontes externas.
 
 ---
 
@@ -656,6 +656,46 @@ Campo não preenchido não vira linha. "Horizonte não declarado" e "horizonte c
 conselhos opostos, e chutar entre os dois seria pior que omitir. Sem perfil nenhum, o prompt fica
 exatamente como era antes.
 
+### Carteira de Partida — a primeira tela útil de quem ainda não tem nada
+
+Quem acaba de se cadastrar encontrava a aplicação inteira respondendo a mesma coisa: vazio. A
+mensagem de carteira vazia mandava "adicionar ativos para começar" **sem dizer quais** — que é
+exatamente a pergunta em que a pessoa está travada.
+
+A tela mostra as três carteiras-alvo **lado a lado**, e não uma. Mostrar uma exigiria adivinhar o
+perfil de quem ainda não respondeu o questionário; e o contraste entre 80% e 30% de renda fixa é a
+explicação mais curta que existe do que o questionário decide. A tela não calcula nada por conta
+própria: `defaultPolicyFor` dá os pesos, `rankOpportunitiesFor` + `orderByRiskProfile` dão os
+candidatos por classe na ordem de risco de cada coluna, `planContribution` converte em reais quando
+o usuário informa um valor de partida, e `suggestTreasuryBonds` dá o título.
+
+O trabalho de projeto que ela acrescenta é **hierarquia entre números que não valem a mesma coisa**,
+e a tela diz isso em texto:
+
+| O número | De onde vem | Como aparece |
+|---|---|---|
+| Renda fixa × variável (80/60/30) | Praxe de mercado — ponto médio das faixas por perfil | O número grande da coluna |
+| Ações 50 / FIIs 30 / ETFs 20 | Convenção deste app, **não** praxe consagrada | Abaixo e menor, com o rótulo dizendo que é convenção e editável em Saúde do Portfólio |
+| Os tickers | Varredura vigente, ordenada pelo risco do perfil | "Candidatos para estudar, não recomendação de compra" |
+
+**O título do Tesouro é um só para as três colunas**, e essa é a demonstração mais concreta do que o
+questionário entrega. Ele não depende da classificação de risco: `suggestTreasuryBonds` escolhe por
+liquidez, reserva de emergência e horizonte. Sem questionário respondido o motor cai no Tesouro
+Selic e justifica com "sem horizonte declarado no perfil" — o que muda entre as colunas é *quanto*
+vai para renda fixa; *qual* título só o questionário resolve. Respondido o questionário, a sugestão
+passa a citar o horizonte real, e continua sendo uma só. Por isso `treasury` viaja **fora** do array
+de perfis na resposta: a forma do JSON afirma que ele não varia por coluna.
+
+Duas coisas a tela deliberadamente não faz. Não existe botão de "criar estes ativos na minha
+carteira": gravaria posição que a pessoa não comprou, com preço e data inventados — exatamente o que
+o registro de lançamentos eliminou. E não há IA nenhuma aqui: é composição estática de saída de
+motor, e um LLM só acrescentaria latência na primeira tela do aplicativo.
+
+Piso por fatia herdado do plano de aporte: num começo de R$ 300 a fatia de ETF não alcança o mínimo,
+some do plano, e o valor dela é redistribuído. A tela diz isso na própria classe em vez de exibir
+R$ 0,00 sem explicação — e o valor da renda fixa exibido é o que o motor de fato alocou, não o
+percentual multiplicado pelo total, que divergiria justamente nesse caso.
+
 ---
 
 ## Meta de renda passiva
@@ -761,12 +801,13 @@ sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela int
 
 ---
 
-## As dez telas, e a pergunta que cada uma responde
+## As onze telas, e a pergunta que cada uma responde
 
 | Tela | A pergunta | O que mostra |
 |---|---|---|
 | **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, **carteira contra o mercado e quem puxou o resultado**, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks, oscilação da composição atual |
 | **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático, poupança com saldo projetado pelo rendimento real do BCB, e a data da compra, opcional em qualquer classe, editável depois |
+| **Carteira de Partida** | Não tenho nada ainda — por onde começo? | As três carteiras-alvo (Conservador/Moderado/Arrojado) lado a lado, com candidatos por classe e o título do Tesouro; opcionalmente convertidas em reais a partir de um valor de partida |
 | **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
 | **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Triagem "atende / não atende ao corte", análise completa de qualquer ticker sem exigir posição, range de 52 semanas, tendência de proventos, comparação setorial — e, pra Tesouro Direto, taxa de hoje contra a própria faixa dos últimos 90 dias e contra Selic/IPCA atuais |
@@ -1065,7 +1106,7 @@ quando ele fica desatualizado, e por isso a checagem precisa ser deliberada.
 | Nova fonte de dado, ou fonte que mudou de endpoint | "De onde vem cada dado", diagrama de fluxo |
 | Novo motor, ou motor removido | "Superfície atual" (contagem), seção do motor, diagrama |
 | Novo ponto de IA, ou mudança no que ele recebe/devolve | "Onde a IA entra" **e** [`analises-ia.md`](./analises-ia.md) |
-| Nova tela, ou tela que mudou de propósito | "As dez telas", "Superfície atual" |
+| Nova tela, ou tela que mudou de propósito | "As onze telas", "Superfície atual" |
 | Novo endpoint | "Superfície atual" (contagem) |
 | Limitação resolvida | "Limites conhecidos" — remover o item e dizer onde passou a ser tratado |
 | Nova varredura de produção com números diferentes | "O estado medido" (incluindo a data) |
