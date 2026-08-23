@@ -1,13 +1,14 @@
 import { Router, type IRouter } from "express";
-import { db, assetsTable, salesTable } from "@workspace/db";
+import { db, assetsTable, salesTable, assetPurchasesTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
-import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams, SellAssetParams, SellAssetBody, ValidateTickerQueryParams } from "@workspace/api-zod";
+import { CreateAssetBody, UpdateAssetBody, GetAssetParams, UpdateAssetParams, DeleteAssetParams, SellAssetParams, SellAssetBody, ValidateTickerQueryParams, CreateAssetPurchaseBody, DeleteAssetPurchaseParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getDividendEvents, getDividendEventsForTicker, classifyDividendFrequency, getQuotes, type DividendFrequency, type PricePoint } from "../lib/market-data";
 import { canonicalTickerFor, findTreasuryBond } from "../lib/treasury-identity";
 import { estimateCapitalGainsTax } from "../lib/tax-engine";
 import { computeMonthlyTaxSummary } from "../lib/monthly-tax-engine";
-import { isoDate } from "../lib/local-date";
+import { isoDate, todayInAppTimezone } from "../lib/local-date";
+import { recomputeAssetCache, listPurchases } from "../lib/purchase-ledger-sync";
 import { getCorporateEventWarnings, type CorporateEventWarning } from "../lib/corporate-events";
 
 const router: IRouter = Router();
@@ -173,15 +174,20 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
       return;
     }
 
-    const existingQty = parseFloat(existing.quantity);
-    const existingAvg = parseFloat(existing.averagePrice);
-    const newQty = existingQty + quantity;
-    const newAvg = (existingQty * existingAvg + quantity * averagePrice) / newQty;
+    // Consolidar deixou de ser um `update` que sobrescreve o preço médio anterior: agora
+    // é a CONSEQUÊNCIA de registrar mais um lançamento e reproduzir a posição inteira.
+    // O número final é o mesmo de sempre (média ponderada), mas passa a ter procedência —
+    // dá pra ver de onde veio e corrigir uma linha errada sem apagar as outras.
+    await db.insert(assetPurchasesTable).values({
+      userId: req.session.userId!,
+      assetId: existing.id,
+      quantity: String(quantity),
+      unitPrice: String(averagePrice),
+      tradeDate: purchaseDate ? isoDate(purchaseDate) : todayInAppTimezone(),
+    });
+    await recomputeAssetCache(existing.id);
 
-    const [updated] = await db.update(assetsTable)
-      .set({ quantity: String(newQty), averagePrice: String(newAvg) })
-      .where(eq(assetsTable.id, existing.id))
-      .returning();
+    const [updated] = await db.select().from(assetsTable).where(eq(assetsTable.id, existing.id));
     const prices = await getPricesFor([updated]);
     const dividendFrequency = await dividendFrequencyFor(updated.ticker);
     res.status(200).json(enrichAsset(updated, prices.get(updated.ticker.toUpperCase()) ?? null, dividendFrequency));
@@ -201,6 +207,20 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     sector: sector ?? null,
     notes: notes ?? null,
   }).returning();
+
+  // Posição nova nasce já com o primeiro lançamento — assim não existe estado em que a
+  // quantidade e o preço médio não tenham origem registrada. Poupança fica de fora: ali
+  // o "preço médio" é um saldo, não preço de compra.
+  if (!asset.isSavingsAccount) {
+    await db.insert(assetPurchasesTable).values({
+      userId: req.session.userId!,
+      assetId: asset.id,
+      quantity: String(quantity),
+      unitPrice: String(averagePrice),
+      tradeDate: purchaseDate ? isoDate(purchaseDate) : todayInAppTimezone(),
+    });
+  }
+
   const prices = await getPricesFor([asset]);
   const dividendFrequency = await dividendFrequencyFor(asset.ticker);
   res.status(201).json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null, dividendFrequency));
@@ -244,18 +264,86 @@ router.patch("/assets/:id", requireAuth, async (req, res): Promise<void> => {
   if (parsed.data.sector !== undefined) updates.sector = parsed.data.sector;
   if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
 
-  const [asset] = await db.update(assetsTable)
-    .set(updates)
-    .where(and(eq(assetsTable.id, params.data.id), eq(assetsTable.userId, req.session.userId!)))
-    .returning();
+  // Quantidade e preço médio deixaram de ser editáveis DIRETAMENTE: são derivados dos
+  // lançamentos. Editar a posição passa a editar o lançamento de saldo inicial, para não
+  // existirem duas formas de definir o mesmo número — que é a origem do problema que este
+  // recurso resolve.
+  //
+  // Poupança é a exceção, e precisa ser explícita: ali `averagePrice` é o SALDO da conta,
+  // não preço de compra, e o diálogo "Movimentar Poupança" grava por este mesmo PATCH. Se
+  // o desvio para lançamento valesse pra todo mundo, depósito e saque quebrariam.
+  const [current] = await db.select().from(assetsTable).where(
+    and(eq(assetsTable.id, params.data.id), eq(assetsTable.userId, req.session.userId!))
+  );
+  if (!current) {
+    res.status(404).json({ error: "Asset não encontrado" });
+    return;
+  }
+
+  const mexeNaPosicao = parsed.data.quantity != null || parsed.data.averagePrice != null || parsed.data.purchaseDate !== undefined;
+  if (!current.isSavingsAccount && mexeNaPosicao) {
+    const purchases = await listPurchases(current.id);
+    const inicial = purchases.find((p) => p.isInitialBalance);
+
+    // Com lançamento real registrado, o número não é mais editável por aqui: a correção é
+    // na linha errada, não no total. Sem isso o cache voltaria a poder divergir da fonte,
+    // reabrindo exatamente a porta que este recurso fecha.
+    if (purchases.length > 0 && !inicial) {
+      res.status(409).json({
+        error: "Esta posição tem lançamentos registrados — corrija o lançamento em vez da posição.",
+      });
+      return;
+    }
+
+    const novaQtd = parsed.data.quantity ?? parseFloat(current.quantity);
+    const novoPreco = parsed.data.averagePrice ?? parseFloat(current.averagePrice);
+    const novaData = parsed.data.purchaseDate !== undefined
+      ? (parsed.data.purchaseDate ? isoDate(parsed.data.purchaseDate) : null)
+      : current.purchaseDate;
+
+    if (inicial) {
+      await db.update(assetPurchasesTable)
+        .set({
+          quantity: String(novaQtd),
+          unitPrice: String(novoPreco),
+          tradeDate: novaData ?? inicial.tradeDate,
+        })
+        .where(eq(assetPurchasesTable.id, inicial.id));
+    } else {
+      await db.insert(assetPurchasesTable).values({
+        userId: req.session.userId!,
+        assetId: current.id,
+        quantity: String(novaQtd),
+        unitPrice: String(novoPreco),
+        tradeDate: novaData ?? todayInAppTimezone(),
+        isInitialBalance: true,
+      });
+    }
+
+    // O cache sai do replay, não do que foi digitado — inclusive a data de compra, que
+    // passa a ser a do lançamento mais antigo.
+    delete updates.quantity;
+    delete updates.averagePrice;
+    delete updates.purchaseDate;
+  }
+
+  const [asset] = Object.keys(updates).length > 0
+    ? await db.update(assetsTable)
+        .set(updates)
+        .where(and(eq(assetsTable.id, params.data.id), eq(assetsTable.userId, req.session.userId!)))
+        .returning()
+    : [current];
 
   if (!asset) {
     res.status(404).json({ error: "Asset não encontrado" });
     return;
   }
-  const prices = await getPricesFor([asset]);
-  const dividendFrequency = await dividendFrequencyFor(asset.ticker);
-  res.json(enrichAsset(asset, prices.get(asset.ticker.toUpperCase()) ?? null, dividendFrequency));
+  await recomputeAssetCache(asset.id);
+  const [fresh] = await db.select().from(assetsTable).where(eq(assetsTable.id, asset.id));
+
+  const prices = await getPricesFor([fresh]);
+  const dividendFrequency = await dividendFrequencyFor(fresh.ticker);
+  res.json(enrichAsset(fresh, prices.get(fresh.ticker.toUpperCase()) ?? null, dividendFrequency));
 });
 
 router.delete("/assets/:id", requireAuth, async (req, res): Promise<void> => {
@@ -291,6 +379,112 @@ function serializeSale(sale: typeof salesTable.$inferSelect) {
 // vendida com a quantidade restante da posição — sem isso, vender "a posição toda"
 // podia deixar um resíduo tipo 0.000000003 e nunca encerrar o asset de verdade.
 const QUANTITY_EPSILON = 1e-6;
+
+/**
+ * Lançamentos de uma posição — as compras que produzem o preço médio.
+ *
+ * Existir esta lista é o ponto do recurso: o preço médio deixa de ser um número sem
+ * procedência e passa a ter de onde vir, linha a linha.
+ */
+router.get("/assets/:id/purchases", requireAuth, async (req, res): Promise<void> => {
+  const params = UpdateAssetParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [asset] = await db.select().from(assetsTable).where(
+    and(eq(assetsTable.id, params.data.id), eq(assetsTable.userId, req.session.userId!))
+  );
+  if (!asset) {
+    res.status(404).json({ error: "Asset não encontrado" });
+    return;
+  }
+  const purchases = await listPurchases(asset.id);
+  res.json(purchases.map((p) => ({
+    id: p.id,
+    quantity: parseFloat(p.quantity),
+    unitPrice: parseFloat(p.unitPrice),
+    tradeDate: p.tradeDate,
+    isInitialBalance: p.isInitialBalance,
+    note: p.note,
+  })));
+});
+
+router.post("/assets/:id/purchases", requireAuth, async (req, res): Promise<void> => {
+  const params = UpdateAssetParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const parsed = CreateAssetPurchaseBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [asset] = await db.select().from(assetsTable).where(
+    and(eq(assetsTable.id, params.data.id), eq(assetsTable.userId, req.session.userId!))
+  );
+  if (!asset) {
+    res.status(404).json({ error: "Asset não encontrado" });
+    return;
+  }
+  // Poupança não tem compra: o "preço médio" ali é um saldo, e depósito/saque tem caminho
+  // próprio no diálogo "Movimentar Poupança".
+  if (asset.isSavingsAccount) {
+    res.status(400).json({ error: "Poupança não registra lançamento de compra — use Movimentar Poupança." });
+    return;
+  }
+
+  await db.insert(assetPurchasesTable).values({
+    userId: req.session.userId!,
+    assetId: asset.id,
+    quantity: String(parsed.data.quantity),
+    unitPrice: String(parsed.data.unitPrice),
+    tradeDate: isoDate(parsed.data.tradeDate),
+    note: parsed.data.note ?? null,
+  });
+  await recomputeAssetCache(asset.id);
+
+  const [fresh] = await db.select().from(assetsTable).where(eq(assetsTable.id, asset.id));
+  const prices = await getPricesFor([fresh]);
+  const dividendFrequency = await dividendFrequencyFor(fresh.ticker);
+  res.status(201).json(enrichAsset(fresh, prices.get(fresh.ticker.toUpperCase()) ?? null, dividendFrequency));
+});
+
+router.delete("/assets/:id/purchases/:purchaseId", requireAuth, async (req, res): Promise<void> => {
+  const params = DeleteAssetPurchaseParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [asset] = await db.select().from(assetsTable).where(
+    and(eq(assetsTable.id, params.data.id), eq(assetsTable.userId, req.session.userId!))
+  );
+  if (!asset) {
+    res.status(404).json({ error: "Asset não encontrado" });
+    return;
+  }
+
+  const purchases = await listPurchases(asset.id);
+  // Apagar o último lançamento deixaria a posição sem origem para a quantidade e o preço
+  // médio — um estado que o recomputeAssetCache não conserta (ele não toca em posição sem
+  // lançamento, justamente para não zerar carteira de quem ainda não passou pelo
+  // backfill). Quem quer zerar a posição apaga a posição.
+  if (purchases.length <= 1) {
+    res.status(409).json({ error: "A posição precisa de pelo menos um lançamento. Para encerrá-la, exclua a posição." });
+    return;
+  }
+
+  await db.delete(assetPurchasesTable).where(
+    and(eq(assetPurchasesTable.id, params.data.purchaseId), eq(assetPurchasesTable.assetId, asset.id))
+  );
+  await recomputeAssetCache(asset.id);
+
+  const [fresh] = await db.select().from(assetsTable).where(eq(assetsTable.id, asset.id));
+  const prices = await getPricesFor([fresh]);
+  const dividendFrequency = await dividendFrequencyFor(fresh.ticker);
+  res.json(enrichAsset(fresh, prices.get(fresh.ticker.toUpperCase()) ?? null, dividendFrequency));
+});
 
 router.post("/assets/:id/sell", requireAuth, async (req, res): Promise<void> => {
   const params = SellAssetParams.safeParse(req.params);
@@ -349,7 +543,10 @@ router.post("/assets/:id/sell", requireAuth, async (req, res): Promise<void> => 
     }).returning();
 
     if (remainingQty > QUANTITY_EPSILON) {
-      // Venda parcial: reduz a quantidade, preço médio de compra não muda.
+      // Venda parcial: reduz a quantidade, preço médio de compra não muda. Continua sendo
+      // um update direto porque a venda acabou de ser inserida DENTRO desta transação e o
+      // replay a enxergaria de qualquer forma — mas o resultado é o mesmo, e o
+      // recomputeAssetCache logo abaixo confirma isso fora da transação.
       await tx.update(assetsTable).set({ quantity: String(remainingQty) }).where(eq(assetsTable.id, asset.id));
     } else {
       // Venda total: a posição encerrou de verdade, não faz sentido mostrar quantidade

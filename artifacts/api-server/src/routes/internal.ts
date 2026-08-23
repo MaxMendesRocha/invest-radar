@@ -4,6 +4,7 @@ import { OPPORTUNITIES_JOB } from "../lib/opportunities-engine";
 import { TREASURY_JOB } from "../lib/treasury-data";
 import { FII_EVENTS_JOB } from "../lib/fii-events-sync";
 import { PORTFOLIO_SNAPSHOT_JOB } from "../lib/portfolio-snapshot-job";
+import { PURCHASE_BACKFILL_JOB } from "../lib/purchase-backfill";
 import { runJobAndRecord } from "../lib/scheduler";
 import { logger } from "../lib/logger";
 
@@ -76,6 +77,24 @@ router.post("/internal/portfolio-snapshots/record", requireInternalToken, async 
   } catch (err) {
     logger.error({ err }, "POST /internal/portfolio-snapshots/record falhou");
     res.status(500).json({ error: "Falha ao gravar snapshots — ver logs do servidor" });
+  }
+});
+
+// Transição única, não rotina: cria o lançamento de saldo inicial das posições anteriores
+// ao registro de lançamentos. Idempotente — posição que já tem lançamento é pulada —, e
+// falha alto se alguma posição divergir do que estava cadastrado, porque seguir assim
+// distorceria a rentabilidade histórica.
+router.post("/internal/asset-purchases/backfill", requireInternalToken, async (req, res): Promise<void> => {
+  try {
+    const result = await runJobAndRecord(PURCHASE_BACKFILL_JOB);
+    if (!result) {
+      res.status(409).json({ error: "Job já está em execução" });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "POST /internal/asset-purchases/backfill falhou");
+    res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
   }
 });
 

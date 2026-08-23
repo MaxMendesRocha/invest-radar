@@ -263,6 +263,106 @@ paths:
         "204":
           description: Deleted
 
+  /assets/{id}/purchases:
+    get:
+      operationId: listAssetPurchases
+      tags: [assets]
+      summary: Lançamentos de compra que produzem o preço médio da posição
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lista de lançamentos, do mais antigo para o mais recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssetPurchase"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createAssetPurchase
+      tags: [assets]
+      summary: Registra uma compra e recalcula quantidade e preço médio
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssetPurchaseInput"
+      responses:
+        "201":
+          description: Posição já com quantidade e preço médio recalculados
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+        "400":
+          description: Validation error, ou poupança (que não registra compra)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /assets/{id}/purchases/{purchaseId}:
+    delete:
+      operationId: deleteAssetPurchase
+      tags: [assets]
+      summary: Remove um lançamento e recalcula a posição
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: purchaseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Posição já com quantidade e preço médio recalculados
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+        "409":
+          description: >-
+            Último lançamento da posição. Apagá-lo deixaria quantidade e preço médio sem
+            origem — para encerrar a posição, exclua a posição.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /assets/{id}/sell:
     post:
       operationId: sellAsset
@@ -1190,6 +1290,48 @@ components:
           description: >-
             true quando a posição não tem purchaseDate registrada — nesse caso não dá pra
             afirmar que o evento é posterior à compra, e a interface diz isso.
+
+    AssetPurchase:
+      type: object
+      required: [id, quantity, unitPrice, tradeDate, isInitialBalance, note]
+      properties:
+        id:
+          type: integer
+        quantity:
+          type: number
+        unitPrice:
+          type: number
+          description: Preço pago por unidade — PU no caso de Tesouro Direto.
+        tradeDate:
+          type: string
+          format: date
+          description: >-
+            Data da NEGOCIAÇÃO, não da liquidação. A corretora costuma exibir a de
+            liquidação (D+2), e confundir as duas leva a atribuir a compra ao dia errado.
+        isInitialBalance:
+          type: boolean
+          description: >-
+            Marca o lançamento derivado do saldo que já estava cadastrado, para posições
+            anteriores ao registro de lançamentos. Não é uma nota de corretagem — é o que
+            a pessoa informou — e a interface diz isso.
+        note:
+          type: ["string", "null"]
+
+    AssetPurchaseInput:
+      type: object
+      required: [quantity, unitPrice, tradeDate]
+      properties:
+        quantity:
+          type: number
+          exclusiveMinimum: 0
+        unitPrice:
+          type: number
+          exclusiveMinimum: 0
+        tradeDate:
+          type: string
+          format: date
+        note:
+          type: string
 
     TickerValidation:
       type: object

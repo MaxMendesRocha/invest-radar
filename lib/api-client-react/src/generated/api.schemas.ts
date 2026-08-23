@@ -142,6 +142,28 @@ export interface Asset {
   createdAt: string;
 }
 
+export interface AssetPurchase {
+  id: number;
+  quantity: number;
+  /** Preço pago por unidade — PU no caso de Tesouro Direto. */
+  unitPrice: number;
+  /** Data da NEGOCIAÇÃO, não da liquidação. A corretora costuma exibir a de liquidação (D+2), e confundir as duas leva a atribuir a compra ao dia errado. */
+  tradeDate: string;
+  /** Marca o lançamento derivado do saldo que já estava cadastrado, para posições anteriores ao registro de lançamentos. Não é uma nota de corretagem — é o que a pessoa informou — e a interface diz isso. */
+  isInitialBalance: boolean;
+  /** @nullable */
+  note: string | null;
+}
+
+export interface AssetPurchaseInput {
+  /** @exclusiveMinimum 0 */
+  quantity: number;
+  /** @exclusiveMinimum 0 */
+  unitPrice: number;
+  tradeDate: string;
+  note?: string;
+}
+
 export interface TickerValidation {
   /** true quando o ticker tem cotação real disponível agora (brapi.dev). */
   valid: boolean;

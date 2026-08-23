@@ -272,6 +272,114 @@ export const DeleteAssetResponse = zod.void()
 
 
 /**
+ * @summary Lançamentos de compra que produzem o preço médio da posição
+ */
+export const ListAssetPurchasesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListAssetPurchasesResponseItem = zod.object({
+  "id": zod.number(),
+  "quantity": zod.number(),
+  "unitPrice": zod.number().describe('Preço pago por unidade — PU no caso de Tesouro Direto.'),
+  "tradeDate": zod.coerce.date().describe('Data da NEGOCIAÇÃO, não da liquidação. A corretora costuma exibir a de liquidação (D+2), e confundir as duas leva a atribuir a compra ao dia errado.'),
+  "isInitialBalance": zod.boolean().describe('Marca o lançamento derivado do saldo que já estava cadastrado, para posições anteriores ao registro de lançamentos. Não é uma nota de corretagem — é o que a pessoa informou — e a interface diz isso.'),
+  "note": zod.string().nullable()
+})
+export const ListAssetPurchasesResponse = zod.array(ListAssetPurchasesResponseItem)
+
+
+/**
+ * @summary Registra uma compra e recalcula quantidade e preço médio
+ */
+export const CreateAssetPurchaseParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const createAssetPurchaseBodyQuantityExclusiveMin = 0;
+
+export const createAssetPurchaseBodyUnitPriceExclusiveMin = 0;
+
+
+
+export const CreateAssetPurchaseBody = zod.object({
+  "quantity": zod.number().gt(createAssetPurchaseBodyQuantityExclusiveMin),
+  "unitPrice": zod.number().gt(createAssetPurchaseBodyUnitPriceExclusiveMin),
+  "tradeDate": zod.coerce.date(),
+  "note": zod.string().optional()
+})
+
+export const CreateAssetPurchaseResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "ticker": zod.string(),
+  "quantity": zod.number(),
+  "averagePrice": zod.number(),
+  "purchaseDate": zod.coerce.date().nullish(),
+  "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']),
+  "sector": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "treasuryBondType": zod.string().nullish(),
+  "treasuryMaturityDate": zod.coerce.date().nullish(),
+  "isSavingsAccount": zod.boolean().optional().describe('Marca uma posição de renda_fixa como conta poupança. quantity fica em 1, averagePrice guarda o saldo conhecido, purchaseDate a data DESSE saldo (não a de abertura da conta) — currentPrice é a projeção de hoje via a série 195 do Banco Central (rendimento real da poupança, com a regra de TR já aplicada).'),
+  "currentPrice": zod.number().nullish(),
+  "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.'),
+  "changePercent": zod.number().nullish().describe('Variação % do dia (fechamento contra o fechamento anterior), direto do provedor. Null pra título público — PU é publicado uma vez por dia, sem \"fechou em alta\/baixa hoje\" real — e pra preço datado (provedor indisponível).'),
+  "totalValue": zod.number().nullish(),
+  "profitLoss": zod.number().nullish(),
+  "profitLossPercent": zod.number().nullish(),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
+  "corporateEventWarning": zod.union([zod.null(),zod.object({
+  "type": zod.enum(['desdobramento', 'grupamento', 'amortizacao']),
+  "date": zod.coerce.date().describe('Mês de referência do informe da CVM em que o evento aparece.'),
+  "ratio": zod.number().nullable().describe('Desdobramento 1:10 e grupamento 10:1 vêm ambos como 10 — o sentido está em type. Null para amortização.'),
+  "accumulatedFraction": zod.number().nullable().describe('Amortização acumulada desde a compra, em fração (0.0134 = 1,34%). Só é reportada acima de 1% acumulado, porque amortização mensal típica é da ordem de 0,18% e avisar a cada mês seria ruído. Null para desdobramento\/grupamento.'),
+  "purchaseDateUnknown": zod.boolean().describe('true quando a posição não tem purchaseDate registrada — nesse caso não dá pra afirmar que o evento é posterior à compra, e a interface diz isso.')
+})]).optional().describe('Evento corporativo que o FII sofreu DEPOIS da data de compra registrada e que sempre altera o preço médio de quem já tinha a posição. Null pra qualquer outra classe, pra FII sem evento no período, e enquanto a série mensal da CVM não tiver sido sincronizada. O app avisa mas não corrige — não tem como saber o que a pessoa fez na corretora.'),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Remove um lançamento e recalcula a posição
+ */
+export const DeleteAssetPurchaseParams = zod.object({
+  "id": zod.coerce.number(),
+  "purchaseId": zod.coerce.number()
+})
+
+export const DeleteAssetPurchaseResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "ticker": zod.string(),
+  "quantity": zod.number(),
+  "averagePrice": zod.number(),
+  "purchaseDate": zod.coerce.date().nullish(),
+  "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']),
+  "sector": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "treasuryBondType": zod.string().nullish(),
+  "treasuryMaturityDate": zod.coerce.date().nullish(),
+  "isSavingsAccount": zod.boolean().optional().describe('Marca uma posição de renda_fixa como conta poupança. quantity fica em 1, averagePrice guarda o saldo conhecido, purchaseDate a data DESSE saldo (não a de abertura da conta) — currentPrice é a projeção de hoje via a série 195 do Banco Central (rendimento real da poupança, com a regra de TR já aplicada).'),
+  "currentPrice": zod.number().nullish(),
+  "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo.'),
+  "changePercent": zod.number().nullish().describe('Variação % do dia (fechamento contra o fechamento anterior), direto do provedor. Null pra título público — PU é publicado uma vez por dia, sem \"fechou em alta\/baixa hoje\" real — e pra preço datado (provedor indisponível).'),
+  "totalValue": zod.number().nullish(),
+  "profitLoss": zod.number().nullish(),
+  "profitLossPercent": zod.number().nullish(),
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
+  "corporateEventWarning": zod.union([zod.null(),zod.object({
+  "type": zod.enum(['desdobramento', 'grupamento', 'amortizacao']),
+  "date": zod.coerce.date().describe('Mês de referência do informe da CVM em que o evento aparece.'),
+  "ratio": zod.number().nullable().describe('Desdobramento 1:10 e grupamento 10:1 vêm ambos como 10 — o sentido está em type. Null para amortização.'),
+  "accumulatedFraction": zod.number().nullable().describe('Amortização acumulada desde a compra, em fração (0.0134 = 1,34%). Só é reportada acima de 1% acumulado, porque amortização mensal típica é da ordem de 0,18% e avisar a cada mês seria ruído. Null para desdobramento\/grupamento.'),
+  "purchaseDateUnknown": zod.boolean().describe('true quando a posição não tem purchaseDate registrada — nesse caso não dá pra afirmar que o evento é posterior à compra, e a interface diz isso.')
+})]).optional().describe('Evento corporativo que o FII sofreu DEPOIS da data de compra registrada e que sempre altera o preço médio de quem já tinha a posição. Null pra qualquer outra classe, pra FII sem evento no período, e enquanto a série mensal da CVM não tiver sido sincronizada. O app avisa mas não corrige — não tem como saber o que a pessoa fez na corretora.'),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Close (fully or partially) a position, recording a real sale with realized gain/tax
  */
 export const SellAssetParams = zod.object({
