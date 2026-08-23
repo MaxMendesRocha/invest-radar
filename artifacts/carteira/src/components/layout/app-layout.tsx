@@ -7,6 +7,7 @@ import {
   // "Radar Inteligente" justamente para parar de disputar leitura com a navegação —
   // agora aparece uma vez só, e quer dizer o produto.
   Radar,
+  Compass,
   BellRing,
   Gauge,
   FileSearch,
@@ -42,6 +43,9 @@ import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/carteira", label: "Minha Carteira", icon: Wallet },
+  // Compass e não uma carteira: o ícone diz "por onde começar", que é o que a tela
+  // entrega. Repetir a metáfora de carteira do item acima só duplicaria a silhueta.
+  { href: "/carteira-de-partida", label: "Carteira de Partida", icon: Compass },
   { href: "/radar", label: "Radar Inteligente", icon: BellRing },
   { href: "/analise", label: "Análise de Ativos", icon: Gauge },
   { href: "/parecer", label: "Parecer de Ativo", icon: FileSearch },
@@ -63,8 +67,8 @@ const MOBILE_TAB_ITEMS = [
 
 function MobileBottomNav({ onOpenMenu }: { onOpenMenu: () => void }) {
   const [location] = useLocation();
-  // Numa seção sem aba própria (Oportunidades, Parecer, Dividendos, Operações
-  // Encerradas, Saúde, Configurações) nenhum dos 4 links acenderia e o usuário
+  // Numa seção sem aba própria (Carteira de Partida, Oportunidades, Parecer, Dividendos,
+  // Operações Encerradas, Saúde, Configurações) nenhum dos 4 links acenderia e o usuário
   // ficaria sem referência de onde está — nesse caso "Mais" fica destacado.
   const isOnDrawerSection = !MOBILE_TAB_ITEMS.some((item) => item.href === location);
 

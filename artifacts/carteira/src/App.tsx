@@ -12,6 +12,7 @@ import Login from '@/pages/login';
 import Register from '@/pages/register';
 import Dashboard from '@/pages/dashboard';
 import Carteira from '@/pages/carteira';
+import CarteiraDePartida from '@/pages/carteira-de-partida';
 import Radar from '@/pages/radar';
 import Analise from '@/pages/analise';
 import Parecer from '@/pages/parecer';
@@ -37,6 +38,7 @@ function ProtectedRoutes() {
         <Switch>
           <Route path="/" component={Dashboard} />
           <Route path="/carteira" component={Carteira} />
+          <Route path="/carteira-de-partida" component={CarteiraDePartida} />
           <Route path="/radar" component={Radar} />
           <Route path="/analise" component={Analise} />
           <Route path="/parecer" component={Parecer} />

@@ -768,6 +768,65 @@ export const GetAllocationPlanResponse = zod.object({
 
 
 /**
+ * @summary As três carteiras-alvo por perfil, para quem ainda não tem posição
+ */
+export const getStarterPortfoliosQueryAmountMin = 0.01;
+
+
+
+export const GetStarterPortfoliosQueryParams = zod.object({
+  "amount": zod.coerce.number().min(getStarterPortfoliosQueryAmountMin).optional().describe('Valor de partida. Opcional de propósito: sem ele a resposta traz só os percentuais-alvo, porque qualquer valor padrão seria um número inventado.')
+})
+
+export const GetStarterPortfoliosResponse = zod.object({
+  "amount": zod.number().nullable(),
+  "declaredClassification": zod.union([zod.literal('Conservador'),zod.literal('Moderado'),zod.literal('Arrojado'),zod.literal(null)]).nullable().describe('Perfil já declarado pelo usuário, para a tela destacar a coluna dele. Null quando o questionário ainda não foi respondido — o caso que motiva a tela.'),
+  "hasAssets": zod.boolean().describe('A tela ignora a carteira existente por construção. Quando isto é true ela precisa dizer que o ajuste do que já existe é em Saúde do Portfólio.'),
+  "fixedIncomeBasis": zod.enum(['praxe_de_mercado']).describe('Origem da divisão renda fixa x variável (80\/60\/30).'),
+  "variableSplitBasis": zod.enum(['convencao_do_app']).describe('Origem da divisão da parte variável entre ações, FIIs e ETFs. Não é praxe consagrada, e a tela precisa apresentá-la com peso menor que o campo acima.'),
+  "treasury": zod.object({
+  "suggestions": zod.array(zod.object({
+  "bondType": zod.string(),
+  "maturityDate": zod.coerce.date(),
+  "baseDate": zod.coerce.date().describe('Data-base da taxa. O Tesouro publica o arquivo com um ou dois dias úteis de atraso, então a taxa nunca é \"de agora\" — exibir a data junto.'),
+  "rateLabel": zod.string().describe('Taxa já rotulada conforme a família (\"IPCA + 8,04% a.a.\", \"14,11% a.a.\", \"Selic + 0,04%\"). O número cru significa coisas diferentes em cada uma — no Tesouro Selic é ágio\/deságio sobre a Selic, não o rendimento.'),
+  "unitPrice": zod.number().describe('Preço do título inteiro.'),
+  "minimumInvestment": zod.number().describe('Compra mínima — 1% do título, com piso de R$ 30 do Tesouro Direto.'),
+  "reason": zod.string(),
+  "sizing": zod.union([zod.object({
+  "unitPrice": zod.number().describe('Cotação usada na conta, para o usuário conferir.'),
+  "units": zod.number().describe('Unidades inteiras em bolsa (mercado fracionário negocia a partir de 1); múltiplos de 0,01 título no Tesouro Direto. Zero é resposta válida — a fatia não alcança uma unidade, ou não atinge o piso de R$ 30 do Tesouro.'),
+  "investedAmount": zod.number(),
+  "leftover": zod.number().describe('O que sobra da fatia. Sem isso a soma não fecha na tela.')
+}).describe('Quanto comprar, em quantidade, se a fatia inteira da classe for para este ativo. Nunca arredonda para cima: sugerir quantidade que custa mais que a fatia seria mandar gastar dinheiro que o usuário não disse que tem.'),zod.null()]).optional().describe('Fração do título que a fatia de renda fixa compra, em múltiplos de 0,01.')
+}))
+}),
+  "profiles": zod.array(zod.object({
+  "classification": zod.enum(['Conservador', 'Moderado', 'Arrojado']),
+  "fixedIncomePercent": zod.number().describe('O número de destaque da coluna, e o único com respaldo de praxe de mercado (ver fixedIncomeBasis).'),
+  "items": zod.array(zod.object({
+  "category": zod.string(),
+  "targetPercent": zod.number().describe('Peso da classe na carteira-alvo do perfil — não a fatia do valor de partida. Os dois divergem quando o piso por fatia derruba uma classe, e nesse caso `amount` vem 0 com `targetPercent` maior que zero.'),
+  "amount": zod.number().nullable().describe('Null quando nenhum valor de partida foi informado. Zero quando foi, e a classe não alcançou o piso mínimo de compra — o valor dela foi redistribuído.'),
+  "suggestionsStatus": zod.enum(['ok', 'sem_ticker_de_bolsa', 'sem_candidato', 'tesouro_indisponivel']).describe('Mesmos valores e mesmos significados de AllocationPlanItem.'),
+  "suggestions": zod.array(zod.object({
+  "ticker": zod.string(),
+  "name": zod.string(),
+  "score": zod.number(),
+  "reason": zod.string(),
+  "sizing": zod.union([zod.object({
+  "unitPrice": zod.number().describe('Cotação usada na conta, para o usuário conferir.'),
+  "units": zod.number().describe('Unidades inteiras em bolsa (mercado fracionário negocia a partir de 1); múltiplos de 0,01 título no Tesouro Direto. Zero é resposta válida — a fatia não alcança uma unidade, ou não atinge o piso de R$ 30 do Tesouro.'),
+  "investedAmount": zod.number(),
+  "leftover": zod.number().describe('O que sobra da fatia. Sem isso a soma não fecha na tela.')
+}).describe('Quanto comprar, em quantidade, se a fatia inteira da classe for para este ativo. Nunca arredonda para cima: sugerir quantidade que custa mais que a fatia seria mandar gastar dinheiro que o usuário não disse que tem.'),zod.null()]).optional().describe('Null quando não há cotação real para o ticker. Estimar preço para poder mostrar quantidade seria inventar o número mais fácil de conferir na tela.')
+})).describe('Candidatos da classe, na ordem de risco do perfil desta coluna — o mesmo critério da tela de Oportunidades, ver lib\/opportunity-ranking.ts.')
+}))
+}))
+}).describe('As três carteiras-alvo lado a lado. `treasury` fica fora de `profiles` porque o título sugerido depende das respostas do questionário (liquidez, reserva, horizonte), não da classificação de risco — é o mesmo nas três colunas, e a forma da resposta afirma isso.')
+
+
+/**
  * @summary Meta de renda passiva e progresso rumo a ela
  */
 export const GetIncomeGoalResponse = zod.object({

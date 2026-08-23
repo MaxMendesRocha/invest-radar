@@ -1715,6 +1715,108 @@ export interface AllocationPlan {
   deviationAfter?: number;
 }
 
+/**
+ * Mesmos valores e mesmos significados de AllocationPlanItem.
+ */
+export type StarterPortfolioItemSuggestionsStatus = typeof StarterPortfolioItemSuggestionsStatus[keyof typeof StarterPortfolioItemSuggestionsStatus];
+
+
+export const StarterPortfolioItemSuggestionsStatus = {
+  ok: 'ok',
+  sem_ticker_de_bolsa: 'sem_ticker_de_bolsa',
+  sem_candidato: 'sem_candidato',
+  tesouro_indisponivel: 'tesouro_indisponivel',
+} as const;
+
+export interface StarterPortfolioItem {
+  category: string;
+  /** Peso da classe na carteira-alvo do perfil — não a fatia do valor de partida. Os dois divergem quando o piso por fatia derruba uma classe, e nesse caso `amount` vem 0 com `targetPercent` maior que zero. */
+  targetPercent: number;
+  /**
+     * Null quando nenhum valor de partida foi informado. Zero quando foi, e a classe não alcançou o piso mínimo de compra — o valor dela foi redistribuído.
+     * @nullable
+     */
+  amount: number | null;
+  /** Mesmos valores e mesmos significados de AllocationPlanItem. */
+  suggestionsStatus: StarterPortfolioItemSuggestionsStatus;
+  /** Candidatos da classe, na ordem de risco do perfil desta coluna — o mesmo critério da tela de Oportunidades, ver lib/opportunity-ranking.ts. */
+  suggestions: AllocationPlanSuggestion[];
+}
+
+export type StarterPortfolioClassification = typeof StarterPortfolioClassification[keyof typeof StarterPortfolioClassification];
+
+
+export const StarterPortfolioClassification = {
+  Conservador: 'Conservador',
+  Moderado: 'Moderado',
+  Arrojado: 'Arrojado',
+} as const;
+
+export interface StarterPortfolio {
+  classification: StarterPortfolioClassification;
+  /** O número de destaque da coluna, e o único com respaldo de praxe de mercado (ver fixedIncomeBasis). */
+  fixedIncomePercent: number;
+  items: StarterPortfolioItem[];
+}
+
+/**
+ * Perfil já declarado pelo usuário, para a tela destacar a coluna dele. Null quando o questionário ainda não foi respondido — o caso que motiva a tela.
+ * @nullable
+ */
+export type StarterPortfoliosDeclaredClassification = typeof StarterPortfoliosDeclaredClassification[keyof typeof StarterPortfoliosDeclaredClassification] | null;
+
+
+export const StarterPortfoliosDeclaredClassification = {
+  Conservador: 'Conservador',
+  Moderado: 'Moderado',
+  Arrojado: 'Arrojado',
+} as const;
+
+/**
+ * Origem da divisão renda fixa x variável (80/60/30).
+ */
+export type StarterPortfoliosFixedIncomeBasis = typeof StarterPortfoliosFixedIncomeBasis[keyof typeof StarterPortfoliosFixedIncomeBasis];
+
+
+export const StarterPortfoliosFixedIncomeBasis = {
+  praxe_de_mercado: 'praxe_de_mercado',
+} as const;
+
+/**
+ * Origem da divisão da parte variável entre ações, FIIs e ETFs. Não é praxe consagrada, e a tela precisa apresentá-la com peso menor que o campo acima.
+ */
+export type StarterPortfoliosVariableSplitBasis = typeof StarterPortfoliosVariableSplitBasis[keyof typeof StarterPortfoliosVariableSplitBasis];
+
+
+export const StarterPortfoliosVariableSplitBasis = {
+  convencao_do_app: 'convencao_do_app',
+} as const;
+
+export type StarterPortfoliosTreasury = {
+  suggestions: TreasurySuggestion[];
+};
+
+/**
+ * As três carteiras-alvo lado a lado. `treasury` fica fora de `profiles` porque o título sugerido depende das respostas do questionário (liquidez, reserva, horizonte), não da classificação de risco — é o mesmo nas três colunas, e a forma da resposta afirma isso.
+ */
+export interface StarterPortfolios {
+  /** @nullable */
+  amount: number | null;
+  /**
+     * Perfil já declarado pelo usuário, para a tela destacar a coluna dele. Null quando o questionário ainda não foi respondido — o caso que motiva a tela.
+     * @nullable
+     */
+  declaredClassification: StarterPortfoliosDeclaredClassification;
+  /** A tela ignora a carteira existente por construção. Quando isto é true ela precisa dizer que o ajuste do que já existe é em Saúde do Portfólio. */
+  hasAssets: boolean;
+  /** Origem da divisão renda fixa x variável (80/60/30). */
+  fixedIncomeBasis: StarterPortfoliosFixedIncomeBasis;
+  /** Origem da divisão da parte variável entre ações, FIIs e ETFs. Não é praxe consagrada, e a tela precisa apresentá-la com peso menor que o campo acima. */
+  variableSplitBasis: StarterPortfoliosVariableSplitBasis;
+  treasury: StarterPortfoliosTreasury;
+  profiles: StarterPortfolio[];
+}
+
 export interface IncomeGoalInput {
   /** @minimum 1 */
   targetMonthlyIncome: number;
@@ -1781,5 +1883,13 @@ export type GetAllocationPlanParams = {
  * @minimum 0.01
  */
 amount: number;
+};
+
+export type GetStarterPortfoliosParams = {
+/**
+ * Valor de partida. Opcional de propósito: sem ele a resposta traz só os percentuais-alvo, porque qualquer valor padrão seria um número inventado.
+ * @minimum 0.01
+ */
+amount?: number;
 };
 

@@ -2,6 +2,7 @@ import { db, opportunitiesTable, investorProfilesTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { getSectorBenchmark } from "./sector-benchmarks";
 import { computeDividendValue, compareDividendValue, type DividendValue } from "./dividend-value-engine";
+import type { ProfileClassification } from "./investor-profile-engine";
 
 /**
  * Ordenação da lista de oportunidades, extraída de routes/opportunities.ts para poder
@@ -119,14 +120,35 @@ export async function rankOpportunitiesFor(userId: number): Promise<RankedOpport
       return compareDividendValue(va, vb);
     });
   } else if (orderedBy === "perfil_de_risco" && profile) {
-    const priority = RISK_PRIORITY[profile.classification] ?? {};
-    items.sort((a, b) => {
-      const pa = priority[a.riskLevel] ?? 1;
-      const pb = priority[b.riskLevel] ?? 1;
-      if (pa !== pb) return pa - pb;
-      return b.score - a.score;
-    });
+    orderByRiskProfile(items, profile.classification as ProfileClassification);
   }
 
   return { orderedBy, dividendPremiumPending, items, dividendValueByTicker };
+}
+
+/**
+ * Ordena a lista pelo apetite a risco de UMA classificação, no lugar (in place), e
+ * devolve o mesmo array por conveniência de encadeamento.
+ *
+ * Existe separada de `rankOpportunitiesFor` porque a Carteira de Partida
+ * (routes/portfolio.ts) mostra as três classificações lado a lado para quem ainda não
+ * respondeu o questionário — não há um `userId` com perfil de onde derivar a ordem, e
+ * são três ordens sobre a MESMA lista, não três consultas.
+ *
+ * É a mesma razão que trouxe este arquivo à existência, aplicada um nível abaixo: com a
+ * ordenação copiada, a tela de partida poderia sugerir para o Arrojado um ativo que a
+ * tela de Oportunidades não sugere para o mesmo perfil — e nada no código diria qual
+ * das duas está certa.
+ */
+export function orderByRiskProfile(
+  items: RankedOpportunity[],
+  classification: ProfileClassification,
+): RankedOpportunity[] {
+  const priority = RISK_PRIORITY[classification] ?? {};
+  return items.sort((a, b) => {
+    const pa = priority[a.riskLevel] ?? 1;
+    const pb = priority[b.riskLevel] ?? 1;
+    if (pa !== pb) return pa - pb;
+    return b.score - a.score;
+  });
 }
