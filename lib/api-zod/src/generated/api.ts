@@ -115,20 +115,23 @@ export const ListAssetsResponse = zod.array(ListAssetsResponseItem)
 /**
  * @summary Add an asset to portfolio
  */
+export const createAssetBodyTickerMax = 60;
 
-export const createAssetBodyQuantityExclusiveMin = 0;
+export const createAssetBodyQuantityMin = 0.000001;
+export const createAssetBodyQuantityMax = 999999999999;
 
-export const createAssetBodyAveragePriceExclusiveMin = 0;
+export const createAssetBodyAveragePriceMin = 0.01;
+export const createAssetBodyAveragePriceMax = 999999999999;
 
 
 
 export const CreateAssetBody = zod.object({
-  "ticker": zod.string().min(1).describe('Ignorado quando treasuryBondType\/treasuryMaturityDate são enviados — nesse caso o servidor deriva um rótulo canônico do próprio título, para que duas compras do mesmo papel consolidem em vez de virarem posições separadas por diferença de digitação.'),
+  "ticker": zod.string().min(1).max(createAssetBodyTickerMax).describe('O servidor apara os espaços antes de validar: \"   \" passava pelo minLength e virava uma posição com ticker em branco, invisível em qualquer busca. O teto de 60 acomoda o rótulo mais longo que o app gera sozinho — o canônico do Tesouro, \"Tesouro IPCA+ com Juros Semestrais 2045\" — com folga para CDB de nome comprido, sem aceitar os 500 caracteres que passavam antes. Ignorado quando treasuryBondType\/treasuryMaturityDate são enviados — nesse caso o servidor deriva um rótulo canônico do próprio título, para que duas compras do mesmo papel consolidem em vez de virarem posições separadas por diferença de digitação.'),
   "treasuryBondType": zod.string().nullish().describe('Família do título público, exatamente como o Tesouro publica (\"Tesouro IPCA+ com Juros Semestrais\"). Só válido com category=renda_fixa, e sempre junto de treasuryMaturityDate. Ausente = renda fixa privada (CDB\/LCI\/LCA), que não tem fonte pública e segue no preço médio de compra.'),
   "treasuryMaturityDate": zod.coerce.date().nullish(),
   "isSavingsAccount": zod.boolean().optional().describe('Só válido com category=renda_fixa. quantity deve vir 1, averagePrice o saldo conhecido, purchaseDate a data desse saldo — ver Asset.isSavingsAccount.'),
-  "quantity": zod.number().gt(createAssetBodyQuantityExclusiveMin).describe('Sempre maior que zero. Quantidade negativa produzia patrimônio negativo e um lançamento de compra negativo — o mesmo que AssetPurchaseInput já recusava.'),
-  "averagePrice": zod.number().gt(createAssetBodyAveragePriceExclusiveMin),
+  "quantity": zod.number().min(createAssetBodyQuantityMin).max(createAssetBodyQuantityMax).describe('Piso e teto vêm da coluna, numeric(18,6). O piso não é zelo: 1e-9 passava pelo \"maior que zero\" e o Postgres arredondava para 0 na escala 6, criando a posição de quantidade zero que a trava de sinal existia para impedir — só que por baixo da escala em vez de por baixo de zero. O teto evita o outro extremo, em que o valor estoura a coluna e a resposta vira 500.'),
+  "averagePrice": zod.number().min(createAssetBodyAveragePriceMin).max(createAssetBodyAveragePriceMax),
   "purchaseDate": zod.coerce.date().nullish().describe('Recusada quando anterior a 1900 ou no futuro. O `<input type=\"date\">` aceita ano 0001 sem reclamar, e a data de compra decide direito a provento, ancora a série de rentabilidade e ordena o replay dos lançamentos.'),
   "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']),
   "sector": zod.string().nullish(),
@@ -226,16 +229,18 @@ export const UpdateAssetParams = zod.object({
   "id": zod.coerce.number()
 })
 
-export const updateAssetBodyQuantityExclusiveMin = 0;
+export const updateAssetBodyQuantityMin = 0.000001;
+export const updateAssetBodyQuantityMax = 999999999999;
 
 export const updateAssetBodyAveragePriceMin = 0;
+export const updateAssetBodyAveragePriceMax = 999999999999;
 
 
 
 export const UpdateAssetBody = zod.object({
   "ticker": zod.string().optional(),
-  "quantity": zod.number().gt(updateAssetBodyQuantityExclusiveMin).optional(),
-  "averagePrice": zod.number().min(updateAssetBodyAveragePriceMin).optional().describe('Zero é aceito aqui, e só aqui: em poupança este campo é o SALDO da conta, e sacar tudo é operação legítima. Para posição de bolsa o servidor exige maior que zero, porque ali o campo é preço de compra.'),
+  "quantity": zod.number().min(updateAssetBodyQuantityMin).max(updateAssetBodyQuantityMax).optional(),
+  "averagePrice": zod.number().min(updateAssetBodyAveragePriceMin).max(updateAssetBodyAveragePriceMax).optional().describe('Zero é aceito aqui, e só aqui: em poupança este campo é o SALDO da conta, e sacar tudo é operação legítima. Para posição de bolsa o servidor exige maior que zero, porque ali o campo é preço de compra.'),
   "purchaseDate": zod.coerce.date().nullish(),
   "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']).optional(),
   "sector": zod.string().nullish(),
@@ -308,15 +313,17 @@ export const CreateAssetPurchaseParams = zod.object({
   "id": zod.coerce.number()
 })
 
-export const createAssetPurchaseBodyQuantityExclusiveMin = 0;
+export const createAssetPurchaseBodyQuantityMin = 0.000001;
+export const createAssetPurchaseBodyQuantityMax = 999999999999;
 
-export const createAssetPurchaseBodyUnitPriceExclusiveMin = 0;
+export const createAssetPurchaseBodyUnitPriceMin = 0.01;
+export const createAssetPurchaseBodyUnitPriceMax = 999999999999;
 
 
 
 export const CreateAssetPurchaseBody = zod.object({
-  "quantity": zod.number().gt(createAssetPurchaseBodyQuantityExclusiveMin),
-  "unitPrice": zod.number().gt(createAssetPurchaseBodyUnitPriceExclusiveMin),
+  "quantity": zod.number().min(createAssetPurchaseBodyQuantityMin).max(createAssetPurchaseBodyQuantityMax),
+  "unitPrice": zod.number().min(createAssetPurchaseBodyUnitPriceMin).max(createAssetPurchaseBodyUnitPriceMax),
   "tradeDate": zod.coerce.date(),
   "note": zod.string().optional()
 })
@@ -398,16 +405,18 @@ export const SellAssetParams = zod.object({
   "id": zod.coerce.number()
 })
 
-export const sellAssetBodySalePriceExclusiveMin = 0;
+export const sellAssetBodySalePriceMin = 0.01;
+export const sellAssetBodySalePriceMax = 999999999999;
 
-export const sellAssetBodyQuantityExclusiveMin = 0;
+export const sellAssetBodyQuantityMin = 0.000001;
+export const sellAssetBodyQuantityMax = 999999999999;
 
 
 
 export const SellAssetBody = zod.object({
-  "salePrice": zod.number().gt(sellAssetBodySalePriceExclusiveMin),
+  "salePrice": zod.number().min(sellAssetBodySalePriceMin).max(sellAssetBodySalePriceMax),
   "saleDate": zod.coerce.date().describe('Recusada quando anterior a 1900 ou no futuro — mesma trava da data de compra.'),
-  "quantity": zod.number().gt(sellAssetBodyQuantityExclusiveMin).nullish().describe('Omitido ou igual à posição inteira = venda total (a posição é encerrada). Menor que a posição = venda parcial (a posição continua com a quantidade restante).')
+  "quantity": zod.number().min(sellAssetBodyQuantityMin).max(sellAssetBodyQuantityMax).nullish().describe('Omitido ou igual à posição inteira = venda total (a posição é encerrada). Menor que a posição = venda parcial (a posição continua com a quantidade restante).')
 })
 
 export const SellAssetResponse = zod.object({
@@ -1177,11 +1186,18 @@ export const ListTransactionsResponse = zod.array(ListTransactionsResponseItem)
 /**
  * @summary Record a dividend received
  */
+export const createTransactionBodyTickerMax = 60;
+
+export const createTransactionBodyAmountMin = 0.01;
+export const createTransactionBodyAmountMax = 999999999999;
+
+
+
 export const CreateTransactionBody = zod.object({
-  "ticker": zod.string(),
-  "amount": zod.number(),
+  "ticker": zod.string().min(1).max(createTransactionBodyTickerMax),
+  "amount": zod.number().min(createTransactionBodyAmountMin).max(createTransactionBodyAmountMax).describe('Os quatro tipos são dinheiro recebido, então o valor é sempre positivo. Provento negativo ou zero entrava direto no acumulado e no yield da carteira.'),
   "type": zod.enum(['dividendo', 'jcp', 'rendimento', 'amortizacao']),
-  "date": zod.coerce.date(),
+  "date": zod.coerce.date().describe('Recusada no futuro: provento que ainda não foi pago entrava no acumulado de 12 meses e inflava o yield.'),
   "notes": zod.string().nullish()
 })
 
@@ -1548,7 +1564,8 @@ export const UpsertPriceTargetParams = zod.object({
   "ticker": zod.coerce.string()
 })
 
-export const upsertPriceTargetBodyTargetPriceExclusiveMin = 0;
+export const upsertPriceTargetBodyTargetPriceMin = 0.01;
+export const upsertPriceTargetBodyTargetPriceMax = 999999999999;
 
 export const upsertPriceTargetBodySourceMax = 80;
 
@@ -1557,7 +1574,7 @@ export const upsertPriceTargetBodyNotesMax = 500;
 
 
 export const UpsertPriceTargetBody = zod.object({
-  "targetPrice": zod.number().gt(upsertPriceTargetBodyTargetPriceExclusiveMin),
+  "targetPrice": zod.number().min(upsertPriceTargetBodyTargetPriceMin).max(upsertPriceTargetBodyTargetPriceMax),
   "source": zod.string().max(upsertPriceTargetBodySourceMax).nullish(),
   "notes": zod.string().max(upsertPriceTargetBodyNotesMax).nullish()
 })

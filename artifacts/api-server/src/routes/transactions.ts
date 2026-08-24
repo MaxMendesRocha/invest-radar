@@ -3,7 +3,7 @@ import { db, transactionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { CreateTransactionBody, DeleteTransactionParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
-import { isoDate } from "../lib/local-date";
+import { isoDate, invalidTradeDate } from "../lib/local-date";
 
 const router: IRouter = Router();
 
@@ -31,9 +31,22 @@ router.post("/transactions", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const { ticker, amount, type, date, notes } = parsed.data;
+  // Mesma trava das datas de operação: provento com data no futuro entrava no acumulado
+  // de 12 meses e inflava o yield da carteira — um pagamento que ainda não aconteceu
+  // aparecia como renda recebida.
+  const badDate = invalidTradeDate(req.body?.date, isoDate(date));
+  if (badDate) {
+    res.status(400).json({ error: badDate });
+    return;
+  }
+  const tickerUpper = ticker.trim().toUpperCase();
+  if (!tickerUpper) {
+    res.status(400).json({ error: "Informe o ticker do ativo." });
+    return;
+  }
   const [tx] = await db.insert(transactionsTable).values({
     userId: req.session.userId!,
-    ticker: ticker.toUpperCase(),
+    ticker: tickerUpper,
     amount: String(amount),
     type,
     // isoDate, não String(date): o zod coage para Date, e String(Date) produz

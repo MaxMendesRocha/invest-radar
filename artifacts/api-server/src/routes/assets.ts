@@ -7,7 +7,7 @@ import { getPricesFor, getDividendEvents, getDividendEventsForTicker, classifyDi
 import { canonicalTickerFor, findTreasuryBond } from "../lib/treasury-identity";
 import { estimateCapitalGainsTax } from "../lib/tax-engine";
 import { computeMonthlyTaxSummary } from "../lib/monthly-tax-engine";
-import { isoDate, todayInAppTimezone, implausibleTradeDate } from "../lib/local-date";
+import { isoDate, todayInAppTimezone, implausibleTradeDate, invalidTradeDate } from "../lib/local-date";
 import { categoryConflict as b3CategoryConflict } from "../lib/b3-ticker";
 import { recomputeAssetCache, listPurchases } from "../lib/purchase-ledger-sync";
 import { getCorporateEventWarnings, type CorporateEventWarning } from "../lib/corporate-events";
@@ -145,7 +145,7 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     res.status(400).json({ error: conflict });
     return;
   }
-  const badDate = purchaseDate ? implausibleTradeDate(isoDate(purchaseDate)) : null;
+  const badDate = purchaseDate ? invalidTradeDate(req.body?.purchaseDate, isoDate(purchaseDate)) : null;
   if (badDate) {
     res.status(400).json({ error: badDate });
     return;
@@ -166,7 +166,14 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
     }
   }
 
-  const tickerUpper = treasuryRef ? canonicalTickerFor(treasuryRef) : ticker.toUpperCase();
+  // Aparar antes de gravar: "   " passa pelo minLength do schema e vira uma posição com
+  // ticker em branco — que não aparece em busca nenhuma e nunca consolida com a posição
+  // certa, porque as strings diferem.
+  const tickerUpper = treasuryRef ? canonicalTickerFor(treasuryRef) : ticker.trim().toUpperCase();
+  if (!tickerUpper) {
+    res.status(400).json({ error: "Informe o ticker do ativo." });
+    return;
+  }
 
   // Comprar mais de um ticker que já está na carteira consolida na mesma linha em vez
   // de criar uma segunda posição — soma a quantidade e recalcula o preço médio
@@ -307,7 +314,7 @@ router.patch("/assets/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(400).json({ error: "Preço médio precisa ser maior que zero." });
     return;
   }
-  const badEditDate = parsed.data.purchaseDate ? implausibleTradeDate(isoDate(parsed.data.purchaseDate)) : null;
+  const badEditDate = parsed.data.purchaseDate ? invalidTradeDate(req.body?.purchaseDate, isoDate(parsed.data.purchaseDate)) : null;
   if (badEditDate) {
     res.status(400).json({ error: badEditDate });
     return;
@@ -454,7 +461,7 @@ router.post("/assets/:id/purchases", requireAuth, async (req, res): Promise<void
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const badTradeDate = implausibleTradeDate(isoDate(parsed.data.tradeDate));
+  const badTradeDate = invalidTradeDate(req.body?.tradeDate, isoDate(parsed.data.tradeDate));
   if (badTradeDate) {
     res.status(400).json({ error: badTradeDate });
     return;
@@ -537,7 +544,7 @@ router.post("/assets/:id/sell", requireAuth, async (req, res): Promise<void> => 
   }
   // Mesma trava da compra: a data da venda entra na consolidação mensal de IR, e uma
   // venda no futuro jogaria imposto para um mês que ainda não fechou.
-  const badSaleDate = implausibleTradeDate(isoDate(parsed.data.saleDate));
+  const badSaleDate = invalidTradeDate(req.body?.saleDate, isoDate(parsed.data.saleDate));
   if (badSaleDate) {
     res.status(400).json({ error: badSaleDate });
     return;

@@ -32,6 +32,18 @@ function sqlStateOf(err: unknown, depth = 0): string | null {
 /** 42P01 = undefined_table. Em produção significa uma coisa só: migração não aplicada. */
 const UNDEFINED_TABLE = "42P01";
 
+/**
+ * Erro do express.json() ao ler o corpo. Ele marca o próprio erro com `status`/
+ * `statusCode` 400 e `type: "entity.parse.failed"` — checar os dois campos cobre tanto
+ * JSON inválido quanto corpo grande demais, sem depender do texto da mensagem.
+ */
+function isMalformedBody(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { status?: unknown; statusCode?: unknown; type?: unknown };
+  const status = typeof e.status === "number" ? e.status : typeof e.statusCode === "number" ? e.statusCode : null;
+  return err instanceof SyntaxError && status === 400 ? true : e.type === "entity.parse.failed";
+}
+
 export const errorHandler: ErrorRequestHandler = (
   err: unknown,
   req: Request,
@@ -42,6 +54,18 @@ export const errorHandler: ErrorRequestHandler = (
   // do Express derruba a conexão, que é o certo — o cliente vê a resposta truncada.
   if (res.headersSent) {
     next(err);
+    return;
+  }
+
+  // Corpo que não é JSON válido é erro de QUEM CHAMOU, e o express.json() já classifica
+  // assim: lança um SyntaxError com `status: 400` embutido. Cair no 500 genérico dizia a
+  // coisa errada duas vezes — para o cliente, que não tem o que corrigir num "erro
+  // interno", e para o log, onde requisição malformada virava ruído indistinguível de
+  // bug de código. Vale para qualquer corpo quebrado, não só para o caso que revelou
+  // isto (um JSON escalar no lugar de um objeto).
+  if (isMalformedBody(err)) {
+    logger.warn({ method: req.method, url: req.originalUrl.split("?")[0] }, "corpo da requisição não é JSON válido");
+    res.status(400).json({ error: "Corpo da requisição não é um JSON válido." });
     return;
   }
 
