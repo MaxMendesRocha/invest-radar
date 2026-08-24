@@ -457,6 +457,28 @@ tem sua própria validação por família+vencimento (`findTreasuryBond`), e ren
 ticker de mercado pra checar. No formulário de edição o ticker vem travado (não digitável), então o
 risco de digitação só existe no cadastro.
 
+**Categoria conferida pelo sufixo da B3.** O ticker existir não prova que ele é da classe escolhida,
+e o app deixava cadastrar PETR4 como FII. Classe errada não é rótulo: ela decide alíquota de IR,
+isenção de provento, limiar de concentração e em qual fatia da alocação-alvo a posição entra.
+`lib/b3-ticker.ts` lê o próprio código de negociação — 3 a 8 é ação, 31-35 e 39 é BDR — e bloqueia a
+combinação que a convenção **prova** estar errada, no mesmo aviso da validação de ticker e de novo no
+servidor.
+
+O que ela não decide fica sem resposta de propósito: o sufixo **11 é FII, ETF *e* unit de ação**
+(MXRF11, BOVA11, BPAC11), então as três categorias passam. Silêncio ali significa "a regra não prova
+que está errado", nunca "categoria confirmada" — inventar uma resposta rejeitaria cadastro legítimo,
+e o dano de bloquear o que é válido é maior que o de deixar passar o duvidoso. Renda fixa e fundos
+ficam inteiramente fora da regra, porque ali o identificador é CDB, título público ou nome de fundo.
+
+**Travas de faixa.** Quantidade e preço precisam ser maiores que zero, e a data de operação precisa
+estar entre 1900 e hoje. As duas nasceram do mesmo cadastro real: quantidade −10, preço R$ 0,00 e
+data em 26/01/0001, que produzia patrimônio **negativo** na carteira inteira. O `<input type="date">`
+aceita ano 0001 sem reclamar — basta digitar "1" no campo de ano.
+
+O que a assimetria revelou: o registro de lançamentos já recusava quantidade negativa, mas
+`POST /assets` — que grava um lançamento igual, na mesma tabela — não recusava. A porta nova estava
+guardada e a antiga não. Zero em `averagePrice` continua válido num único caso, e ele é explícito no
+código: poupança, onde o campo é **saldo** e sacar tudo é operação real.
 
 ### Lançamentos: o preço médio deixou de ser um número digitado
 

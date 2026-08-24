@@ -14,4 +14,9 @@ export interface TickerValidation {
      * @nullable
      */
   name: string | null;
+  /**
+     * Explicação de por que o sufixo do ticker contradiz a categoria escolhida (ex. PETR4 cadastrado como FII). Null quando não há conflito — o que inclui todo caso em que a convenção não decide: o sufixo 11 é FII, ETF ou unit de ação, e afirmar qualquer um dos três seria invenção. Null nunca significa "categoria confirmada", só "a regra não prova que está errado".
+     * @nullable
+     */
+  categoryConflict?: string | null;
 }

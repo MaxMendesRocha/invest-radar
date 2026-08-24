@@ -9,7 +9,12 @@ import type { AssetUpdateCategory } from './assetUpdateCategory';
 
 export interface AssetUpdate {
   ticker?: string;
+  /** @exclusiveMinimum 0 */
   quantity?: number;
+  /**
+     * Zero é aceito aqui, e só aqui: em poupança este campo é o SALDO da conta, e sacar tudo é operação legítima. Para posição de bolsa o servidor exige maior que zero, porque ali o campo é preço de compra.
+     * @minimum 0
+     */
   averagePrice?: number;
   /** @nullable */
   purchaseDate?: Date | null;

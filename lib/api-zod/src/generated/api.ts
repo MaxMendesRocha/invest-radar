@@ -116,6 +116,10 @@ export const ListAssetsResponse = zod.array(ListAssetsResponseItem)
  * @summary Add an asset to portfolio
  */
 
+export const createAssetBodyQuantityExclusiveMin = 0;
+
+export const createAssetBodyAveragePriceExclusiveMin = 0;
+
 
 
 export const CreateAssetBody = zod.object({
@@ -123,9 +127,9 @@ export const CreateAssetBody = zod.object({
   "treasuryBondType": zod.string().nullish().describe('Família do título público, exatamente como o Tesouro publica (\"Tesouro IPCA+ com Juros Semestrais\"). Só válido com category=renda_fixa, e sempre junto de treasuryMaturityDate. Ausente = renda fixa privada (CDB\/LCI\/LCA), que não tem fonte pública e segue no preço médio de compra.'),
   "treasuryMaturityDate": zod.coerce.date().nullish(),
   "isSavingsAccount": zod.boolean().optional().describe('Só válido com category=renda_fixa. quantity deve vir 1, averagePrice o saldo conhecido, purchaseDate a data desse saldo — ver Asset.isSavingsAccount.'),
-  "quantity": zod.number(),
-  "averagePrice": zod.number(),
-  "purchaseDate": zod.coerce.date().nullish(),
+  "quantity": zod.number().gt(createAssetBodyQuantityExclusiveMin).describe('Sempre maior que zero. Quantidade negativa produzia patrimônio negativo e um lançamento de compra negativo — o mesmo que AssetPurchaseInput já recusava.'),
+  "averagePrice": zod.number().gt(createAssetBodyAveragePriceExclusiveMin),
+  "purchaseDate": zod.coerce.date().nullish().describe('Recusada quando anterior a 1900 ou no futuro. O `<input type=\"date\">` aceita ano 0001 sem reclamar, e a data de compra decide direito a provento, ancora a série de rentabilidade e ordena o replay dos lançamentos.'),
   "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']),
   "sector": zod.string().nullish(),
   "notes": zod.string().nullish()
@@ -166,12 +170,14 @@ export const CreateAssetResponse = zod.object({
  * @summary Confere se um ticker tem cotação real antes de cadastrar/editar uma posição — pensado pra pegar erro de digitação (ex. "DVF11" em vez de "DVFF11") antes dele virar uma posição fantasma sem preço, sem se confundir com uma consolidação que falhou por diferença de categoria.
  */
 export const ValidateTickerQueryParams = zod.object({
-  "ticker": zod.coerce.string()
+  "ticker": zod.coerce.string(),
+  "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']).optional().describe('Quando informada, a resposta também diz se a convenção de sufixo da B3 contradiz a categoria escolhida. A regra fica só no servidor de propósito — é a mesma que o POST \/assets aplica, e duas cópias divergiriam.')
 })
 
 export const ValidateTickerResponse = zod.object({
   "valid": zod.boolean().describe('true quando o ticker tem cotação real disponível agora (brapi.dev).'),
-  "name": zod.string().nullable().describe('Nome do ativo, quando encontrado — usado pra confirmar visualmente que é o papel certo, não só validar a string.')
+  "name": zod.string().nullable().describe('Nome do ativo, quando encontrado — usado pra confirmar visualmente que é o papel certo, não só validar a string.'),
+  "categoryConflict": zod.string().nullish().describe('Explicação de por que o sufixo do ticker contradiz a categoria escolhida (ex. PETR4 cadastrado como FII). Null quando não há conflito — o que inclui todo caso em que a convenção não decide: o sufixo 11 é FII, ETF ou unit de ação, e afirmar qualquer um dos três seria invenção. Null nunca significa \"categoria confirmada\", só \"a regra não prova que está errado\".')
 })
 
 
@@ -220,10 +226,16 @@ export const UpdateAssetParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const updateAssetBodyQuantityExclusiveMin = 0;
+
+export const updateAssetBodyAveragePriceMin = 0;
+
+
+
 export const UpdateAssetBody = zod.object({
   "ticker": zod.string().optional(),
-  "quantity": zod.number().optional(),
-  "averagePrice": zod.number().optional(),
+  "quantity": zod.number().gt(updateAssetBodyQuantityExclusiveMin).optional(),
+  "averagePrice": zod.number().min(updateAssetBodyAveragePriceMin).optional().describe('Zero é aceito aqui, e só aqui: em poupança este campo é o SALDO da conta, e sacar tudo é operação legítima. Para posição de bolsa o servidor exige maior que zero, porque ali o campo é preço de compra.'),
   "purchaseDate": zod.coerce.date().nullish(),
   "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs', 'fundos', 'renda_fixa']).optional(),
   "sector": zod.string().nullish(),
@@ -386,10 +398,16 @@ export const SellAssetParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const sellAssetBodySalePriceExclusiveMin = 0;
+
+export const sellAssetBodyQuantityExclusiveMin = 0;
+
+
+
 export const SellAssetBody = zod.object({
-  "salePrice": zod.number(),
-  "saleDate": zod.coerce.date(),
-  "quantity": zod.number().nullish().describe('Omitido ou igual à posição inteira = venda total (a posição é encerrada). Menor que a posição = venda parcial (a posição continua com a quantidade restante).')
+  "salePrice": zod.number().gt(sellAssetBodySalePriceExclusiveMin),
+  "saleDate": zod.coerce.date().describe('Recusada quando anterior a 1900 ou no futuro — mesma trava da data de compra.'),
+  "quantity": zod.number().gt(sellAssetBodyQuantityExclusiveMin).nullish().describe('Omitido ou igual à posição inteira = venda total (a posição é encerrada). Menor que a posição = venda parcial (a posição continua com a quantidade restante).')
 })
 
 export const SellAssetResponse = zod.object({

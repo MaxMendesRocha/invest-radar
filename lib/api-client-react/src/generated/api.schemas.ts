@@ -172,6 +172,11 @@ export interface TickerValidation {
      * @nullable
      */
   name: string | null;
+  /**
+     * Explicação de por que o sufixo do ticker contradiz a categoria escolhida (ex. PETR4 cadastrado como FII). Null quando não há conflito — o que inclui todo caso em que a convenção não decide: o sufixo 11 é FII, ETF ou unit de ação, e afirmar qualquer um dos três seria invenção. Null nunca significa "categoria confirmada", só "a regra não prova que está errado".
+     * @nullable
+     */
+  categoryConflict?: string | null;
 }
 
 export type AssetInputCategory = typeof AssetInputCategory[keyof typeof AssetInputCategory];
@@ -201,9 +206,17 @@ export interface AssetInput {
   treasuryMaturityDate?: string | null;
   /** Só válido com category=renda_fixa. quantity deve vir 1, averagePrice o saldo conhecido, purchaseDate a data desse saldo — ver Asset.isSavingsAccount. */
   isSavingsAccount?: boolean;
+  /**
+     * Sempre maior que zero. Quantidade negativa produzia patrimônio negativo e um lançamento de compra negativo — o mesmo que AssetPurchaseInput já recusava.
+     * @exclusiveMinimum 0
+     */
   quantity: number;
+  /** @exclusiveMinimum 0 */
   averagePrice: number;
-  /** @nullable */
+  /**
+     * Recusada quando anterior a 1900 ou no futuro. O `<input type="date">` aceita ano 0001 sem reclamar, e a data de compra decide direito a provento, ancora a série de rentabilidade e ordena o replay dos lançamentos.
+     * @nullable
+     */
   purchaseDate?: string | null;
   category: AssetInputCategory;
   /** @nullable */
@@ -226,7 +239,12 @@ export const AssetUpdateCategory = {
 
 export interface AssetUpdate {
   ticker?: string;
+  /** @exclusiveMinimum 0 */
   quantity?: number;
+  /**
+     * Zero é aceito aqui, e só aqui: em poupança este campo é o SALDO da conta, e sacar tudo é operação legítima. Para posição de bolsa o servidor exige maior que zero, porque ali o campo é preço de compra.
+     * @minimum 0
+     */
   averagePrice?: number;
   /** @nullable */
   purchaseDate?: string | null;
@@ -238,10 +256,13 @@ export interface AssetUpdate {
 }
 
 export interface SellAssetInput {
+  /** @exclusiveMinimum 0 */
   salePrice: number;
+  /** Recusada quando anterior a 1900 ou no futuro — mesma trava da data de compra. */
   saleDate: string;
   /**
      * Omitido ou igual à posição inteira = venda total (a posição é encerrada). Menor que a posição = venda parcial (a posição continua com a quantidade restante).
+     * @exclusiveMinimum 0
      * @nullable
      */
   quantity?: number | null;
@@ -1856,7 +1877,23 @@ export interface PortfolioReport {
 
 export type ValidateTickerParams = {
 ticker: string;
+/**
+ * Quando informada, a resposta também diz se a convenção de sufixo da B3 contradiz a categoria escolhida. A regra fica só no servidor de propósito — é a mesma que o POST /assets aplica, e duas cópias divergiriam.
+ */
+category?: ValidateTickerCategory;
 };
+
+export type ValidateTickerCategory = typeof ValidateTickerCategory[keyof typeof ValidateTickerCategory];
+
+
+export const ValidateTickerCategory = {
+  acoes: 'acoes',
+  fiis: 'fiis',
+  etfs: 'etfs',
+  bdrs: 'bdrs',
+  fundos: 'fundos',
+  renda_fixa: 'renda_fixa',
+} as const;
 
 export type GetTreasuryPriceOnDateParams = {
 bondType: string;

@@ -5,7 +5,12 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { ValidateTickerCategory } from './validateTickerCategory';
 
 export type ValidateTickerParams = {
 ticker: string;
+/**
+ * Quando informada, a resposta também diz se a convenção de sufixo da B3 contradiz a categoria escolhida. A regra fica só no servidor de propósito — é a mesma que o POST /assets aplica, e duas cópias divergiriam.
+ */
+category?: ValidateTickerCategory;
 };

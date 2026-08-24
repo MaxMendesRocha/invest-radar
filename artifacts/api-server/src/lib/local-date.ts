@@ -45,3 +45,31 @@ export function todayInAppTimezone(): string {
 export function isoDate(value: string | Date): string {
   return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
 }
+
+/**
+ * Piso de data para operação. A B3 nasceu em 1890 e nenhuma posição de pessoa física
+ * chega perto disso — o valor não precisa ser exato, precisa ser inequivocamente antes
+ * de qualquer compra real e depois de zero.
+ */
+const EARLIEST_TRADE_DATE = "1900-01-01";
+
+/**
+ * Data de operação implausível — ou null quando passa.
+ *
+ * Nasceu de um cadastro real com data no ano 0001, que o `<input type="date">` aceita
+ * sem piscar (basta digitar "1" no campo de ano) e o servidor gravava. Não é só feio na
+ * tela: a data de compra decide direito a provento, é a origem da série de rentabilidade
+ * e ordena o replay dos lançamentos — uma data no ano 1 ou no futuro contamina os três.
+ *
+ * Comparação de string funciona porque ISO "YYYY-MM-DD" ordena lexicograficamente igual
+ * a cronologicamente, e evita construir Date só para comparar.
+ */
+export function implausibleTradeDate(iso: string): string | null {
+  if (iso < EARLIEST_TRADE_DATE) {
+    return `Data anterior a ${EARLIEST_TRADE_DATE.slice(0, 4)} — confira o ano digitado.`;
+  }
+  if (iso > todayInAppTimezone()) {
+    return "Data no futuro — informe a data em que a operação aconteceu.";
+  }
+  return null;
+}
