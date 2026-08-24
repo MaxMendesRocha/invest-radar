@@ -1037,6 +1037,41 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
 
 ---
 
+## Duas varreduras que procuram o que ninguém pensou em proibir
+
+Três defeitos de validação apareceram no mesmo dia — quantidade negativa, preço zero e data no ano
+0001 — e nenhum deles era um valor *esquisito*. `-10` é um número perfeitamente válido; `0001-01-26`
+é uma data legítima. Passaram porque ninguém perguntou se faziam **sentido**. Fuzz aleatório não
+acharia nenhum dos três: contra uma API validada por zod, jogar bytes malucos só prova que o zod
+funciona.
+
+O que pega essa classe são duas varreduras, e elas se complementam:
+
+**`harness/fuzz-escrita.mts`** — fronteiras semânticas contra todos os endpoints de escrita: zero,
+negativo, magnitude absurda, precisão abaixo da escala da coluna, data no limite, campos que se
+contradizem e recurso de outro usuário. Cada caso declara o que espera, então a saída é um placar e
+não um relatório para interpretar depois. Só roda contra localhost — ele escreve e apaga de
+propósito.
+
+**`harness/invariantes-check.mts`** — propriedades que a base inteira precisa satisfazer *sempre*,
+independente da sequência de operações que levou até ali. Uma trava de entrada só protege a porta em
+que foi colocada, e a porta esquecida foi justamente a antiga; uma invariante não tem porta, ela
+olha o resultado. **Somente leitura**, de propósito: dá para apontá-la para a base de produção e
+perguntar "existe alguma linha impossível hoje?", que é a pergunta que ninguém tinha como fazer.
+
+A invariante mais importante é `o cache da posição reproduz o replay dos lançamentos` — é ela que
+garante que o preço médio continua *calculado*. Divergência ali significa que alguma escrita mexeu
+na posição sem passar pelo recálculo, que é exatamente a porta que o registro de lançamentos fechou.
+
+Um achado do próprio harness merece registro, porque é o tipo de erro que uma ferramenta de teste
+comete: a primeira versão cravou "brecha de autorização" no `DELETE` de ativo alheio olhando só o
+código HTTP (204). O `DELETE` filtra por usuário no próprio `WHERE` e não apaga nada de terceiro —
+ele só responde como se tivesse apagado. O caso passou a julgar pelo **efeito** (a posição continua
+na carteira do dono?), não pelo status. Ferramenta que grita errado é pior que ferramenta que não
+existe.
+
+---
+
 ## Limites conhecidos
 
 Esta seção existe pelo mesmo motivo que o resto: uma documentação que só lista virtudes não serve
