@@ -7,7 +7,10 @@
  */
 
 export interface PriceTargetInput {
-  /** @exclusiveMinimum 0 */
+  /**
+     * @minimum 0.01
+     * @maximum 999999999999
+     */
   targetPrice: number;
   /**
      * @maxLength 80

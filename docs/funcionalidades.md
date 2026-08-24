@@ -1059,6 +1059,25 @@ que foi colocada, e a porta esquecida foi justamente a antiga; uma invariante n�
 olha o resultado. **Somente leitura**, de propósito: dá para apontá-la para a base de produção e
 perguntar "existe alguma linha impossível hoje?", que é a pergunta que ninguém tinha como fazer.
 
+Na primeira execução as duas acharam **10 brechas**, todas corrigidas em seguida — e o que elas
+têm em comum é serem defeitos que ninguém pensaria em proibir:
+
+- **`quantity: 1e-9` criava posição com quantidade zero.** É o mesmo estado que a trava de sinal
+  impede, alcançado *por baixo da escala da coluna* em vez de por baixo de zero. Piso e teto passaram
+  a vir da própria `numeric(18,6)`.
+- **`1e20` estourava a coluna e devolvia 500.** Recusar é resposta; estourar não é.
+- **Qualquer corpo malformado virava 500.** O `express.json()` já classifica isso como erro de quem
+  chamou (`status: 400` embutido no `SyntaxError`), e o tratador de erros ignorava. Não era só o
+  caso de teste: valia para requisição truncada e bug de cliente, que viravam ruído
+  indistinguível de bug de código no log.
+- **`2026-02-30` virava `2026-03-02` em silêncio.** O `Date` do JavaScript não recusa dia inválido,
+  ele transborda para o mês seguinte. Só o texto original denuncia, porque depois da coerção a data
+  já é outra — por isso a validação compara o valor cru com o normalizado.
+- **Ticker `"   "` e ticker de 500 caracteres.** O primeiro passava pelo `minLength: 1` e virava uma
+  posição invisível em qualquer busca, que nunca consolidaria com a posição certa.
+- **Provento não tinha trava nenhuma:** valor negativo, zero e data no futuro, os três aceitos.
+  Provento futuro entrava no acumulado de 12 meses e inflava o yield da carteira.
+
 A invariante mais importante é `o cache da posição reproduz o replay dos lançamentos` — é ela que
 garante que o preço médio continua *calculado*. Divergência ali significa que alguma escrita mexeu
 na posição sem passar pelo recálculo, que é exatamente a porta que o registro de lançamentos fechou.

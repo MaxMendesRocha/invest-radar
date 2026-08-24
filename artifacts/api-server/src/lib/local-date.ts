@@ -64,6 +64,24 @@ const EARLIEST_TRADE_DATE = "1900-01-01";
  * Comparação de string funciona porque ISO "YYYY-MM-DD" ordena lexicograficamente igual
  * a cronologicamente, e evita construir Date só para comparar.
  */
+/**
+ * A mesma checagem de faixa, mais a data que **não existe no calendário**.
+ *
+ * `2026-02-30` é aceito pelo `<input type="date">` em alguns navegadores e pelo
+ * `z.coerce.date()` sempre: o `Date` do JavaScript não recusa dia inválido, ele
+ * **transborda** para o mês seguinte. O usuário digita 30 de fevereiro, o app grava 2 de
+ * março e ninguém é avisado da troca.
+ *
+ * Só o texto original denuncia isso, porque depois da coerção a data já é outra — por
+ * isso esta função recebe o valor cru além do normalizado, e compara os dois.
+ */
+export function invalidTradeDate(raw: unknown, iso: string): string | null {
+  if (typeof raw === "string" && raw.length >= 10 && raw.slice(0, 10) !== iso) {
+    return `Data inexistente no calendário (${raw.slice(0, 10)}) — confira o dia e o mês.`;
+  }
+  return implausibleTradeDate(iso);
+}
+
 export function implausibleTradeDate(iso: string): string | null {
   if (iso < EARLIEST_TRADE_DATE) {
     return `Data anterior a ${EARLIEST_TRADE_DATE.slice(0, 4)} — confira o ano digitado.`;

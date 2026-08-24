@@ -9,8 +9,9 @@ import type { AssetInputCategory } from './assetInputCategory';
 
 export interface AssetInput {
   /**
-     * Ignorado quando treasuryBondType/treasuryMaturityDate são enviados — nesse caso o servidor deriva um rótulo canônico do próprio título, para que duas compras do mesmo papel consolidem em vez de virarem posições separadas por diferença de digitação.
+     * O servidor apara os espaços antes de validar: "   " passava pelo minLength e virava uma posição com ticker em branco, invisível em qualquer busca. O teto de 60 acomoda o rótulo mais longo que o app gera sozinho — o canônico do Tesouro, "Tesouro IPCA+ com Juros Semestrais 2045" — com folga para CDB de nome comprido, sem aceitar os 500 caracteres que passavam antes. Ignorado quando treasuryBondType/treasuryMaturityDate são enviados — nesse caso o servidor deriva um rótulo canônico do próprio título, para que duas compras do mesmo papel consolidem em vez de virarem posições separadas por diferença de digitação.
      * @minLength 1
+     * @maxLength 60
      */
   ticker: string;
   /**
@@ -23,11 +24,15 @@ export interface AssetInput {
   /** Só válido com category=renda_fixa. quantity deve vir 1, averagePrice o saldo conhecido, purchaseDate a data desse saldo — ver Asset.isSavingsAccount. */
   isSavingsAccount?: boolean;
   /**
-     * Sempre maior que zero. Quantidade negativa produzia patrimônio negativo e um lançamento de compra negativo — o mesmo que AssetPurchaseInput já recusava.
-     * @exclusiveMinimum 0
+     * Piso e teto vêm da coluna, numeric(18,6). O piso não é zelo: 1e-9 passava pelo "maior que zero" e o Postgres arredondava para 0 na escala 6, criando a posição de quantidade zero que a trava de sinal existia para impedir — só que por baixo da escala em vez de por baixo de zero. O teto evita o outro extremo, em que o valor estoura a coluna e a resposta vira 500.
+     * @minimum 0.000001
+     * @maximum 999999999999
      */
   quantity: number;
-  /** @exclusiveMinimum 0 */
+  /**
+     * @minimum 0.01
+     * @maximum 999999999999
+     */
   averagePrice: number;
   /**
      * Recusada quando anterior a 1900 ou no futuro. O `<input type="date">` aceita ano 0001 sem reclamar, e a data de compra decide direito a provento, ancora a série de rentabilidade e ordena o replay dos lançamentos.

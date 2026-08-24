@@ -59,6 +59,13 @@ import { PriceTargetControl } from "@/components/price-target-control";
  */
 const EARLIEST_TRADE_DATE_INPUT = "1900-01-01";
 
+/**
+ * Teto dos campos numéricos, espelhando a coluna numeric(18,6) do banco. Sem ele, um
+ * número grande demais só é barrado no servidor — e a mensagem que volta é o erro cru do
+ * zod, um bloco de JSON dentro do toast.
+ */
+const MAX_VALOR_INPUT = "999999999999";
+
 function acceptsPriceTarget(category: string): boolean {
   return category !== "renda_fixa";
 }
@@ -866,11 +873,11 @@ export default function Carteira() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Quantidade</Label>
-                      <Input type="number" step="0.0001" min="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+                      <Input type="number" step="0.0001" min="0.0001" max={MAX_VALOR_INPUT} value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label>Preço Médio</Label>
-                      <Input type="number" step="0.01" min="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
+                      <Input type="number" step="0.01" min="0.01" max={MAX_VALOR_INPUT} value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
                     </div>
                   </div>
                   {/* Opcional, mas com consequência concreta: a data-com de cada provento
@@ -1248,9 +1255,9 @@ export default function Carteira() {
                     para fora da tela no iPhone. Quantidade e preço dividem a linha, e a
                     data ocupa a largura inteira embaixo até haver espaço para as três. */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  <Input type="number" step="0.000001" min="0.000001" placeholder="Qtd"
+                  <Input type="number" step="0.000001" min="0.000001" max={MAX_VALOR_INPUT} placeholder="Qtd"
                     value={purchaseQty} onChange={(e) => setPurchaseQty(e.target.value)} />
-                  <Input type="number" step="0.01" min="0.01" placeholder="Preço"
+                  <Input type="number" step="0.01" min="0.01" max={MAX_VALOR_INPUT} placeholder="Preço"
                     value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} />
                   <Input type="date" className="col-span-2 sm:col-span-1"
                     min={EARLIEST_TRADE_DATE_INPUT} max={new Date().toISOString().slice(0, 10)}

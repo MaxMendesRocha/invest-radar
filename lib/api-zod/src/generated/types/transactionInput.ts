@@ -8,9 +8,19 @@
 import type { TransactionInputType } from './transactionInputType';
 
 export interface TransactionInput {
+  /**
+     * @minLength 1
+     * @maxLength 60
+     */
   ticker: string;
+  /**
+     * Os quatro tipos são dinheiro recebido, então o valor é sempre positivo. Provento negativo ou zero entrava direto no acumulado e no yield da carteira.
+     * @minimum 0.01
+     * @maximum 999999999999
+     */
   amount: number;
   type: TransactionInputType;
+  /** Recusada no futuro: provento que ainda não foi pago entrava no acumulado de 12 meses e inflava o yield. */
   date: Date;
   /** @nullable */
   notes?: string | null;

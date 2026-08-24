@@ -7,9 +7,15 @@
  */
 
 export interface AssetPurchaseInput {
-  /** @exclusiveMinimum 0 */
+  /**
+     * @minimum 0.000001
+     * @maximum 999999999999
+     */
   quantity: number;
-  /** @exclusiveMinimum 0 */
+  /**
+     * @minimum 0.01
+     * @maximum 999999999999
+     */
   unitPrice: number;
   tradeDate: Date;
   note?: string;
