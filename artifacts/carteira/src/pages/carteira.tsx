@@ -16,6 +16,7 @@ import {
   useGetTreasuryPriceOnDate,
   getGetTreasuryPriceOnDateQueryKey,
   useValidateTicker,
+  type ValidateTickerCategory,
   getValidateTickerQueryKey,
   getListAssetsQueryKey,
   getListAssetAnalysesQueryKey,
@@ -49,6 +50,15 @@ import { PriceTargetControl } from "@/components/price-target-control";
  * público tem valor de resgate definido em contrato, não alvo de analista — oferecer
  * o campo ali convidaria a preencher um número que não significa nada.
  */
+/**
+ * Piso dos campos de data, espelhando a trava do servidor (local-date.ts).
+ *
+ * Sem `min`, o `<input type="date">` aceita ano 0001 — basta digitar "1" no campo de ano,
+ * que foi como uma posição real acabou gravada com data de compra em 26/01/0001. O `max`
+ * já existia na maioria dos campos; o piso faltava em todos.
+ */
+const EARLIEST_TRADE_DATE_INPUT = "1900-01-01";
+
 function acceptsPriceTarget(category: string): boolean {
   return category !== "renda_fixa";
 }
@@ -140,7 +150,7 @@ function CorporateEventBadge({ warning }: { warning: Asset["corporateEventWarnin
  * `isChecking` cobre tanto o debounce quanto a busca em si, pra não piscar "não
  * encontrado" no meio da digitação.
  */
-function TickerValidationFeedback({ isChecking, result }: { isChecking: boolean; result: { valid: boolean; name: string | null } | null }) {
+function TickerValidationFeedback({ isChecking, result }: { isChecking: boolean; result: { valid: boolean; name: string | null; categoryConflict?: string | null } | null }) {
   if (isChecking) {
     return (
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -149,6 +159,20 @@ function TickerValidationFeedback({ isChecking, result }: { isChecking: boolean;
     );
   }
   if (!result) return null;
+
+  // O conflito de categoria vem antes de tudo, e some a existência de cotação: um papel
+  // pode ter preço perfeitamente e ainda assim estar na classe errada — que é o caso
+  // que motivou a checagem (PETR4 cadastrado como FII). É também o único aviso aqui que
+  // o servidor de fato bloqueia; os outros dois são orientação.
+  if (result.categoryConflict) {
+    return (
+      <p className="flex items-start gap-1.5 text-xs text-destructive">
+        <TriangleAlert className="w-3.5 h-3.5 shrink-0 mt-px" />
+        <span className="text-pretty">{result.categoryConflict} Escolha a categoria certa para salvar.</span>
+      </p>
+    );
+  }
+
   if (result.valid) {
     return (
       <p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-500">
@@ -245,10 +269,13 @@ export default function Carteira() {
     return () => clearTimeout(timer);
   }, [ticker]);
 
+  // A categoria viaja junto: o servidor responde no mesmo lugar se o sufixo do ticker
+  // contradiz a classe escolhida (PETR4 como FII). A regra fica só lá — ver
+  // lib/b3-ticker.ts — para não existirem duas convenções da B3 no repositório.
   const tickerValidation = useValidateTicker(
-    { ticker: debouncedTicker },
+    { ticker: debouncedTicker, category: category as ValidateTickerCategory },
     { query: {
-      queryKey: getValidateTickerQueryKey({ ticker: debouncedTicker }),
+      queryKey: getValidateTickerQueryKey({ ticker: debouncedTicker, category: category as ValidateTickerCategory }),
       enabled: isCreateOpen && category !== "renda_fixa" && debouncedTicker.length > 0,
       retry: false,
     } },
@@ -339,6 +366,14 @@ export default function Carteira() {
     // ser erro de digitação (o caso mais comum) ou um ticker real que a brapi ainda
     // não cobre. Primeiro clique avisa e não salva; segundo clique, com o mesmo
     // ticker, prossegue.
+    // Conflito de categoria bloqueia de vez, sem segunda confirmação: ao contrário do
+    // ticker sem cotação (que pode ser um papel real ainda não coberto pela brapi), aqui
+    // a própria convenção da B3 prova que a classe está errada. O servidor recusa de
+    // qualquer forma — avisar antes só evita a viagem.
+    if (tickerCheckDone && tickerValidation.data?.categoryConflict) {
+      toast({ title: tickerValidation.data.categoryConflict, variant: "destructive" });
+      return;
+    }
     if (tickerCheckDone && tickerValidation.data?.valid === false && !pendingInvalidTickerConfirm) {
       setPendingInvalidTickerConfirm(true);
       toast({
@@ -701,7 +736,7 @@ export default function Carteira() {
                         id="purchase-date"
                         type="date"
                         value={purchaseDate}
-                        max={new Date().toISOString().slice(0, 10)}
+                        min={EARLIEST_TRADE_DATE_INPUT} max={new Date().toISOString().slice(0, 10)}
                         onChange={(e) => setPurchaseDate(e.target.value)}
                         required
                       />
@@ -813,7 +848,7 @@ export default function Carteira() {
                         id="savings-date"
                         type="date"
                         value={purchaseDate}
-                        max={new Date().toISOString().slice(0, 10)}
+                        min={EARLIEST_TRADE_DATE_INPUT} max={new Date().toISOString().slice(0, 10)}
                         onChange={(e) => setPurchaseDate(e.target.value)}
                         required
                       />
@@ -831,11 +866,11 @@ export default function Carteira() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Quantidade</Label>
-                      <Input type="number" step="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+                      <Input type="number" step="0.0001" min="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label>Preço Médio</Label>
-                      <Input type="number" step="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
+                      <Input type="number" step="0.01" min="0.01" value={averagePrice} onChange={(e) => setAveragePrice(e.target.value)} required />
                     </div>
                   </div>
                   {/* Opcional, mas com consequência concreta: a data-com de cada provento
@@ -850,7 +885,7 @@ export default function Carteira() {
                       id="quoted-purchase-date"
                       type="date"
                       value={purchaseDate}
-                      max={new Date().toISOString().slice(0, 10)}
+                      min={EARLIEST_TRADE_DATE_INPUT} max={new Date().toISOString().slice(0, 10)}
                       onChange={(e) => setPurchaseDate(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground text-pretty">
@@ -1151,7 +1186,7 @@ export default function Carteira() {
                 id="edit-purchase-date"
                 type="date"
                 value={purchaseDate}
-                max={new Date().toISOString().slice(0, 10)}
+                min={EARLIEST_TRADE_DATE_INPUT} max={new Date().toISOString().slice(0, 10)}
                 onChange={(e) => setPurchaseDate(e.target.value)}
                 disabled={hasRealPurchase}
               />
@@ -1209,12 +1244,16 @@ export default function Carteira() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-3 gap-2">
-                  <Input type="number" step="0.000001" min="0" placeholder="Qtd"
+                {/* Três colunas fixas não cabem em 390px — o campo de data estourava
+                    para fora da tela no iPhone. Quantidade e preço dividem a linha, e a
+                    data ocupa a largura inteira embaixo até haver espaço para as três. */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <Input type="number" step="0.000001" min="0.000001" placeholder="Qtd"
                     value={purchaseQty} onChange={(e) => setPurchaseQty(e.target.value)} />
-                  <Input type="number" step="0.01" min="0" placeholder="Preço"
+                  <Input type="number" step="0.01" min="0.01" placeholder="Preço"
                     value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} />
-                  <Input type="date" max={new Date().toISOString().slice(0, 10)}
+                  <Input type="date" className="col-span-2 sm:col-span-1"
+                    min={EARLIEST_TRADE_DATE_INPUT} max={new Date().toISOString().slice(0, 10)}
                     value={purchaseDateNew} onChange={(e) => setPurchaseDateNew(e.target.value)} />
                 </div>
                 <Button type="button" variant="outline" size="sm" className="w-full"
@@ -1268,7 +1307,8 @@ export default function Carteira() {
             </div>
             <div className="space-y-2">
               <Label>Data da Venda</Label>
-              <Input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} required />
+              <Input type="date" min={EARLIEST_TRADE_DATE_INPUT} max={new Date().toISOString().slice(0, 10)}
+                value={saleDate} onChange={(e) => setSaleDate(e.target.value)} required />
             </div>
             {sellPreview && (
               <div className="bg-muted/50 p-3 rounded-md text-sm border border-border/50 space-y-1">
@@ -1342,7 +1382,7 @@ export default function Carteira() {
                   id="move-date"
                   type="date"
                   value={moveDate}
-                  max={new Date().toISOString().slice(0, 10)}
+                  min={EARLIEST_TRADE_DATE_INPUT} max={new Date().toISOString().slice(0, 10)}
                   onChange={(e) => setMoveDate(e.target.value)}
                   required
                 />

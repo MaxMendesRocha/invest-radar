@@ -154,4 +154,5 @@ export * from './upcomingDividendUncertaintyKind';
 export * from './user';
 export * from './userLoginInput';
 export * from './userRegisterInput';
+export * from './validateTickerCategory';
 export * from './validateTickerParams';

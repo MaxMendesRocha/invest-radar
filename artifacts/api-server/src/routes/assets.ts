@@ -7,7 +7,8 @@ import { getPricesFor, getDividendEvents, getDividendEventsForTicker, classifyDi
 import { canonicalTickerFor, findTreasuryBond } from "../lib/treasury-identity";
 import { estimateCapitalGainsTax } from "../lib/tax-engine";
 import { computeMonthlyTaxSummary } from "../lib/monthly-tax-engine";
-import { isoDate, todayInAppTimezone } from "../lib/local-date";
+import { isoDate, todayInAppTimezone, implausibleTradeDate } from "../lib/local-date";
+import { categoryConflict as b3CategoryConflict } from "../lib/b3-ticker";
 import { recomputeAssetCache, listPurchases } from "../lib/purchase-ledger-sync";
 import { getCorporateEventWarnings, type CorporateEventWarning } from "../lib/corporate-events";
 
@@ -104,7 +105,13 @@ router.get("/assets/validate-ticker", requireAuth, async (req, res): Promise<voi
   }
   const quotes = await getQuotes([params.data.ticker]);
   const quote = quotes.get(params.data.ticker.toUpperCase()) ?? null;
-  res.json({ valid: quote != null, name: quote?.name ?? null });
+  // O conflito de categoria não depende de cotação: é leitura do próprio sufixo. Vale
+  // responder mesmo para ticker sem preço — inclusive porque um dos dois problemas
+  // costuma explicar o outro.
+  const categoryConflict = params.data.category
+    ? b3CategoryConflict(params.data.ticker, params.data.category)
+    : null;
+  res.json({ valid: quote != null, name: quote?.name ?? null, categoryConflict });
 });
 
 router.post("/assets", requireAuth, async (req, res): Promise<void> => {
@@ -128,6 +135,19 @@ router.post("/assets", requireAuth, async (req, res): Promise<void> => {
   }
   if (isSavingsAccount && category !== "renda_fixa") {
     res.status(400).json({ error: "Poupança só pode ser cadastrada na categoria Renda Fixa." });
+    return;
+  }
+  // Categoria errada não é detalhe de rótulo: ela decide alíquota de IR, isenção de
+  // provento, limiar de concentração e em qual fatia da alocação-alvo a posição entra.
+  // Só bloqueia o que a convenção da B3 PROVA estar errado — ver lib/b3-ticker.ts.
+  const conflict = treasuryRef ? null : b3CategoryConflict(ticker, category);
+  if (conflict) {
+    res.status(400).json({ error: conflict });
+    return;
+  }
+  const badDate = purchaseDate ? implausibleTradeDate(isoDate(purchaseDate)) : null;
+  if (badDate) {
+    res.status(400).json({ error: badDate });
     return;
   }
   // Metade do par é sempre erro de chamada, e aceitá-lo gravaria uma posição que se
@@ -280,6 +300,19 @@ router.patch("/assets/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
+  // averagePrice zero só faz sentido em poupança, onde o campo é SALDO e zerar a conta
+  // é operação real. Em posição de bolsa ele é preço de compra, e zero produziria
+  // exatamente a posição corrompida que estas travas existem para impedir.
+  if (!current.isSavingsAccount && parsed.data.averagePrice === 0) {
+    res.status(400).json({ error: "Preço médio precisa ser maior que zero." });
+    return;
+  }
+  const badEditDate = parsed.data.purchaseDate ? implausibleTradeDate(isoDate(parsed.data.purchaseDate)) : null;
+  if (badEditDate) {
+    res.status(400).json({ error: badEditDate });
+    return;
+  }
+
   const mexeNaPosicao = parsed.data.quantity != null || parsed.data.averagePrice != null || parsed.data.purchaseDate !== undefined;
   if (!current.isSavingsAccount && mexeNaPosicao) {
     const purchases = await listPurchases(current.id);
@@ -421,6 +454,11 @@ router.post("/assets/:id/purchases", requireAuth, async (req, res): Promise<void
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const badTradeDate = implausibleTradeDate(isoDate(parsed.data.tradeDate));
+  if (badTradeDate) {
+    res.status(400).json({ error: badTradeDate });
+    return;
+  }
   const [asset] = await db.select().from(assetsTable).where(
     and(eq(assetsTable.id, params.data.id), eq(assetsTable.userId, req.session.userId!))
   );
@@ -495,6 +533,13 @@ router.post("/assets/:id/sell", requireAuth, async (req, res): Promise<void> => 
   const parsed = SellAssetBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  // Mesma trava da compra: a data da venda entra na consolidação mensal de IR, e uma
+  // venda no futuro jogaria imposto para um mês que ainda não fechou.
+  const badSaleDate = implausibleTradeDate(isoDate(parsed.data.saleDate));
+  if (badSaleDate) {
+    res.status(400).json({ error: badSaleDate });
     return;
   }
 

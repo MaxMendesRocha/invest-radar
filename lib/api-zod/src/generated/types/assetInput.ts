@@ -22,9 +22,17 @@ export interface AssetInput {
   treasuryMaturityDate?: Date | null;
   /** Só válido com category=renda_fixa. quantity deve vir 1, averagePrice o saldo conhecido, purchaseDate a data desse saldo — ver Asset.isSavingsAccount. */
   isSavingsAccount?: boolean;
+  /**
+     * Sempre maior que zero. Quantidade negativa produzia patrimônio negativo e um lançamento de compra negativo — o mesmo que AssetPurchaseInput já recusava.
+     * @exclusiveMinimum 0
+     */
   quantity: number;
+  /** @exclusiveMinimum 0 */
   averagePrice: number;
-  /** @nullable */
+  /**
+     * Recusada quando anterior a 1900 ou no futuro. O `<input type="date">` aceita ano 0001 sem reclamar, e a data de compra decide direito a provento, ancora a série de rentabilidade e ordena o replay dos lançamentos.
+     * @nullable
+     */
   purchaseDate?: Date | null;
   category: AssetInputCategory;
   /** @nullable */

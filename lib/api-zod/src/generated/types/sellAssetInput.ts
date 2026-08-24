@@ -7,10 +7,13 @@
  */
 
 export interface SellAssetInput {
+  /** @exclusiveMinimum 0 */
   salePrice: number;
+  /** Recusada quando anterior a 1900 ou no futuro — mesma trava da data de compra. */
   saleDate: Date;
   /**
      * Omitido ou igual à posição inteira = venda total (a posição é encerrada). Menor que a posição = venda parcial (a posição continua com a quantidade restante).
+     * @exclusiveMinimum 0
      * @nullable
      */
   quantity?: number | null;
