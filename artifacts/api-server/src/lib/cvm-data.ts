@@ -114,9 +114,22 @@ export class CvmDownloadError extends Error {
  */
 const DOWNLOAD_TIMEOUT_MS = 60 * 1000;
 
-/** Baixa e descompacta o ZIP de um ano. Lança CvmDownloadError com o motivo. */
+/** Baixa e descompacta o ZIP de um ano do informe mensal de FII. */
 async function downloadYear(year: number): Promise<Record<string, Uint8Array>> {
-  const url = `https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_${year}.zip`;
+  return downloadCvmZip(`https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_${year}.zip`, year);
+}
+
+/**
+ * Baixa e descompacta qualquer ZIP do portal de dados abertos da CVM. Lança
+ * CvmDownloadError com o motivo.
+ *
+ * Genérico porque o portal serve vários conjuntos no mesmo formato — informe mensal de
+ * FII e demonstrações de companhia aberta usam o mesmo ZIP-de-CSVs em latin-1. As
+ * defesas abaixo (User-Agent, timeout, motivo na exceção) foram todas pagas com falha
+ * em produção uma vez; deixá-las presas ao FII faria o próximo conjunto repetir a
+ * lição.
+ */
+export async function downloadCvmZip(url: string, year: number): Promise<Record<string, Uint8Array>> {
   let response: Response;
   try {
     // User-Agent explícito e timeout próprio. O fetch do Node manda "undici" como
@@ -139,22 +152,27 @@ async function downloadYear(year: number): Promise<Record<string, Uint8Array>> {
     throw new CvmDownloadError(year, `falha de rede: ${err instanceof Error ? err.message : String(err)}`);
   }
   if (!response.ok) {
-    logger.warn({ status: response.status, url }, "download do informe mensal FII da CVM falhou");
+    logger.warn({ status: response.status, url }, "download de conjunto da CVM falhou");
     throw new CvmDownloadError(year, `HTTP ${response.status}`);
   }
   const buffer = new Uint8Array(await response.arrayBuffer());
   try {
     return unzipSync(buffer);
   } catch (err) {
-    logger.warn({ err, year }, "ZIP do informe mensal FII da CVM não pôde ser lido");
+    logger.warn({ err, year, url }, "ZIP da CVM não pôde ser lido");
     throw new CvmDownloadError(year, `ZIP ilegível (${buffer.byteLength} bytes)`);
   }
 }
 
-function readEntry(entries: Record<string, Uint8Array>, needle: string): CvmRow[] | null {
+/** Lê um CSV de dentro do ZIP pelo trecho do nome. Latin-1 e `;`, como a CVM publica. */
+export function readCvmEntry(entries: Record<string, Uint8Array>, needle: string): CvmRow[] | null {
   const name = Object.keys(entries).find((n) => n.includes(needle));
   if (!name) return null;
   return parseCsv(Buffer.from(entries[name]).toString("latin1"));
+}
+
+function readEntry(entries: Record<string, Uint8Array>, needle: string): CvmRow[] | null {
+  return readCvmEntry(entries, needle);
 }
 
 async function downloadAndParse(): Promise<Map<string, FiiCvmData>> {
