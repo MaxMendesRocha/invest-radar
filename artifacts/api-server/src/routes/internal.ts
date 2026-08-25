@@ -5,6 +5,7 @@ import { TREASURY_JOB } from "../lib/treasury-data";
 import { FII_EVENTS_JOB } from "../lib/fii-events-sync";
 import { PORTFOLIO_SNAPSHOT_JOB } from "../lib/portfolio-snapshot-job";
 import { PURCHASE_BACKFILL_JOB } from "../lib/purchase-backfill";
+import { FINANCIAL_FACTS_JOB } from "../lib/financial-facts-sync";
 import { runJobAndRecord } from "../lib/scheduler";
 import { logger } from "../lib/logger";
 
@@ -77,6 +78,23 @@ router.post("/internal/portfolio-snapshots/record", requireInternalToken, async 
   } catch (err) {
     logger.error({ err }, "POST /internal/portfolio-snapshots/record falhou");
     res.status(500).json({ error: "Falha ao gravar snapshots — ver logs do servidor" });
+  }
+});
+
+// Mesmo padrão. Na primeira execução este job baixa onze anos de demonstrações da CVM
+// (~13 MB por ano), então num ambiente novo vale disparar na mão em vez de esperar a
+// janela semanal — sem a série, nenhuma pergunta sobre tendência tem resposta.
+router.post("/internal/financial-facts/sync", requireInternalToken, async (req, res): Promise<void> => {
+  try {
+    const result = await runJobAndRecord(FINANCIAL_FACTS_JOB);
+    if (!result) {
+      res.status(409).json({ error: "Job já está em execução" });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "POST /internal/financial-facts/sync falhou");
+    res.status(500).json({ error: "Falha ao sincronizar as demonstrações da CVM — ver logs do servidor" });
   }
 });
 

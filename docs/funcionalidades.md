@@ -11,7 +11,7 @@ arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../repli
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
 > este documento reflete o novo comportamento. Ver a seção "Manutenção deste documento" no fim.
 
-**Superfície atual:** 60 endpoints · 21 motores determinísticos · 6 pontos de IA · 14 telas · 5 fontes externas.
+**Superfície atual:** 61 endpoints · 21 motores determinísticos · 6 pontos de IA · 14 telas · 5 fontes externas.
 
 ---
 
@@ -843,7 +843,7 @@ sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela int
 
 ## O que acontece sozinho
 
-Quatro trabalhos rodam sem intervenção, agendados por um scheduler dentro do próprio processo. O
+Cinco trabalhos rodam sem intervenção, agendados por um scheduler dentro do próprio processo. O
 estado da última execução fica **no banco, não em memória** — é o que permite o serviço reiniciar
 sem redisparar o trabalho nem pular um ciclo.
 
@@ -890,6 +890,13 @@ emitidas e amortização por fundo por mês, base do detector de evento corporat
 abaixo). Na primeira execução faz backfill de 2019 em diante; depois só o ano corrente, porque ano
 fechado não é republicado. Um ano que falha não derruba os outros — o detector opera com histórico
 parcial, só enxerga menos longe.
+
+**Demonstrações das companhias abertas** (semanal) — alimenta `financial_facts` com a série anual
+de receita, EBIT, lucro, ativo, caixa, dívida, patrimônio e caixa operacional, direto do DFP da
+CVM. Na primeira execução faz backfill de 2015 em diante e, como cada arquivo traz dois exercícios,
+cobre de 2014: medido em 57.048 fatos de 625 companhias em 52 segundos. Depois disso só rebaixa os
+dois anos mais recentes. É o que torna possível perguntar sobre TENDÊNCIA — ver a seção própria
+acima.
 
 > **Ao limpar `opportunities` manualmente, zere também a linha correspondente em `job_runs`.** O
 > scheduler decide se roda consultando `last_run_at`, e com o gap de uma semana a tela fica vazia
@@ -1034,6 +1041,40 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   a todos os ativos, porque um papel sem negócio no dia produziria variação inexistente;
   e reporta quanto do valor da carteira cobriu, já que renda fixa não tem cotação diária
   de bolsa e sair em silêncio subestimaria a oscilação de quem tem metade ali.
+
+---
+
+## Série histórica de demonstrações — a pergunta que não tinha resposta
+
+O app só tinha o retrato de hoje. A brapi entrega o último valor de cada indicador e nada
+antes dele, então "o lucro está caindo?" e "a dívida está crescendo?" não eram perguntas
+difíceis — eram impossíveis. E é justamente essa pergunta que separa desconto de armadilha
+de valor.
+
+A CVM publica as demonstrações padronizadas das companhias abertas (DFP) em dados abertos,
+**no mesmo portal, formato e pipeline** do informe mensal de FII que já era ingerido.
+Medido na ingestão real: **57.048 fatos, 625 companhias, de 2014 a 2026, em 52 segundos**.
+
+Três colunas separam esta tabela de um cache de indicadores. `period_end` é o que o número
+descreve; **`published_at` é quando ele passou a ser público** — na Petrobras, de 54 a 85
+dias depois do fechamento. Sem essa distinção, qualquer estudo retrospectivo usaria em
+janeiro um número que só existiu em março, e concluiria que o modelo acerta. `version`
+guarda retificação, porque a CVM reemite demonstração corrigida e apagar a original
+apagaria a evidência de que houve correção.
+
+Cada DFP traz o exercício corrente **e** o anterior, então o mesmo período aparece em dois
+documentos, com datas de publicação distantes quase um ano. Por isso a leitura tem módulo
+próprio (`financial-history.ts`) com duas regras diferentes de propósito: **valor da maior
+versão, publicação da menor data.**
+
+**O que a fonte não entrega:** capex. O plano de contas é padronizado, o texto ao lado não
+é — a conta `6.01` tem 3 rótulos entre as companhias, mas a subconta `6.02.01` tem **310
+rótulos distintos entre 430 companhias**. Capex mora numa subconta sem código estável,
+então FCF não sai daqui pela fórmula usual. O que fica é o caixa das operações, com 100% de
+cobertura, suficiente para conversão de caixa (FCO ÷ lucro).
+
+O mapeamento completo da especificação do Decision Engine contra o app — o que já existe, o
+que dá para agregar e o que está bloqueado — está em [`decision-engine.md`](./decision-engine.md).
 
 ---
 

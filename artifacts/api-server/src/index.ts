@@ -5,6 +5,7 @@ import { OPPORTUNITIES_JOB } from "./lib/opportunities-engine";
 import { TREASURY_JOB } from "./lib/treasury-data";
 import { FII_EVENTS_JOB } from "./lib/fii-events-sync";
 import { PORTFOLIO_SNAPSHOT_JOB } from "./lib/portfolio-snapshot-job";
+import { FINANCIAL_FACTS_JOB } from "./lib/financial-facts-sync";
 
 const rawPort = process.env["PORT"];
 
@@ -29,4 +30,4 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
 });
 
-startScheduler([OPPORTUNITIES_JOB, TREASURY_JOB, FII_EVENTS_JOB, PORTFOLIO_SNAPSHOT_JOB]);
+startScheduler([OPPORTUNITIES_JOB, TREASURY_JOB, FII_EVENTS_JOB, PORTFOLIO_SNAPSHOT_JOB, FINANCIAL_FACTS_JOB]);
