@@ -1133,6 +1133,13 @@ a companhia usou no resto da série (513 no anual, 1.594 no trimestral). Descart
 corrige**: corrigir seria afirmar o que o declarante quis dizer, e buraco na série o motor
 enxerga, número errado não.
 
+**O código da conta nem sempre é o identificador estável.** No lucro líquido é o rótulo: banco
+tem DRE mais curta, a numeração desloca, e "Lucro/Prejuízo Consolidado do Período" aparece em
+`3.09`, `3.11` e `3.13`. Chaveando por `3.11`, **17 das 664 companhias ficavam sem lucro nenhum**
+— Itaú, Santander e BTG entre elas — e duas recebiam o número da linha errada, que é pior: não
+falta dado, entra dado errado em silêncio. Buscando pelo rótulo são 625 de 627, e as duas que
+sobram são listagens recentes sem exercício anual fechado.
+
 **O que a fonte não entrega:** capex. O plano de contas é padronizado, o texto ao lado não
 é — a conta `6.01` tem 3 rótulos entre as companhias, mas a subconta `6.02.01` tem **310
 rótulos distintos entre 430 companhias**. Capex mora numa subconta sem código estável,

@@ -57,11 +57,57 @@ import { logger } from "./logger";
  * como limitação declarada, não como buraco silencioso na série.
  */
 
+/**
+ * Uma conta do plano padronizado, identificada por CÓDIGO ou por RÓTULO.
+ *
+ * Quase sempre o código é o identificador estável e o rótulo é texto livre — é o que o
+ * cabeçalho deste arquivo documenta, medido sobre `6.02.01` (310 rótulos distintos entre
+ * 430 companhias). O lucro líquido é a exceção, e a exceção é exatamente o inverso: o
+ * rótulo é estável e o CÓDIGO é que se move. Ver `LUCRO_CONSOLIDADO`.
+ */
+interface Account {
+  metric: string;
+  statement: string;
+  /** Código do plano padronizado. Ausente quando a conta é achada pelo rótulo. */
+  code?: string;
+  /** Rótulo que identifica a conta, quando o código não é estável entre companhias. */
+  label?: RegExp;
+  /** Guarda de segurança para a busca por rótulo: só olha contas deste grupo. */
+  codePrefix?: string;
+  coverage: string;
+}
+
+/**
+ * O lucro líquido consolidado, achado pelo RÓTULO e não pelo código.
+ *
+ * Banco tem DRE mais curta — não tem custo de mercadoria vendida, nem as linhas
+ * intermediárias de uma indústria —, então a numeração desloca e a mesma conta aparece em
+ * códigos diferentes. Medido no DFP de 2024 (467 companhias), o rótulo
+ * "Lucro/Prejuízo Consolidado do Período" aparece em **três códigos**: `3.09` (Itaú,
+ * Santander, BTG e outros bancos), `3.11` (o caso comum) e `3.13`.
+ *
+ * Chavear por `3.11`, como se fazia, produzia dois defeitos ao mesmo tempo:
+ *
+ * - **9 companhias por ano ficavam sem lucro nenhum** — entre elas Itaú, Santander e BTG,
+ *   que na base acumulada eram 17 das 664 companhias sem uma única linha de lucro;
+ * - **2 companhias por ano recebiam o número errado**, porque o `3.11` delas é
+ *   "Resultado Líquido das Operações Continuadas" e o lucro de verdade está no `3.13`.
+ *   Esse é o pior dos dois: não falta dado, entra dado errado em silêncio.
+ *
+ * O rótulo é seguro aqui, e isso foi conferido antes de trocar a regra: no DRE consolidado
+ * inteiro, "consolidado do período" aparece SÓ nas linhas de lucro final — nenhum falso
+ * positivo. Depois da troca, as 467 companhias do arquivo têm lucro, contra 458 antes.
+ *
+ * `codePrefix` mantém a busca dentro do grupo 3 (resultado) por precaução: o rótulo já
+ * basta, e limitar o alcance não custa nada.
+ */
+const LUCRO_CONSOLIDADO = /consolidado do per[íi]odo/i;
+
 /** Métricas extraídas, com a cobertura medida no DFP de 2024 (467 companhias). */
-export const ACCOUNT_MAP: { metric: string; statement: string; code: string; coverage: string }[] = [
+export const ACCOUNT_MAP: Account[] = [
   { metric: "receita", statement: "DRE_con", code: "3.01", coverage: "100%" },
   { metric: "ebit", statement: "DRE_con", code: "3.05", coverage: "100%" },
-  { metric: "lucro_liquido", statement: "DRE_con", code: "3.11", coverage: "98,5%" },
+  { metric: "lucro_liquido", statement: "DRE_con", label: LUCRO_CONSOLIDADO, codePrefix: "3.", coverage: "100%" },
   { metric: "ativo_total", statement: "BPA_con", code: "1", coverage: "100%" },
   { metric: "caixa", statement: "BPA_con", code: "1.01.01", coverage: "99,1%" },
   { metric: "divida_curto_prazo", statement: "BPP_con", code: "2.01.04", coverage: "96,6%" },
@@ -145,6 +191,28 @@ function normalizeCnpj(raw: string): string {
 }
 
 /**
+ * A linha é a conta procurada?
+ *
+ * Por código quando o código é estável (o caso de oito das nove métricas) e por rótulo
+ * quando não é (o lucro líquido — ver LUCRO_CONSOLIDADO). Nunca os dois como alternativa:
+ * uma conta é identificada de UM jeito, e aceitar qualquer um dos dois abriria a porta
+ * para casar a linha errada quando um deles falhasse.
+ */
+function matchesAccount(
+  row: Record<string, string | undefined>,
+  code: string | undefined,
+  label: RegExp | undefined,
+  codePrefix: string | undefined,
+): boolean {
+  const conta = (row.CD_CONTA ?? "").trim();
+  if (label) {
+    if (codePrefix && !conta.startsWith(codePrefix)) return false;
+    return label.test(row.DS_CONTA ?? "");
+  }
+  return conta === code;
+}
+
+/**
  * ESCALA_MOEDA multiplica o valor publicado. "MIL" é o caso normal; "UNIDADE" aparece em
  * algumas companhias. Escala desconhecida devolve null para a linha ser descartada em
  * vez de entrar mil vezes maior ou menor do que é.
@@ -210,7 +278,7 @@ export async function fetchStatements(year: number, documentType: DocumentType):
   const facts: ScaledFact[] = [];
   let semEscala = 0;
 
-  for (const { metric, statement, code } of ACCOUNT_MAP) {
+  for (const { metric, statement, code, label, codePrefix } of ACCOUNT_MAP) {
     const rows = readCvmEntry(entries, statement);
     if (!rows) {
       // Companhia pode não usar o método direto de fluxo de caixa; o arquivo então nem
@@ -219,7 +287,7 @@ export async function fetchStatements(year: number, documentType: DocumentType):
       continue;
     }
     for (const row of rows) {
-      if (row.CD_CONTA !== code) continue;
+      if (!matchesAccount(row, code, label, codePrefix)) continue;
       const value = parseValue(row.VL_CONTA);
       if (value == null) continue;
       const escala = (row.ESCALA_MOEDA ?? "").trim().toUpperCase();

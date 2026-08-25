@@ -55,6 +55,38 @@ check("nenhum fato sem data de publicação", cobertura.semPublicacao, 0);
 
 check("nenhum fato sem valor", cobertura.semValor, 0);
 
+// O lucro líquido é achado pelo RÓTULO e não pelo código, e este caso é a trava disso.
+// Banco tem DRE mais curta, a numeração desloca, e o mesmo "Lucro/Prejuízo Consolidado do
+// Período" aparece em 3.09, 3.11 e 3.13. Chaveando por 3.11, Itaú, Santander e BTG
+// ficavam SEM lucro nenhum — 17 das 664 companhias —, e duas outras recebiam o número da
+// linha errada ("Resultado Líquido das Operações Continuadas"), que é pior: não falta
+// dado, entra dado errado em silêncio.
+const [lucro] = await db.execute(sql`
+  select count(*)::int as empresas,
+         count(t.cnpj)::int as com_lucro
+    from (select distinct cnpj from financial_facts) e
+    left join (select cnpj from financial_facts
+                where metric = 'lucro_liquido' and document_type = 'DFP'
+                  and period_kind = 'exercicio'
+                group by 1) t using (cnpj)
+`).then((r) => Array.from(r.rows ?? r) as { empresas: number; com_lucro: number }[]);
+const semLucro = lucro.empresas - lucro.com_lucro;
+console.log(`      lucro anual: ${lucro.com_lucro} de ${lucro.empresas} companhias (${semLucro} sem)`);
+// As poucas que sobram são listagens recentes, sem exercício fechado na janela — elas têm
+// lucro trimestral, só não anual. Cinco é folga sobre as duas medidas.
+check("praticamente toda companhia tem lucro anual", semLucro <= 5, true);
+
+// Os bancos nomeadamente, porque são eles que o código antigo perdia. Se este caso
+// quebrar, a regra voltou a ser por código.
+const [bancos] = await db.execute(sql`
+  select count(distinct f.cnpj)::int as com_lucro
+    from financial_facts f
+    join company_tickers t on t.cnpj = f.cnpj
+   where t.ticker in ('ITUB4', 'SANB11', 'BBDC4', 'BBAS3')
+     and f.metric = 'lucro_liquido' and f.document_type = 'DFP' and f.period_kind = 'exercicio'
+`).then((r) => Array.from(r.rows ?? r) as { com_lucro: number }[]);
+check("os quatro grandes bancos têm lucro anual", bancos.com_lucro, 4);
+
 // Escala: o arquivo publica em MIL e a ingestão converte para reais. A primeira versão
 // deste teste procurava valores "pequenos demais" na base inteira e acusava 7 linhas —
 // mas eram reais: holding recém-constituída e empresa-casca têm mesmo R$ 67 de ativo.

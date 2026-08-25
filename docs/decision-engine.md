@@ -110,7 +110,7 @@ o caixa das operações, com 100% de cobertura — suficiente para conversão de
 |---|---|---|
 | receita | `3.01` | 100% |
 | ebit | `3.05` | 100% |
-| lucro_liquido | `3.11` | 98,5% |
+| lucro_liquido | rótulo `consolidado do período` (`3.09`/`3.11`/`3.13`) | 100% |
 | ativo_total | `1` | 100% |
 | caixa | `1.01.01` | 99,1% |
 | divida_curto_prazo | `2.01.04` | 96,6% |
@@ -121,6 +121,39 @@ o caixa das operações, com 100% de cobertura — suficiente para conversão de
 O código da conta é o mesmo para banco e para empresa operacional; só o rótulo muda
 (`3.01` é "Receita de Venda" na indústria e "Receitas de Intermediação Financeira" no
 banco). Chavear por código, e não por texto, é o que faz o mapeamento atravessar setores.
+
+### A exceção que inverte a regra: o lucro líquido
+
+O parágrafo acima vale para oito das nove métricas. No lucro líquido acontece o inverso —
+**o rótulo é estável e o código é que se move** —, e descobrir isso custou um bug que ficou
+em produção.
+
+Banco tem DRE mais curta (sem custo de mercadoria vendida, sem as linhas intermediárias de
+uma indústria), então a numeração desloca. Medido no DFP de 2024, o rótulo
+"Lucro/Prejuízo Consolidado do Período" aparece em **três códigos**: `3.09` (Itaú,
+Santander, BTG), `3.11` (o caso comum) e `3.13`.
+
+Chavear por `3.11` produzia dois defeitos ao mesmo tempo:
+
+| | por ano | efeito |
+|---|---|---|
+| Lucro em outro código | 9 companhias | ficavam **sem lucro nenhum** |
+| `3.11` é outra conta | 2 companhias | recebiam **o número errado** em silêncio |
+
+O segundo é o pior: para essas duas, `3.11` é "Resultado Líquido das Operações
+Continuadas" e o lucro de verdade está no `3.13`. Não faltava dado — entrava dado errado
+com toda a cara de certeza.
+
+Na base acumulada, **17 das 664 companhias não tinham uma única linha de lucro**, entre
+elas os maiores bancos do país. Depois da troca para busca por rótulo: **625 de 627**, e as
+duas que sobram são listagens recentes sem exercício anual fechado (têm lucro trimestral).
+
+O rótulo é seguro aqui, e isso foi conferido antes de trocar a regra: no DRE consolidado
+inteiro, "consolidado do período" aparece só nas linhas de lucro final — nenhum falso
+positivo, e nenhuma companhia com o rótulo em dois códigos no mesmo período.
+
+A lição generalizável: **qual identificador é estável depende da conta**, e supor que é
+sempre o código foi o que escondeu o defeito.
 
 ### O trimestral (ITR): a defasagem cai de um ano para um trimestre
 
