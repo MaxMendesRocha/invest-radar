@@ -1921,6 +1921,75 @@ export interface StarterPortfolios {
   profiles: StarterPortfolio[];
 }
 
+export type BrokerImportConfirmationPositionsItemCategory = typeof BrokerImportConfirmationPositionsItemCategory[keyof typeof BrokerImportConfirmationPositionsItemCategory];
+
+
+export const BrokerImportConfirmationPositionsItemCategory = {
+  acoes: 'acoes',
+  fiis: 'fiis',
+  etfs: 'etfs',
+  bdrs: 'bdrs',
+} as const;
+
+export type BrokerImportConfirmationPositionsItemTradesItemSide = typeof BrokerImportConfirmationPositionsItemTradesItemSide[keyof typeof BrokerImportConfirmationPositionsItemTradesItemSide];
+
+
+export const BrokerImportConfirmationPositionsItemTradesItemSide = {
+  compra: 'compra',
+  venda: 'venda',
+} as const;
+
+export type BrokerImportConfirmationPositionsItemTradesItem = {
+  noteNumber: string;
+  tradeDate: string;
+  side: BrokerImportConfirmationPositionsItemTradesItemSide;
+  /** @exclusiveMinimum 0 */
+  quantity: number;
+  /** @exclusiveMinimum 0 */
+  price: number;
+};
+
+export type BrokerImportConfirmationPositionsItem = {
+  /** Código de negociação confirmado na tela. Revalidado no servidor. */
+  ticker: string;
+  category: BrokerImportConfirmationPositionsItemCategory;
+  /** @minItems 1 */
+  trades: BrokerImportConfirmationPositionsItemTradesItem[];
+};
+
+export interface BrokerImportConfirmation {
+  /** @minItems 1 */
+  positions: BrokerImportConfirmationPositionsItem[];
+}
+
+export type BrokerImportResultImportedItem = {
+  ticker: string;
+  purchases: number;
+  quantity: number;
+};
+
+export type BrokerImportResultSalesNotImportedItem = {
+  ticker: string;
+  quantity: number;
+  price: number;
+  tradeDate: string;
+};
+
+export type BrokerImportResultRejectedItem = {
+  ticker: string;
+  reason: string;
+};
+
+export interface BrokerImportResult {
+  imported: BrokerImportResultImportedItem[];
+  /** Notas puladas por já estarem na carteira. Reimportar o período inteiro é o uso normal. */
+  skippedNotes: string[];
+  /** Vendas lidas e não gravadas. A nota traz só o preço de venda; o custo da posição, o resultado e o imposto vêm do histórico da carteira, e errar ali gravaria um número de imposto errado. */
+  salesNotImported: BrokerImportResultSalesNotImportedItem[];
+  /** Recusadas na validação. Nenhuma delas foi gravada. */
+  rejected: BrokerImportResultRejectedItem[];
+}
+
 export interface BrokerImportUpload {
   /** Um ou mais PDFs, em qualquer ordem e sem rótulo. Até 12 arquivos de 8 MB cada. Campos separados por tipo de documento só criariam a chance de trocá-los de lugar — os arquivos se identificam sozinhos. */
   files: Blob[];

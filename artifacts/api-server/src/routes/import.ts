@@ -1,30 +1,35 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import { db, assetPurchasesTable, assetsTable } from "@workspace/db";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { CommitBrokerImportBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
 import { importRateLimiter } from "../middlewares/rate-limit";
 import { readPdf, type ReadDocument } from "../lib/pdf-text";
 import { parseBrokerNotes, parseCustodyStatement, type BrokerNote, type CustodyStatement } from "../lib/broker-note-parser";
 import { buildImportPreview } from "../lib/broker-import-engine";
+import { commitImport, importedNoteNumbers, ImportValidationError, type ConfirmedPosition } from "../lib/broker-import-commit";
+import { isoDate, invalidTradeDate } from "../lib/local-date";
 
 /**
- * Importação de nota de corretagem em PDF — a leitura, nunca a gravação.
+ * Importação de nota de corretagem em PDF, em dois passos separados.
  *
- * Este endpoint é PURO: recebe arquivos, devolve o que entendeu e não escreve nada. A
- * separação é o recurso, não uma etapa dele. Um importador que grava direto obriga a
- * pessoa a descobrir o erro depois, dentro da carteira, misturado com o que estava certo
- * — e desfazer lançamento errado é bem mais difícil do que não criá-lo.
+ * **`/preview` lê e não escreve.** Recebe os arquivos e devolve o que entendeu; a única
+ * consulta ao banco é de leitura, para dizer quais notas já entraram. **`/commit` é o
+ * único que grava**, e só o que a pessoa confirmou.
  *
- * A única consulta ao banco é de leitura, e serve para dizer quais notas já entraram.
+ * A separação é o recurso, não uma etapa dele. Um importador que grava direto obriga a
+ * pessoa a descobrir o erro depois, dentro da carteira, misturado com o que estava certo —
+ * e desfazer lançamento errado é bem mais difícil do que não criá-lo.
  *
- * ## Sem estado entre a conferência e a gravação
+ * ## Sem estado entre os dois passos
  *
  * O preview não é guardado em sessão nem em tabela temporária. Quem confirma manda de
- * volta o que foi conferido, e a gravação valida aquilo como validaria um cadastro
- * digitado. Guardar o preview no servidor criaria um terceiro estado — nem rascunho nem
- * carteira — que precisa expirar, migrar de esquema e ser limpo, e cuja única função
- * seria evitar um POST de alguns quilobytes.
+ * volta o que foi conferido, e o `/commit` valida aquilo como validaria um cadastro
+ * digitado — inclusive relendo quais notas já estão na carteira, porque entre ver a tela
+ * e confirmar a pessoa pode ter importado em outra aba.
+ *
+ * Guardar o preview no servidor criaria um terceiro estado — nem rascunho nem carteira —
+ * que precisa expirar, migrar de esquema e ser limpo, e cuja única função seria evitar um
+ * POST de alguns quilobytes.
  */
 
 const router: IRouter = Router();
@@ -168,21 +173,59 @@ router.post(
   },
 );
 
-/** Quais destes números de nota o usuário já importou. Só leitura. */
-async function importedNoteNumbers(userId: number, noteNumbers: string[]): Promise<string[]> {
-  if (noteNumbers.length === 0) return [];
-  const rows = await db
-    .selectDistinct({ noteNumber: assetPurchasesTable.brokerNoteNumber })
-    .from(assetPurchasesTable)
-    .innerJoin(assetsTable, eq(assetPurchasesTable.assetId, assetsTable.id))
-    .where(
-      and(
-        eq(assetsTable.userId, userId),
-        isNotNull(assetPurchasesTable.brokerNoteNumber),
-        inArray(assetPurchasesTable.brokerNoteNumber, noteNumbers),
-      ),
-    );
-  return rows.map((r) => r.noteNumber!).sort();
-}
+/**
+ * Grava o que foi conferido. É o único ponto desta funcionalidade que escreve.
+ *
+ * O corpo vem da tela, não de um preview guardado no servidor — e por isso ele é validado
+ * aqui como qualquer cadastro digitado seria: ticker dentro da convenção da B3, categoria
+ * que não contradiz o sufixo, quantidade e preço positivos. Confiar no corpo porque "veio
+ * do nosso próprio preview" transformaria a importação num caminho lateral para criar o
+ * estado que a validação de cadastro existe para impedir.
+ */
+router.post("/portfolio/import/commit", requireAuth, async (req, res): Promise<void> => {
+  const parsed = CommitBrokerImportBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  // O zod coage `format: date` para Date, e String(Date) produz "Tue Aug 17 2026 00:00:00
+  // GMT+0000", que o Postgres recusa numa coluna date — é o mesmo tropeço que já fez todo
+  // registro de provento devolver 500. `isoDate` é quem converte, aqui como lá.
+  //
+  // A trava de data implausível é a mesma do cadastro manual, e vale igual: data no ano
+  // 0001 ou no futuro entra pela importação com a mesma facilidade com que entrava
+  // digitada, e a origem do dado não a torna mais confiável — um PDF de outra corretora
+  // pode ter layout que desloca a coluna da data sem que nada mais quebre.
+  const positions: ConfirmedPosition[] = [];
+  for (const [i, pos] of parsed.data.positions.entries()) {
+    for (const [j, t] of pos.trades.entries()) {
+      // O valor CRU, antes da coerção do zod: "2026-02-31" vira 03/03 sem reclamar, e só
+      // comparando com o texto original dá para ver que o dia não existia. Depois do
+      // parse essa informação já foi embora.
+      const cru = req.body?.positions?.[i]?.trades?.[j]?.tradeDate;
+      const ruim = invalidTradeDate(cru, isoDate(t.tradeDate));
+      if (ruim) {
+        res.status(400).json({ error: `Nota ${t.noteNumber}: ${ruim}` });
+        return;
+      }
+    }
+    positions.push({
+      ...pos,
+      trades: pos.trades.map((t) => ({ ...t, tradeDate: isoDate(t.tradeDate) })),
+    });
+  }
+
+  try {
+    const result = await commitImport(req.session.userId!, positions);
+    res.status(201).json(result);
+  } catch (err) {
+    if (err instanceof ImportValidationError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
 
 export default router;
