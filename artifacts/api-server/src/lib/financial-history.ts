@@ -1,6 +1,7 @@
 import { db, financialFactsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { isBalanceMetric, type DocumentType } from "./cvm-statements";
+import { cnpjForTicker } from "./company-tickers";
 
 /**
  * Leitura da série histórica de `financial_facts`.
@@ -141,6 +142,27 @@ export async function getFinancialSeries(
   }
 
   return Array.from(byPeriod.values()).sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
+}
+
+/**
+ * A mesma série, pedida pelo ticker que o usuário tem em carteira.
+ *
+ * Existe porque a tabela é chaveada por CNPJ e a carteira por ticker — e por um bom
+ * motivo, já que PETR3 e PETR4 são a mesma demonstração. Esta função é a única coisa
+ * entre "a série existe no banco" e "a série descreve um ativo que a pessoa possui".
+ *
+ * Devolve array vazio, e não erro, quando não há ponte: BDR (a companhia não presta
+ * contas à CVM), FII e ETF (registro próprio, fora do FCA) caem aqui legitimamente. Quem
+ * chama trata isso como "sem série da CVM para este papel", que é diferente de falha.
+ */
+export async function getFinancialSeriesForTicker(
+  ticker: string,
+  metric: string,
+  options: SeriesOptions = {},
+): Promise<FinancialPeriod[]> {
+  const cnpj = await cnpjForTicker(ticker);
+  if (!cnpj) return [];
+  return getFinancialSeries(cnpj, metric, options);
 }
 
 /**

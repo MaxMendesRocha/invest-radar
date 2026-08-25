@@ -304,6 +304,72 @@ nome entre `DENOM_SOCIAL` da CVM e o `longName` da brapi.
 
 ---
 
+## A ponte ticker → CNPJ
+
+`financial_facts` é chaveada por CNPJ, o que está certo — PETR3 e PETR4 são a mesma
+demonstração. Mas a carteira é chaveada por ticker, e o app só conhecia o CNPJ de FII
+(vem pronto do endpoint de fundos da brapi). O resultado é que os **187.982 fatos
+ingeridos não alcançavam um único ativo de ação**: um arquivo bonito que ninguém
+consultava.
+
+### A fonte é a própria CVM
+
+O Formulário Cadastral (FCA), arquivo `valor_mobiliario`, traz `CNPJ_Companhia` e
+`Codigo_Negociacao` na mesma linha — mesmo portal e mesmo pipeline das demonstrações.
+Isso importa: o ticker e o CNPJ saem da **mesma fonte que publica os números**, então não
+há um terceiro que possa discordar.
+
+As alternativas eram a lista de empresas listadas da B3 e casar o nome da brapi com
+`DENOM_SOCIAL` da CVM. As duas acrescentariam uma fonte, e a segunda usaria casamento
+aproximado onde existe identificador exato. (O cadastro simples da CVM,
+`cad_cia_aberta.csv`, **não** publica ticker — foi o primeiro lugar em que olhei.)
+
+Oito anos de FCA custam **3 MB** contra os 375 MB das demonstrações. A janela inteira é
+lida sempre porque o formulário é anual: o arquivo de 2026 sozinho traz 384 companhias, e
+os oito anos juntos trazem 430.
+
+### Por que ticker pode ser chave primária
+
+Medido sobre 2019–2026, depois de descartar códigos fora da convenção da B3: **650
+tickers, 650 pares distintos, zero ticker apontando para mais de um CNPJ.**
+
+O lixo descartado eram companhias preenchendo o campo com `0000`, `N/A` ou `NÃO HÁ` em
+vez de deixar vazio — e eram exatamente esses seis valores que apareciam ligados a vários
+CNPJs. O filtro é `kindFromTicker` (de `b3-ticker.ts`), e não uma expressão regular nova:
+já existe um lugar que define o que é código de negociação válido, e duas definições
+divergindo fariam o cadastro aceitar um ticker que a ponte não reconhece.
+
+### O que cobre — e o que não cobre, de propósito
+
+618 ações, 30 units, 2 BDRs, em 430 companhias. **382 das 627 companhias com
+demonstração (61%) ficaram alcançáveis.** As 245 restantes são emissoras registradas na
+CVM sem ação em bolsa — dívida, capital fechado com registro.
+
+Conferido contra tickers reais: ABEV3, BBDC4, EGIE3, ITUB4, MGLU3, PETR4, RENT3, VALE3 e
+WEGE3 resolvem. AAPL34, MSFT34, BOVA11, HGLG11, MXRF11 e XPML11 **não** — e é o
+comportamento correto: Apple não presta contas à CVM, e fundo imobiliário tem registro
+próprio, fora do FCA. O mapa cobre exatamente o conjunto que estava inalcançável.
+
+Dois cuidados na leitura: `PETR4F` (fracionário) normaliza para `PETR4`, porque é o mesmo
+papel e a CVM cadastra só o código cheio; e ausência devolve série **vazia**, nunca erro —
+para um BDR isso é a resposta certa, não uma falha.
+
+De brinde, o mapa desfaz parte da ambiguidade do sufixo 11 descrita em `b3-ticker.ts`: um
+código terminado em 11 que aparece aqui é unit de companhia listada, não FII nem ETF.
+
+### O que isso destrava
+
+`getFinancialSeriesForTicker("PETR4", "receita")` devolve doze exercícios com a receita
+real da Petrobras (R$ 497,5 bi em 2025) e a série trimestral até 30/06/2026. Os itens 6 e
+7 desta lista — valor justo por múltiplo normalizado e regras de deterioração — dependiam
+disso e passam a ser construíveis.
+
+O cruzamento brapi × CVM também: com o CNPJ em mãos, dá para comparar `netIncome` da
+brapi contra `lucro_liquido` da CVM. Comparando **níveis**, não razões — a medição da
+seção anterior mostrou que razões divergem 32% na mediana por motivo legítimo.
+
+---
+
 ## Ordem sugerida
 
 1. ~~`financial_facts` a partir do DFP da CVM~~ — **feito**.
@@ -311,8 +377,8 @@ nome entre `DENOM_SOCIAL` da CVM e o `longName` da brapi.
    (`period_kind`) porque o trimestral publica o mesmo `period_end` duas vezes.
 3. ~~**Confiança no dado + portão de AGUARDAR**~~ — **feito**, com duas mudanças de
    desenho decididas por medição. Ver a seção própria abaixo.
-4. **Ponte ticker → CNPJ** — pré-requisito descoberto no item 3, e que bloqueia os itens
-   6 e 7. Sem ele a série da CVM não alcança nenhuma ação da carteira.
+4. ~~**Ponte ticker → CNPJ**~~ — **feito**. Veio do Formulário Cadastral da CVM, a mesma
+   fonte das demonstrações. Ver a seção própria abaixo.
 5. **Percentis P10/P50/P90 por setor** (§7, §142). A varredura semanal já busca os
    fundamentos do universo inteiro e calcula a mediana; guardar os percentis custa uma
    coluna.

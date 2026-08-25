@@ -8,6 +8,7 @@ import {
   type ScaledFact,
   type StatementFact,
 } from "./cvm-statements";
+import { syncCompanyTickers } from "./company-tickers";
 import type { JobDefinition } from "./scheduler";
 import { logger } from "./logger";
 
@@ -161,9 +162,27 @@ export async function syncFinancialFacts(): Promise<{ summary: string }> {
     throw new Error(`nenhum ano entregou dado em ${attempted} tentado(s) — ${failures.join(" | ")}`);
   }
 
-  const summary = `${written} fatos novos (${porTipo.join(" + ")}) em ${anosComDado}/${attempted} anos`
+  // A ponte ticker→CNPJ vem do mesmo portal e é inseparável do resto: sem ela nenhuma
+  // linha gravada acima alcança um ativo da carteira. Roda DEPOIS de propósito — se as
+  // demonstrações falharem por inteiro, o lançamento acima já interrompeu, e atualizar o
+  // mapa sem ter o que mapear não ajudaria ninguém.
+  //
+  // Uma falha aqui não derruba o job: a série continua correta, só continua inalcançável
+  // por ticker até a próxima execução. Silenciar seria o erro; por isso entra no resumo.
+  let ponte: string;
+  try {
+    const mapa = await syncCompanyTickers();
+    ponte = `${mapa.written} tickers mapeados em ${mapa.anos} anos de FCA`
+      + (mapa.falhas.length > 0 ? ` (falhas: ${mapa.falhas.join(" | ")})` : "");
+  } catch (err) {
+    const motivo = err instanceof Error ? err.message : String(err);
+    logger.warn({ err }, "mapa ticker→CNPJ falhou");
+    ponte = `mapa ticker→CNPJ falhou: ${motivo}`;
+  }
+
+  const summary = `${written} fatos novos (${porTipo.join(" + ")}) em ${anosComDado}/${attempted} anos; ${ponte}`
     + (failures.length > 0 ? ` (falhas: ${failures.join(" | ")})` : "");
-  logger.info({ written, porTipo, anosComDado, attempted, failures }, "sync de demonstrações da CVM concluído");
+  logger.info({ written, porTipo, anosComDado, attempted, failures, ponte }, "sync de demonstrações da CVM concluído");
   return { summary };
 }
 

@@ -903,6 +903,14 @@ cobertura começa um ano antes de cada janela. Medido: **187.982 fatos, 625 comp
 559 no trimestral, em 2min40s**. É o que torna possível perguntar sobre TENDÊNCIA — ver a seção
 própria acima.
 
+O mesmo job atualiza `company_tickers`, a **ponte ticker → CNPJ**, a partir do Formulário
+Cadastral da CVM (3 MB para oito anos). Ela não é acessório: `financial_facts` é chaveada por
+CNPJ — PETR3 e PETR4 são a mesma demonstração — e a carteira é chaveada por ticker, então sem a
+ponte a série inteira não alcança um único ativo de ação. Medido: **650 tickers, zero apontando
+para mais de um CNPJ**, cobrindo 382 das 627 companhias com demonstração (61%); as demais são
+emissoras registradas sem ação em bolsa. BDR, FII e ETF não resolvem de propósito — Apple não
+presta contas à CVM, e fundo imobiliário tem registro próprio, que o app já lê pela brapi.
+
 A janela inteira é relida a cada execução, e não só os anos recentes. Não é desperdício: a
 conferência de escala (abaixo) só enxerga a contradição comparando anos, e com janela curta as
 linhas descartadas voltariam a entrar na semana seguinte — medido, 308 delas.
