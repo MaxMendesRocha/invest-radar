@@ -86,12 +86,17 @@ function percentile(values: (number | null)[], q: number): number | null {
   return real[Math.min(real.length - 1, Math.floor(q * real.length))];
 }
 
+// Exportada para poder ser exercitada com um punhado de tickers reais sem rodar a
+// varredura inteira, que faz uma chamada de IA por candidato. É de onde saem os quartis
+// que a faixa de entrada de ação consome (stock-price-zones.ts), então conseguir rodá-la
+// isolada é o que permite conferir a faixa contra dado de verdade.
+//
 // Médias setoriais reais a partir de TODO o universo com fundamentos disponíveis
 // (não só os candidatos que passaram no score mínimo) — usar só os "aprovados" pra
 // calcular a média enviesaria pra cima, fazendo qualquer ativo parecer caro por
 // comparação. Setor vem de Fundamentals.sector (summaryProfile real da brapi.dev),
 // mesma fonte já usada em sectorFor().
-function computeSectorBenchmarks(
+export function computeSectorBenchmarks(
   fundamentalsByTicker: Map<string, Fundamentals>,
   fiiProfileByTicker: Map<string, FiiProfile>,
 ): InsertSectorBenchmark[] {
