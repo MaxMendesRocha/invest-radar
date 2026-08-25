@@ -121,6 +121,55 @@ O código da conta é o mesmo para banco e para empresa operacional; só o rótu
 (`3.01` é "Receita de Venda" na indústria e "Receitas de Intermediação Financeira" no
 banco). Chavear por código, e não por texto, é o que faz o mapeamento atravessar setores.
 
+### O trimestral (ITR): a defasagem cai de um ano para um trimestre
+
+O ITR tem estrutura idêntica à do DFP — mesmos arquivos, mesmos códigos, mesmo índice com
+`DT_RECEB` —, então mudou só a URL. O ganho é recentidade: medido na Petrobras, a série
+anual termina em 31/12/2025 e a trimestral em 30/06/2026.
+
+Ingestão medida: **187.982 fatos** (56.751 anuais + 131.231 trimestrais), 625 companhias
+no anual e 559 no trimestral, em **2min40s**.
+
+**O mesmo `period_end` é publicado duas vezes.** O ITR traz, para o mesmo fim de período,
+o trimestre isolado e o acumulado do ano — no 2T de 2025 do Banco do Brasil, R$ 78 mi e
+R$ 149 mi ambos em 30/06. Medido no arquivo de 2025: 1.794 de 2.706 chaves têm mais de um
+período. Daí a coluna `period_kind` (`saldo` / `exercicio` / `trimestre` / `acumulado`),
+que entra na chave única — sem ela, **22.689 linhas** seriam descartadas em silêncio, e
+quais sobreviveriam dependeria da ordem das linhas no CSV.
+
+As duas formas são guardadas porque uma confere a outra: 1T + 2T tem que fechar com o
+semestre. Medido, fecham em **96,4%** dos casos (3.167 de 3.285); o resto erra em unidades
+de porcento porque a companhia retificou o 1T ao publicar o 2T — que é precisamente a
+razão de `version` e `published_at` existirem nesta tabela.
+
+**Limitação declarada:** o último trimestre do exercício praticamente não existe no ITR
+(42 linhas em 39 mil, 0,11%). Quem quiser o 4T tem de derivá-lo do DFP menos o acumulado
+de nove meses.
+
+### A escala que a fonte declara errado
+
+`ESCALA_MOEDA` diz em que unidade a linha está, e às vezes diz errado. A ODONTOPREV
+declarou MIL no 1T de 2021, **UNIDADE no 2T** e MIL no 3T, com valores da mesma ordem de
+grandeza nos três — aplicar a escala ao pé da letra punha o 2T mil vezes menor, uma queda
+de 99,9% inventada sobre uma empresa real. O mesmo defeito estava na base anual já
+ingerida: a BRK Ambiental tinha 2020 gravado como R$ 2.382.216 **e** R$ 2.382.216.000.
+
+`dropInconsistentScale` descarta as linhas cuja escala contradiz a que a companhia usou no
+resto da série — 513 linhas no anual, 1.594 no trimestral. Duas decisões de projeto:
+
+- **MIL vence, e não a escala mais frequente.** O BCO PINE declarou MIL no 1T de 2024 e
+  UNIDADE no 2T e 3T: a minoria é que estava certa. MIL é 97,6% das linhas do arquivo, e
+  quando a companhia se contradiz é o desvio que se descarta, não a norma.
+- **Descartar, não corrigir.** Corrigir seria afirmar que o declarante quis dizer MIL. É
+  quase certo que quis — mas "quase certo" aplicado em silêncio a um número que vira
+  recomendação é o erro que este projeto já pagou caro. Buraco na série o motor enxerga;
+  número errado, não.
+
+Consequência operacional: a janela inteira é relida a cada execução, e não só os dois anos
+recentes. A conferência enxerga a contradição comparando anos, então uma janela curta
+regravaria o que a longa descartou — medido, 308 linhas voltaram numa execução de dois
+anos logo após um backfill de nove. A correção se desfaria sozinha, semana após semana.
+
 ---
 
 ## O que continua bloqueado
@@ -174,8 +223,8 @@ vale, e está em `source_url`. As camadas, não nesta escala.
 ## Ordem sugerida
 
 1. ~~`financial_facts` a partir do DFP da CVM~~ — **feito**.
-2. **ITR (trimestral)**, mesma tabela e mesma chave. Encurta a defasagem de um ano para um
-   trimestre.
+2. ~~**ITR (trimestral)**, mesma tabela~~ — **feito**, com uma coluna a mais na chave
+   (`period_kind`) porque o trimestral publica o mesmo `period_end` duas vezes.
 3. **`DataConfidenceScore` + portão de AGUARDAR** (§5, §29.1). O app já sabe `priceAsOf`,
    `pricesStale`, quais fundamentos vieram nulos e o `sampleSize` de cada setor — falta
    virar um número explícito. E agora tem um insumo novo: **cross-validation brapi × CVM**

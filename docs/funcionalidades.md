@@ -891,12 +891,16 @@ abaixo). Na primeira execução faz backfill de 2019 em diante; depois só o ano
 fechado não é republicado. Um ano que falha não derruba os outros — o detector opera com histórico
 parcial, só enxerga menos longe.
 
-**Demonstrações das companhias abertas** (semanal) — alimenta `financial_facts` com a série anual
-de receita, EBIT, lucro, ativo, caixa, dívida, patrimônio e caixa operacional, direto do DFP da
-CVM. Na primeira execução faz backfill de 2015 em diante e, como cada arquivo traz dois exercícios,
-cobre de 2014: medido em 57.048 fatos de 625 companhias em 52 segundos. Depois disso só rebaixa os
-dois anos mais recentes. É o que torna possível perguntar sobre TENDÊNCIA — ver a seção própria
-acima.
+**Demonstrações das companhias abertas** (semanal) — alimenta `financial_facts` com a série de
+receita, EBIT, lucro, ativo, caixa, dívida, patrimônio e caixa operacional, direto do DFP (anual,
+desde 2015) e do ITR (trimestral, desde 2020) da CVM. Como cada arquivo traz dois exercícios, a
+cobertura começa um ano antes de cada janela. Medido: **187.982 fatos, 625 companhias no anual e
+559 no trimestral, em 2min40s**. É o que torna possível perguntar sobre TENDÊNCIA — ver a seção
+própria acima.
+
+A janela inteira é relida a cada execução, e não só os anos recentes. Não é desperdício: a
+conferência de escala (abaixo) só enxerga a contradição comparando anos, e com janela curta as
+linhas descartadas voltariam a entrar na semana seguinte — medido, 308 delas.
 
 > **Ao limpar `opportunities` manualmente, zere também a linha correspondente em `job_runs`.** O
 > scheduler decide se roda consultando `last_run_at`, e com o gap de uma semana a tela fica vazia
@@ -1051,9 +1055,10 @@ antes dele, então "o lucro está caindo?" e "a dívida está crescendo?" não e
 difíceis — eram impossíveis. E é justamente essa pergunta que separa desconto de armadilha
 de valor.
 
-A CVM publica as demonstrações padronizadas das companhias abertas (DFP) em dados abertos,
-**no mesmo portal, formato e pipeline** do informe mensal de FII que já era ingerido.
-Medido na ingestão real: **57.048 fatos, 625 companhias, de 2014 a 2026, em 52 segundos**.
+A CVM publica as demonstrações padronizadas das companhias abertas — anuais (DFP) e
+trimestrais (ITR) — em dados abertos, **no mesmo portal, formato e pipeline** do informe
+mensal de FII que já era ingerido. Medido na ingestão real: **187.982 fatos, 625
+companhias, de 2014 a 2026, em 2min40s**.
 
 Três colunas separam esta tabela de um cache de indicadores. `period_end` é o que o número
 descreve; **`published_at` é quando ele passou a ser público** — na Petrobras, de 54 a 85
@@ -1066,6 +1071,26 @@ Cada DFP traz o exercício corrente **e** o anterior, então o mesmo período ap
 documentos, com datas de publicação distantes quase um ano. Por isso a leitura tem módulo
 próprio (`financial-history.ts`) com duas regras diferentes de propósito: **valor da maior
 versão, publicação da menor data.**
+
+**O trimestral publica o mesmo fim de período duas vezes:** uma linha com o trimestre
+isolado e outra com o acumulado do ano. No 2T de 2025 do Banco do Brasil, R$ 78 mi e
+R$ 149 mi ambos em 30/06. Medido no arquivo de 2025, 1.794 de 2.706 chaves têm mais de um
+período — daí a coluna `period_kind` (`saldo`, `exercicio`, `trimestre`, `acumulado`) na
+chave única. Sem ela, **22.689 linhas** seriam descartadas em silêncio, e quais
+sobreviveriam dependeria da ordem das linhas no arquivo. As duas formas são guardadas
+porque uma confere a outra: 1T + 2T fecham com o semestre em **96,4%** dos casos, e o resto
+erra em unidades de porcento porque a companhia retificou o 1T ao publicar o 2T. Por isso
+`getFinancialSeries` pede a frequência (anual ou trimestral) e nunca mistura as duas na
+mesma série. **O último trimestre do exercício praticamente não existe no ITR** (0,11% das
+linhas) e precisa ser derivado do anual.
+
+**A escala declarada às vezes está errada, e o parser não pode repassar isso.** A
+ODONTOPREV declarou MIL no 1T de 2021, UNIDADE no 2T e MIL no 3T, com valores da mesma
+ordem de grandeza — ao pé da letra o 2T virava mil vezes menor, uma queda de 99,9%
+inventada sobre uma empresa real. A ingestão descarta as linhas cuja escala contradiz a que
+a companhia usou no resto da série (513 no anual, 1.594 no trimestral). Descarta e **não
+corrige**: corrigir seria afirmar o que o declarante quis dizer, e buraco na série o motor
+enxerga, número errado não.
 
 **O que a fonte não entrega:** capex. O plano de contas é padronizado, o texto ao lado não
 é — a conta `6.01` tem 3 rótulos entre as companhias, mas a subconta `6.02.01` tem **310

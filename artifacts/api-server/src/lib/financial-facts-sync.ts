@@ -1,6 +1,13 @@
 import { db, financialFactsTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
-import { fetchAnnualStatements } from "./cvm-statements";
+import { eq, sql } from "drizzle-orm";
+import {
+  fetchStatements,
+  dropInconsistentScale,
+  DOCUMENT_TYPES,
+  type DocumentType,
+  type ScaledFact,
+  type StatementFact,
+} from "./cvm-statements";
 import type { JobDefinition } from "./scheduler";
 import { logger } from "./logger";
 
@@ -14,19 +21,32 @@ import { logger } from "./logger";
  */
 
 /**
- * Até onde o backfill vai.
+ * Até onde a janela de cada documento vai — e ela é relida inteira toda semana, ver
+ * `yearsToSync`.
  *
- * Cada arquivo do DFP traz o exercício corrente E o anterior, então parar em 2015 cobre
- * de 2014 em diante — onze anos, o suficiente para atravessar mais de um ciclo
- * econômico. Cada ano é ~13 MB e só é lido uma vez, na primeira execução.
+ * Anual desde 2015 (cobre 2014, porque cada arquivo traz dois exercícios): onze anos
+ * atravessam mais de um ciclo econômico, e cada ano custa ~13 MB.
+ *
+ * Trimestral desde 2020 — janela menor de propósito, e não por simetria. O valor do
+ * trimestre é a RECENTIDADE: ele encurta a defasagem de um ano para um trimestre. Para
+ * profundidade histórica o anual já responde, e o arquivo do ITR é 31 MB por ano contra
+ * 13 MB do DFP. Sete anos de trimestre cobrem qualquer detecção de tendência com folga.
  */
-const BACKFILL_START_YEAR = 2015;
+const BACKFILL_START: Record<DocumentType, number> = { DFP: 2015, ITR: 2020 };
 
 /** Um ano do DFP gera ~9 mil fatos; o Postgres tem teto de parâmetros por statement. */
 const CHUNK = 500;
 
-async function upsertYear(year: number): Promise<number> {
-  const facts = await fetchAnnualStatements(year);
+/**
+ * Grava os fatos já conferidos.
+ *
+ * A escrita acontece depois de TODOS os anos serem baixados, e não ano a ano, porque a
+ * conferência de escala precisa da série inteira para funcionar — ver
+ * `dropInconsistentScale`. O custo é segurar os fatos em memória (um backfill de nove anos
+ * de ITR dá ~130 mil, na casa de dezenas de MB); o ganho é a conferência enxergar a
+ * contradição que um arquivo sozinho não mostra.
+ */
+async function insertFacts(facts: StatementFact[]): Promise<number> {
   if (facts.length === 0) return 0;
 
   const values = facts.map((f) => ({
@@ -40,6 +60,7 @@ async function upsertYear(year: number): Promise<number> {
     version: f.version,
     value: f.value.toFixed(2),
     documentType: f.documentType,
+    periodKind: f.periodKind,
     sourceUrl: f.sourceUrl,
   }));
 
@@ -60,6 +81,7 @@ async function upsertYear(year: number): Promise<number> {
         financialFactsTable.cnpj,
         financialFactsTable.metric,
         financialFactsTable.periodEnd,
+        financialFactsTable.periodKind,
         financialFactsTable.documentType,
         financialFactsTable.version,
       ],
@@ -69,53 +91,86 @@ async function upsertYear(year: number): Promise<number> {
   return written;
 }
 
+/**
+ * Anos a puxar para um tipo de documento: SEMPRE a janela inteira.
+ *
+ * Havia aqui uma otimização — só os dois anos mais recentes depois do primeiro backfill —
+ * com o argumento de que retificação de exercício antigo é rara demais para valer
+ * rebaixar uma década toda semana. O argumento continua verdadeiro sobre retificação e
+ * mesmo assim a otimização teve de sair, por um motivo que só apareceu quando a
+ * conferência de escala entrou (`dropInconsistentScale`).
+ *
+ * A conferência enxerga a contradição comparando anos. Com janela de dois anos ela deixa
+ * de ver o que a janela de nove via, e as linhas que o backfill tinha descartado voltam a
+ * ser inseridas na execução seguinte. Medido: uma execução de dois anos logo depois de um
+ * backfill de nove regravou 308 linhas de ITR. Ou seja, a correção se desfaria sozinha,
+ * semana após semana — e em silêncio, que é a pior parte.
+ *
+ * Então o custo passou a valer a pena: ~375 MB e alguns minutos por execução SEMANAL, em
+ * troca de a conferência valer sempre a mesma coisa. De brinde, retificação de ano antigo
+ * — rara, mas não inexistente — passa a ser captada.
+ */
+function yearsToSync(documentType: DocumentType, currentYear: number): number[] {
+  const start = BACKFILL_START[documentType];
+  return Array.from({ length: currentYear - start + 1 }, (_, i) => start + i);
+}
+
 export async function syncFinancialFacts(): Promise<{ summary: string }> {
   const currentYear = new Date().getUTCFullYear();
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(financialFactsTable);
 
-  // Tabela vazia = primeira execução: puxa o histórico inteiro. Depois disso só os dois
-  // anos mais recentes mudam — a DFP do exercício anterior sai no primeiro trimestre, e
-  // retificação de exercício antigo é rara o bastante para não valer rebaixar uma década
-  // toda semana.
-  const years = count === 0
-    ? Array.from({ length: currentYear - BACKFILL_START_YEAR + 1 }, (_, i) => BACKFILL_START_YEAR + i)
-    : [currentYear - 1, currentYear];
-
-  let total = 0;
+  let written = 0;
+  let attempted = 0;
+  let anosComDado = 0;
   const failures: string[] = [];
-  for (const year of years) {
-    try {
-      const written = await upsertYear(year);
-      if (written === 0) failures.push(`CVM ${year}: arquivo sem contas reconhecidas`);
-      total += written;
-    } catch (err) {
-      // Um ano que falha não derruba os outros — a série fica mais curta, não quebrada.
-      // O ano corrente falha por natureza no começo do ano, antes de a CVM publicar.
-      logger.warn({ err, year }, "ano do DFP da CVM falhou");
-      failures.push(err instanceof Error ? err.message : String(err));
+  const porTipo: string[] = [];
+
+  for (const documentType of DOCUMENT_TYPES) {
+    const years = yearsToSync(documentType, currentYear);
+    attempted += years.length;
+    const baixados: ScaledFact[] = [];
+    for (const year of years) {
+      try {
+        const facts = await fetchStatements(year, documentType);
+        if (facts.length === 0) failures.push(`${documentType} ${year}: arquivo sem contas reconhecidas`);
+        else anosComDado++;
+        baixados.push(...facts);
+      } catch (err) {
+        // Um ano que falha não derruba os outros — a série fica mais curta, não quebrada.
+        // O ano corrente falha por natureza no começo do ano, antes de a CVM publicar.
+        logger.warn({ err, year, documentType }, "ano de demonstração da CVM falhou");
+        failures.push(err instanceof Error ? err.message : String(err));
+      }
     }
+    // A conferência de escala roda sobre todos os anos juntos de propósito: uma companhia
+    // que declare a escala errada de forma coerente dentro de um arquivo só se contradiz
+    // quando se olha o arquivo do ano seguinte ao lado.
+    const doTipo = await insertFacts(dropInconsistentScale(baixados, documentType));
+    written += doTipo;
+    porTipo.push(`${doTipo} ${documentType}`);
   }
 
-  // Mesma lição do sync de FII: zero linha gravada não é sucesso com pouco resultado, é
-  // o job não ter conseguido dado nenhum. Sem este lançamento, job_runs mostraria
-  // sucesso e erro nulo com a tabela vazia — o silêncio que já custou caro uma vez.
-  if (total === 0) {
-    throw new Error(`nenhum fato gravado em ${years.length} ano(s) tentado(s) — ${failures.join(" | ")}`);
+  // Mesma lição do sync de FII: nenhum ano ter entregue dado não é sucesso com pouco
+  // resultado, é o job não ter conseguido dado nenhum. Sem este lançamento, job_runs
+  // mostraria sucesso e erro nulo com a tabela vazia — o silêncio que já custou caro.
+  //
+  // O que se exige é ANO COM DADO, não linha nova: fora da primeira execução a janela
+  // inteira vem igual e conflita inteira, e `written` zera sem nada ter dado errado —
+  // medido, a segunda execução seguida grava exatamente 0. Exigir linha nova
+  // transformaria "nada mudou desde a semana passada" em falha semanal.
+  if (anosComDado === 0) {
+    throw new Error(`nenhum ano entregou dado em ${attempted} tentado(s) — ${failures.join(" | ")}`);
   }
 
-  const succeeded = years.length - failures.length;
-  const summary = `${total} fatos financeiros em ${succeeded}/${years.length} anos`
+  const summary = `${written} fatos novos (${porTipo.join(" + ")}) em ${anosComDado}/${attempted} anos`
     + (failures.length > 0 ? ` (falhas: ${failures.join(" | ")})` : "");
-  logger.info({ total, years, failures }, "sync de demonstrações da CVM concluído");
+  logger.info({ written, porTipo, anosComDado, attempted, failures }, "sync de demonstrações da CVM concluído");
   return { summary };
 }
 
 /**
- * Semanal. A DFP sai uma vez por ano por companhia, mas espalhada entre fevereiro e
- * maio; checar toda semana pega cada publicação com poucos dias de atraso, e as
- * retificações junto.
+ * Semanal. A DFP sai uma vez por ano por companhia, mas espalhada entre fevereiro e maio,
+ * e o ITR três vezes por ano em janelas parecidas; checar toda semana pega cada
+ * publicação com poucos dias de atraso, e as retificações junto.
  */
 export const FINANCIAL_FACTS_JOB: JobDefinition = {
   name: "sync-financial-facts",

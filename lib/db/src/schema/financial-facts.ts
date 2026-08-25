@@ -21,6 +21,12 @@ import { pgTable, serial, text, numeric, date, integer, timestamp, unique, index
  *   o que permite saber que houve retificação, em vez de apagar a evidência.
  * - `sourceUrl` é o documento no site da CVM de onde a linha saiu. Todo número exibido
  *   ao usuário precisa poder ser rastreado até a origem.
+ * - `periodKind` diz o que o período É, e não é redundante com as datas: o informe
+ *   trimestral publica o MESMO `periodEnd` duas vezes, uma com o trimestre isolado e
+ *   outra com o acumulado do ano. Medido no ITR de 2025: **1.794 de 2.706 chaves** têm
+ *   mais de um período. Sem esta coluna na chave única, dois terços do dado trimestral
+ *   seriam descartados em silêncio — e o que sobreviveria dependeria da ordem das linhas
+ *   no arquivo.
  *
  * Chaveada por CNPJ e não por ticker de propósito: a CVM identifica a companhia, e uma
  * companhia tem vários papéis (PETR3 e PETR4 são a mesma demonstração). Amarrar ticker
@@ -44,6 +50,12 @@ export const financialFactsTable = pgTable("financial_facts", {
   value: numeric("value", { precision: 24, scale: 2 }).notNull(),
   /** DFP (anual). ITR (trimestral) entra depois, com a mesma chave. */
   documentType: text("document_type").notNull(),
+  /**
+   * `saldo` (balanço, um instante), `exercicio` (o ano fiscal de um DFP — quase sempre
+   * 12 meses, mais curto quando a companhia muda a data de fechamento), `trimestre`
+   * (~3 meses de um ITR) ou `acumulado` (6 ou 9 meses de um ITR).
+   */
+  periodKind: text("period_kind").notNull(),
   sourceUrl: text("source_url"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 // Forma de array e nome de constraint curto seguem a convenção do repositório (ver
@@ -62,7 +74,7 @@ export const financialFactsTable = pgTable("financial_facts", {
   // irmã (fii_monthly_reports, 72 mil linhas) não apresenta o problema. Enquanto isso,
   // **esta tabela é criada pelo script em docs/sql/financial-facts.sql**, e um push
   // nesta base precisa ser respondido com "não" na pergunta de truncar.
-  unique("financial_facts_periodo_unico").on(t.cnpj, t.metric, t.periodEnd, t.documentType, t.version),
+  unique("financial_facts_periodo_unico").on(t.cnpj, t.metric, t.periodEnd, t.periodKind, t.documentType, t.version),
   index("financial_facts_cnpj_idx").on(t.cnpj, t.metric, t.periodEnd),
 ]);
 

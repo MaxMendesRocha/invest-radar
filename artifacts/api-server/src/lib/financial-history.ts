@@ -1,5 +1,6 @@
 import { db, financialFactsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
+import { isBalanceMetric, type DocumentType } from "./cvm-statements";
 
 /**
  * Leitura da série histórica de `financial_facts`.
@@ -22,7 +23,39 @@ import { and, eq } from "drizzle-orm";
  * retifica balanço merece olhar diferente.
  *
  * Então a regra desta leitura é: **valor da maior versão, publicação da menor data.**
+ *
+ * **3. O trimestral publica o mesmo fim de período duas vezes.** O ITR traz, para o mesmo
+ * `periodEnd`, o trimestre isolado E o acumulado do ano — no 2T de 2025 do Banco do
+ * Brasil, R$ 78 mi e R$ 149 mi com o mesmo 30/06. Uma série que agrupasse só por
+ * `periodEnd` juntaria os dois e ficaria com o que tivesse a versão maior, o que na
+ * prática é o que chegou primeiro no arquivo. Por isso a leitura fixa um `periodKind`
+ * ANTES de agrupar, em vez de deduplicar depois.
+ *
+ * Pelo mesmo motivo a frequência é do CHAMADOR e não uma união: misturar exercício anual
+ * com trimestre na mesma série faria `consecutiveDeclines` ler a queda de janeiro-março
+ * contra o ano inteiro anterior e chamar isso de tendência.
  */
+
+/**
+ * Anual sai do DFP, trimestral do ITR.
+ *
+ * O `periodKind` correspondente depende da natureza da métrica: estoque é `saldo` nos
+ * dois documentos (um balanço é sempre um instante — o que muda é a data), fluxo é
+ * `exercicio` no anual e `trimestre` no trimestral.
+ *
+ * `acumulado` (6 ou 9 meses) fica de fora de propósito: é derivável e não é uma série
+ * comparável no tempo — o acumulado de 9 meses não se compara com o de 6. Ele existe na
+ * tabela para conferência (Q1 + Q2 tem que fechar com o semestre) e vai ser útil quando
+ * houver TTM, que ainda não há.
+ */
+export type Frequency = "anual" | "trimestral";
+
+function scopeFor(metric: string, frequency: Frequency): { documentType: DocumentType; periodKind: string } {
+  const estoque = isBalanceMetric(metric);
+  return frequency === "anual"
+    ? { documentType: "DFP", periodKind: estoque ? "saldo" : "exercicio" }
+    : { documentType: "ITR", periodKind: estoque ? "saldo" : "trimestre" };
+}
 
 export interface FinancialPeriod {
   periodEnd: string;
@@ -36,22 +69,38 @@ export interface FinancialPeriod {
   sourceUrl: string | null;
 }
 
+export interface SeriesOptions {
+  /**
+   * `asOf` limita ao que já era público numa data — é o que permite perguntar "o que o
+   * app saberia se tivesse sido consultado naquele dia" sem contaminar a resposta com
+   * informação que ainda não existia.
+   */
+  asOf?: string;
+  /** Anual (DFP) por padrão; trimestral (ITR) encurta a defasagem de um ano para 3 meses. */
+  frequency?: Frequency;
+}
+
 /**
  * Série de uma métrica para uma companhia, do período mais antigo para o mais recente.
  *
- * `asOf` limita ao que já era público numa data — é o que permite perguntar "o que o app
- * saberia se tivesse sido consultado naquele dia" sem contaminar a resposta com
- * informação que ainda não existia.
+ * Uma frequência por chamada — ver o item 3 do cabeçalho sobre por que não se mistura.
  */
 export async function getFinancialSeries(
   cnpj: string,
   metric: string,
-  asOf?: string,
+  options: SeriesOptions = {},
 ): Promise<FinancialPeriod[]> {
+  const { asOf, frequency = "anual" } = options;
+  const scope = scopeFor(metric, frequency);
   const rows = await db
     .select()
     .from(financialFactsTable)
-    .where(and(eq(financialFactsTable.cnpj, cnpj), eq(financialFactsTable.metric, metric)));
+    .where(and(
+      eq(financialFactsTable.cnpj, cnpj),
+      eq(financialFactsTable.metric, metric),
+      eq(financialFactsTable.documentType, scope.documentType),
+      eq(financialFactsTable.periodKind, scope.periodKind),
+    ));
 
   const byPeriod = new Map<string, FinancialPeriod>();
   for (const row of rows) {
