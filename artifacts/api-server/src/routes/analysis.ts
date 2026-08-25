@@ -25,6 +25,8 @@ import {
 } from "../lib/market-data";
 import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, analyzeFii, computeDuPontBreakdown, computeTrimSuggestion, resolveStatusReason, screenForPurchase, type AnalysisResult, concentrationLimitsFor, type ConcentrationLimits } from "../lib/analysis-engine";
 import { CONFIANCA_PLENA, type PriceState, type DataConfidence } from "../lib/data-confidence-engine";
+import { computeStockPriceZones, sectorReferenceFrom } from "../lib/stock-price-zones";
+import { normalizedEarningsFor } from "../lib/normalized-earnings";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline, type NewsImpact } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { getCdiTrailingAnnual } from "../lib/benchmark-data";
@@ -687,6 +689,18 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
   const sectorBenchmark = await getSectorBenchmark(
     fundamentals ? benchmarkGroupFor(fundamentals, fiiProfile ?? undefined) : null,
   );
+  // Faixa de entrada de AÇÃO — o equivalente do que computeFiiPriceZones já fazia para
+  // FII. Só sai fora de FII: o fundo tem régua própria, e as duas contas aqui (múltiplo
+  // de lucro e de patrimônio contra o setor) não significam a mesma coisa num fundo.
+  const stockPriceZones = fiiProfile == null && fundamentals
+    ? computeStockPriceZones({
+        price,
+        priceEarnings: fundamentals.priceEarnings,
+        priceToBook: fundamentals.priceToBook,
+        normalized: await normalizedEarningsFor(ticker),
+        sector: sectorReferenceFrom(sectorBenchmark),
+      })
+    : null;
   const sectorComparison = fundamentals
     ? describeSectorComparison(fundamentals, sectorBenchmark)
     : "Comparação com o setor não disponível (fundamentos não encontrados para este ativo).";
@@ -737,6 +751,7 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     fiiProfile,
     fiiCvmData,
     fiiPriceZones,
+    stockPriceZones,
     fiiPeers,
     sectorComparison,
     dividendValue,
@@ -947,6 +962,19 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
           ? benchmarkGroupFor(assetFundamentals, fiiProfileByTicker.get(analysis.ticker) ?? undefined)
           : null,
       );
+      // Faixa de entrada de AÇÃO — o equivalente do que computeFiiPriceZones já fazia
+      // para FII. Reusa o `sectorBenchmark` acima em vez de buscar de novo: duas leituras
+      // da mesma referência poderiam divergir entre a comparação setorial e a faixa.
+      const stockPriceZones = fiiProfileByTicker.get(analysis.ticker) == null
+        && assetFundamentals != null && currentPrice != null
+        ? computeStockPriceZones({
+            price: currentPrice,
+            priceEarnings: assetFundamentals.priceEarnings,
+            priceToBook: assetFundamentals.priceToBook,
+            normalized: await normalizedEarningsFor(analysis.ticker),
+            sector: sectorReferenceFrom(sectorBenchmark),
+          })
+        : null;
       const sectorComparison = assetFundamentals
         ? describeSectorComparison(assetFundamentals, sectorBenchmark)
         : "Comparação com o setor não disponível (fundamentos não encontrados para este ativo).";
@@ -985,6 +1013,8 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         fiiProfile: fiiProfileByTicker.get(analysis.ticker) ?? null,
         fiiCvmData,
         fiiPriceZones,
+        stockPriceZones,
+        price: currentPrice,
         fiiPeers,
         sectorComparison,
         dividendValue,

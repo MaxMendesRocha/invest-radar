@@ -21,7 +21,8 @@ quem não tem posição. E `computeFiiPriceZones` **já produz faixa de compra e
 derivada da curva de P/VP e do yield exigido sobre a Selic líquida.
 
 Ou seja: os §45–48 da especificação (preço ideal / compra forte / preço máximo) **já
-existem — só que para FII**. Estender para ações é o item de maior valor e menor risco.
+existiam — só que para FII**. Estender para ações era o item de maior valor e menor risco,
+e é o que `computeStockPriceZones` faz (seção própria abaixo).
 
 ---
 
@@ -34,7 +35,7 @@ existem — só que para FII**. Estender para ações é o item de maior valor e
 | TimingScore §24 | `technical-engine` |
 | PortfolioFit / concentração §40–43 | `concentrationLimitsFor`, `computeTrimSuggestion`, `allocation-engine` |
 | Dividend trap §55 | `distribution-quality-engine`, `dividend-value-engine` |
-| Faixas de entrada §45–48 | `computeFiiPriceZones` — **só FII** |
+| Faixas de entrada §45–48 | `computeFiiPriceZones` (FII) e `computeStockPriceZones` (ação) |
 | Renda fixa §18 | `treasury-opinion-engine` |
 | Ranking §51–52 | `opportunity-ranking`, que já separa "melhores" de "compre agora" |
 | Kill switch §93 (parcial) | `resolveAnalysisStatus` VENDER + `statusReason` |
@@ -371,6 +372,73 @@ seção anterior mostrou que razões divergem 32% na mediana por motivo legítim
 
 ---
 
+## Faixa de entrada em reais para ação (§45–48)
+
+Era a maior assimetria entre as duas réguas: `computeFiiPriceZones` já produzia faixa de
+compra em reais para FII, e ação não tinha equivalente. O módulo novo
+(`stock-price-zones.ts`) segue a mesma estrutura de propósito — se as duas telas dizem
+"faixa de entrada", a expressão precisa significar a mesma coisa nas duas.
+
+### Duas leituras que podem discordar
+
+Como no FII, são contas independentes: **por lucro** (o múltiplo que o setor paga por
+lucro, aplicado ao lucro normalizado da companhia) e **por patrimônio** (o P/VP do setor
+aplicado ao valor patrimonial por ação). Elas medem coisas diferentes, e o desacordo é a
+informação — empresa barata pelo patrimônio e cara pelo lucro é uma descrição, não erro de
+conta. Forçar uma média esconderia justamente o caso interessante.
+
+**A de patrimônio é a mais firme, e isso foi medido.** Sobre cinco exercícios das
+companhias na base:
+
+| | volatilidade mediana | companhias com ano não positivo |
+|---|---|---|
+| Lucro líquido | **0,70** | 258 de 491 (53%) |
+| Patrimônio líquido | **0,20** | 101 de 500 (20%) |
+
+O patrimônio é 3,5× mais estável. A leitura por lucro discrimina mais e oscila mais — as
+duas aparecem, e a ordem em que se lê é do leitor.
+
+### Lucro normalizado: por que não usar o último exercício
+
+O desvio-padrão do lucro anual é **70% da média** na companhia mediana. Avaliar pelo
+último exercício ancora a conta num número que quase nunca representa a empresa.
+
+A normalização é a **mediana** de até cinco exercícios — mediana e não média porque, com
+53% das companhias tendo algum ano de prejuízo, a média despenca ou vira negativa por
+causa de um exercício. Mesma escolha que `sector-benchmarks` já tinha feito pelo mesmo
+motivo.
+
+Quanto isso muda, medido sobre as 307 companhias com último exercício e mediana ambos
+positivos: a razão mediana é 0,93 — pequena no agregado. Mas **88 (29%) têm normalizado
+abaixo de 70% do último ano** e 48 (16%) acima de 140%. Em quase metade dos casos a base
+de avaliação se move mais de 30%.
+
+E há **66 companhias em que o sinal inverte**: 27 com último exercício positivo e mediana
+não positiva (um ano bom depois de quatro ruins), 39 no contrário. São exatamente os casos
+em que avaliar pelo último ano erra mais feio — e onde o motor agora se recusa a produzir
+faixa em vez de produzir uma com sinal trocado.
+
+### A faixa vem da dispersão do setor, não de uma margem arbitrada
+
+A especificação sugere `MaximumBuyPrice = FairValue × (1 − MOS)` com MOS de 20% — os 20%
+seriam um número escolhido. Aqui o intervalo é o **primeiro quartil e a mediana do próprio
+setor**: comprar ao múltiplo do p25 é pagar o que se paga pelas mais baratas do setor; ao
+da mediana, o que se paga por uma típica.
+
+É a mesma lógica de `FII_PVP_HEALTHY_DISCOUNT_RANGE`, com a diferença de que ali a faixa é
+fixa (0,85–0,95 do VP) e aqui é medida em cada setor a cada varredura. Isso exigiu os
+quartis em `sector_benchmarks` — o item 5 desta lista, que existia precisamente porque
+faixa precisa de dispersão e não só de valor central.
+
+### Sem número de ações
+
+O lucro por ação do último exercício é `preço ÷ P/L`, e o valor patrimonial por ação é
+`preço ÷ P/VP`. Mesmo truque de `computeFiiPriceZones`, que obtém o VP/cota sem pedir a
+quantidade de cotas. A série da CVM entra como **fator** (`normalizado ÷ último`), não como
+valor absoluto — o que também a torna imune a erro de escala na conversão por ação.
+
+---
+
 ## Ordem sugerida
 
 1. ~~`financial_facts` a partir do DFP da CVM~~ — **feito**.
@@ -380,13 +448,16 @@ seção anterior mostrou que razões divergem 32% na mediana por motivo legítim
    desenho decididas por medição. Ver a seção própria abaixo.
 4. ~~**Ponte ticker → CNPJ**~~ — **feito**. Veio do Formulário Cadastral da CVM, a mesma
    fonte das demonstrações. Ver a seção própria abaixo.
-5. **Percentis P10/P50/P90 por setor** (§7, §142). A varredura semanal já busca os
-   fundamentos do universo inteiro e calcula a mediana; guardar os percentis custa uma
-   coluna.
-6. **Valor justo por múltiplo normalizado → faixas de entrada para ações** (§45–48), com
-   Bear/Base/Bull saindo da dispersão observada do setor em vez de cenário arbitrado.
-7. **Regras de deterioração** (§27), agora que a série existe: `consecutiveDeclines` já
-   está em `financial-history.ts`.
+5. ~~**Percentis por setor**~~ — **feito** (p25/p75 de P/L e P/VP). Foram feitos junto
+   com o item 6, que é quem precisa deles: faixa exige dispersão, não valor central.
+6. ~~**Valor justo por múltiplo normalizado → faixas de entrada para ações**~~ (§45–48) —
+   **feito**, com a faixa saindo do p25 e da mediana do próprio setor em vez de uma
+   margem de segurança arbitrada. Ver a seção própria acima.
+7. **Regras de deterioração** (§27), agora que a série existe e alcança a carteira:
+   `consecutiveDeclines` já está em `financial-history.ts`, e o lucro normalizado dá a
+   base contra a qual medir a queda.
+8. **Cruzamento brapi × CVM** (§172), destravado pela ponte: comparar `netIncome` contra
+   `lucro_liquido` em NÍVEL, nunca em razão.
 
 ---
 

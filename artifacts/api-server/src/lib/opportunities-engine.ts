@@ -63,10 +63,27 @@ const MIN_SECTOR_SAMPLE = 3;
  * "mediana do setor".
  */
 function median(values: (number | null)[]): number | null {
+  return percentile(values, 0.5);
+}
+
+/**
+ * Percentil por ordenação, sem interpolação — o valor devolvido é sempre um número que
+ * uma companhia real do setor tem de fato.
+ *
+ * Interpolar entre dois vizinhos produziria um P/L que ninguém pratica, e a faixa de
+ * entrada derivada dele afirmaria uma precisão que a amostra (mínimo de 3, ver
+ * MIN_SECTOR_SAMPLE) não sustenta.
+ */
+const numeroOuNulo = (v: number | null): string | null => (v != null ? String(v) : null);
+
+function percentile(values: (number | null)[], q: number): number | null {
   const real = values.filter((v): v is number => v != null).sort((a, b) => a - b);
   if (real.length === 0) return null;
-  const mid = Math.floor(real.length / 2);
-  return real.length % 2 === 0 ? (real[mid - 1] + real[mid]) / 2 : real[mid];
+  if (q === 0.5 && real.length % 2 === 0) {
+    const mid = real.length / 2;
+    return (real[mid - 1] + real[mid]) / 2;
+  }
+  return real[Math.min(real.length - 1, Math.floor(q * real.length))];
 }
 
 // Médias setoriais reais a partir de TODO o universo com fundamentos disponíveis
@@ -101,6 +118,12 @@ function computeSectorBenchmarks(
       avgReturnOnEquity: avgReturnOnEquity != null ? String(avgReturnOnEquity) : null,
       avgDividendYield: avgDividendYield != null ? String(avgDividendYield) : null,
       avgProfitMargins: avgProfitMargins != null ? String(avgProfitMargins) : null,
+      // Quartis de P/L e P/VP: é deles que sai a FAIXA de entrada em reais, e não só a
+      // comparação "caro ou barato contra os pares". Mesmo scan, sem custo novo.
+      p25PriceEarnings: numeroOuNulo(percentile(list.map((f) => f.priceEarnings), 0.25)),
+      p75PriceEarnings: numeroOuNulo(percentile(list.map((f) => f.priceEarnings), 0.75)),
+      p25PriceToBook: numeroOuNulo(percentile(list.map((f) => f.priceToBook), 0.25)),
+      p75PriceToBook: numeroOuNulo(percentile(list.map((f) => f.priceToBook), 0.75)),
       sampleSize: list.length,
     });
   }

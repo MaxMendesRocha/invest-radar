@@ -323,6 +323,34 @@ curva de P/VP, quase idêntico à faixa de R$8,00–R$9,00 que uma análise exte
 CRI, devedor por devedor) chegou por conta própria — só que aqui é aritmética automática sobre uma
 régua já medida contra o universo real, não uma segunda opinião.
 
+### A mesma coisa para AÇÃO, por múltiplo normalizado contra o setor
+
+`computeStockPriceZones` (`stock-price-zones.ts`) fecha a maior assimetria entre as duas réguas:
+faixa de entrada em reais existia para FII e não para ação. Segue a mesma estrutura — **duas
+leituras independentes que podem discordar**, e não uma média.
+
+**Por lucro:** o múltiplo que o setor paga por lucro, aplicado ao lucro *normalizado* da companhia.
+**Por patrimônio:** o P/VP do setor aplicado ao valor patrimonial por ação.
+
+**Normalizado é a mediana de até cinco exercícios da CVM, não os últimos doze meses**, e a razão é
+medida: o desvio-padrão do lucro anual é **70% da média** na companhia mediana, e **53% das
+companhias tiveram ao menos um ano de prejuízo em cinco**. Avaliar pelo último exercício ancora a
+conta num número que quase nunca representa a empresa. Mediana e não média porque um prejuízo grande
+derruba a média — às vezes para o negativo — por causa de um único ano.
+
+Quanto isso muda: a razão mediana normalizado/último é 0,93, mas **29% das companhias têm
+normalizado abaixo de 70% do último ano** e 16% acima de 140%. Em 66 casos o sinal inverte — 27 com
+último exercício positivo e mediana negativa —, e nesses o motor **não produz faixa**, em vez de
+produzir uma com sinal trocado.
+
+A faixa vai do múltiplo do **p25 do setor** (o que se paga pelas mais baratas) ao da **mediana** (o
+que se paga por uma típica). Não há margem de segurança arbitrada: o intervalo é a dispersão medida
+do próprio setor, recalculada a cada varredura semanal.
+
+Das duas leituras, a de patrimônio é a mais firme, e isso também foi medido: sobre cinco exercícios,
+a volatilidade do patrimônio líquido é **0,20** contra **0,70** do lucro. As duas aparecem lado a
+lado; qual pesa mais é do leitor.
+
 ### Pares reais nomeados, não só a mediana
 
 `describeSectorComparison` (`sector-benchmarks.ts`) compara P/L, ROE e DY contra a mediana do
