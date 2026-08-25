@@ -35,10 +35,10 @@ export const financialFactsTable = pgTable("financial_facts", {
   /** Nome normalizado da métrica (ver ACCOUNT_MAP em lib/cvm-statements.ts). */
   metric: text("metric").notNull(),
   /** Null em conta de balanço, que é saldo numa data e não fluxo de um período. */
-  periodStart: date("period_start"),
-  periodEnd: date("period_end").notNull(),
+  periodStart: date("period_start", { mode: "string" }),
+  periodEnd: date("period_end", { mode: "string" }).notNull(),
   /** DT_RECEB: quando a CVM recebeu o documento. É o "known at" da série. */
-  publishedAt: date("published_at"),
+  publishedAt: date("published_at", { mode: "string" }),
   version: integer("version").notNull(),
   /** Já convertido para reais — o arquivo publica em MIL, e a escala vem por linha. */
   value: numeric("value", { precision: 24, scale: 2 }).notNull(),
@@ -46,12 +46,25 @@ export const financialFactsTable = pgTable("financial_facts", {
   documentType: text("document_type").notNull(),
   sourceUrl: text("source_url"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (t) => ({
+// Forma de array e nome de constraint curto seguem a convenção do repositório (ver
+// fii-monthly-reports.ts).
+}, (t) => [
   // Versão entra na chave para a retificação conviver com a publicação original em vez
   // de sobrescrevê-la — quem lê pega a maior versão do período.
-  uniqueFact: unique().on(t.cnpj, t.metric, t.periodEnd, t.documentType, t.version),
-  byCnpj: index("financial_facts_cnpj_idx").on(t.cnpj, t.metric, t.periodEnd),
-}));
+  //
+  // O nome é explícito porque o automático teria 67 caracteres e o Postgres trunca
+  // identificador em 63, deixando banco e schema com nomes diferentes.
+  //
+  // AVISO: `drizzle-kit push` reporta esta constraint como ausente mesmo quando ela
+  // existe, e oferece TRUNCAR a tabela para poder criá-la — o que apagaria a série
+  // inteira. Investiguei e descartei nome longo, forma do callback, índice secundário,
+  // número de colunas e `mode` das datas; a causa continua desconhecida, e a tabela
+  // irmã (fii_monthly_reports, 72 mil linhas) não apresenta o problema. Enquanto isso,
+  // **esta tabela é criada pelo script em docs/sql/financial-facts.sql**, e um push
+  // nesta base precisa ser respondido com "não" na pergunta de truncar.
+  unique("financial_facts_periodo_unico").on(t.cnpj, t.metric, t.periodEnd, t.documentType, t.version),
+  index("financial_facts_cnpj_idx").on(t.cnpj, t.metric, t.periodEnd),
+]);
 
 export type FinancialFact = typeof financialFactsTable.$inferSelect;
 export type InsertFinancialFact = typeof financialFactsTable.$inferInsert;
