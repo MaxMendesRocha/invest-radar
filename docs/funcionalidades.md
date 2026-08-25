@@ -3,7 +3,7 @@
 O que a aplicação faz, com que dado, e por que ela acredita no que diz.
 
 Este documento cobre a **superfície funcional inteira**: cada motor determinístico, onde a IA
-entra, as dez telas e os limites conhecidos. Para os **prompts exatos** de cada ponto de IA,
+entra, as doze telas e os limites conhecidos. Para os **prompts exatos** de cada ponto de IA,
 ver [`analises-ia.md`](./analises-ia.md), que é o complemento deste. Para decisões de
 arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../replit.md`](../replit.md).
 
@@ -856,13 +856,14 @@ sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela int
 
 ---
 
-## As onze telas, e a pergunta que cada uma responde
+## As doze telas, e a pergunta que cada uma responde
 
 | Tela | A pergunta | O que mostra |
 |---|---|---|
 | **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, **carteira contra o mercado e quem puxou o resultado**, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks, oscilação da composição atual |
 | **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático, poupança com saldo projetado pelo rendimento real do BCB, e a data da compra, opcional em qualquer classe, editável depois |
 | **Carteira de Partida** | Não tenho nada ainda — por onde começo? | As três carteiras-alvo (Conservador/Moderado/Arrojado) lado a lado, com candidatos por classe e o título do Tesouro; opcionalmente convertidas em reais a partir de um valor de partida |
+| **Importar Nota** | Já invisto — como trago o que tenho sem digitar tudo? | Nota de corretagem e extrato de custódia em PDF conciliados numa tela de conferência; grava só o que você marcar, e só compra |
 | **Radar Inteligente** | O que mudou e eu preciso saber? | Alertas de concentração, preço, fundamentos, notícias e macro, com severidade |
 | **Análise de Ativos** | O que penso do que já tenho? | Score, classificação, status, positivos e riscos, indicadores técnicos, parecer da IA |
 | **Parecer de Ativo** | Devo comprar isto que ainda não tenho? | Triagem "atende / não atende ao corte", análise completa de qualquer ticker sem exigir posição, range de 52 semanas, tendência de proventos, comparação setorial — e, pra Tesouro Direto, taxa de hoje contra a própria faixa dos últimos 90 dias e contra Selic/IPCA atuais |
@@ -948,6 +949,97 @@ linhas descartadas voltariam a entrar na semana seguinte — medido, 308 delas.
 > por dias se o registro não for zerado junto.
 
 ---
+
+## Importar nota de corretagem: dois PDFs que só juntos viram lançamento
+
+Digitar lançamento a lançamento é onde o histórico da carteira morre. São cinco campos por
+operação, e quem tem aporte mensal desiste — e sem histórico o preço médio volta a ser um
+número digitado, sem procedência, que foi exatamente o problema que `asset_purchases`
+resolveu.
+
+A nota de corretagem já é o registro fiel da operação. O que faltava era lê-la.
+
+### Nenhum dos dois documentos basta sozinho
+
+**A nota** tem data, quantidade, preço e custos, e **não tem o ticker**: ela identifica o
+papel pela especificação — "FII DEVA FOF CI", "TAESA ON EDJ N2". **O extrato de custódia**
+tem o ticker e a quantidade, e **não tem preço nem data**: é uma foto do saldo.
+
+Juntos se resolvem. O extrato dá o mapa que falta à nota, e a soma dos lançamentos tem de
+fechar com a quantidade em custódia — o que transforma a conferência num cálculo.
+
+### O parser nunca infere ticker, e o caso real mostra por quê
+
+"FII DEVA FOF CI" **não é DEVA11**, é **DVFF11** — "Deva" é o nome da gestora (Devant), não
+o código de negociação. Gravar por semelhança de nome teria posto 49 cotas num fundo que a
+pessoa não tem, com preço médio, patrimônio e análise saindo do ativo errado.
+
+### O nome separa, o preço confere
+
+A conciliação escolhe dentro da **lista fechada** que o extrato entrega, o que é outra
+operação: a semelhança nunca cria um código, no máximo aponta para um que o documento já
+trouxe. Medido nos cinco casos reais, o nome resolve sozinho — inclusive o único que **não**
+devia casar:
+
+| Especificação | Por nome | Por preço (1ª · 2ª) |
+|---|---|---|
+| TAESA | TAEE3 | TAEE3 1,1% · MXRF11 29,8% |
+| KLABIN S/A | KLBN3 | KLBN3 1,6% · DVFF11 32,0% |
+| FII DEVA FOF | DVFF11 | DVFF11 0,6% · KLBN3 31,0% |
+| FII GUARDIAN | GARE11 | GARE11 1,0% · **MXRF11 12,2%** |
+| MAGAZ LUIZA | *nenhuma* | DVFF11 **2,0%** |
+
+As duas células em negrito são a razão de o preço não poder liderar. MXRF11 fica a 12% do
+GUARDIAN — dentro de qualquer tolerância que precise absorver a variação entre o pregão e a
+foto da custódia, porque FII na faixa de R$ 8 a 10 é lugar-comum. E MAGAZ LUIZA, **vendida**
+e ausente da custódia, fica a 2% do DVFF11: preço sozinho a lançaria como cotas de um fundo
+alheio.
+
+O preço entra como conferência larga (25%), e só quando a nota está a menos de 30 dias da
+foto — além disso a distância é variação de mercado, não evidência de identidade, e reprovar
+por ela seria tratar silêncio como prova.
+
+**A classe fica na raiz da especificação.** ON e PN parecem ruído do mesmo tipo que EDJ e N2
+e não são: PETROBRAS ON é PETR3 e PETROBRAS PN é PETR4. Limpá-las fundiria dois ativos numa
+posição só — defeito achado pelo próprio harness.
+
+### Ler e gravar são dois endpoints, e isso é o recurso
+
+`POST /portfolio/import/preview` não escreve nada. `POST /portfolio/import/commit` grava só
+o que foi marcado na tela. Um importador que grava direto obriga a pessoa a achar o erro
+depois, dentro da carteira, misturado com o que estava certo.
+
+Não há estado entre os dois: quem confirma manda de volta o que conferiu, e o `commit`
+valida aquilo como validaria um cadastro digitado — mesma régua de `categoryConflict`,
+mesmas travas de data. Confiar no corpo por ter vindo do próprio preview faria da importação
+uma porta lateral para o estado que a validação de cadastro existe para impedir.
+
+### Só compra entra
+
+`sales` exige `average_price` (o custo da posição vendida), `gross_gain` e `tax_owed`, e
+**nada disso está na nota** — ela só traz o preço de venda. O custo sai do histórico da
+carteira, que pode estar incompleto justamente em quem importa pela primeira vez, e errar
+ali grava um número de **imposto** errado.
+
+A tela mostra as vendas lidas e manda registrá-las em Operações Encerradas. Elas saem do
+*preview*, não do resultado da gravação: uma venda que zerou a posição não casa com ticker
+nenhum e nunca chega ao `commit` — se a tela dependesse do servidor para listá-las, a venda
+mais comum sumiria da conferência.
+
+### O que a tela recusa a fazer sozinha
+
+Só `casado` com categoria resolvida nasce marcado. `ambiguo` e `sem_correspondencia` vêm
+desmarcados e **não dá para marcá-los sem escolher o ticker**. O sufixo 11 é FII, ETF e unit
+ao mesmo tempo, então DVFF11 e GARE11 param esperando a escolha — e cada caixa apagada diz
+por quê, com a ação que resolve.
+
+Nota já importada vem desmarcada e riscada. Não é erro: o arquivo da corretora traz o
+período inteiro, então reenviar agosto em setembro é o caminho normal. A idempotência é por
+`asset_purchases.broker_note_number` e é reverificada na gravação, porque entre ver a tela e
+confirmar dá tempo de importar em outra aba.
+
+Conferência: `harness/nota-corretagem-check.mts` (51 casos, layout real dos PDFs sem dado
+pessoal) e o fluxo completo exercitado no navegador contra os documentos verdadeiros.
 
 ## O que acontece quando o dado falta
 
@@ -1336,7 +1428,7 @@ quando ele fica desatualizado, e por isso a checagem precisa ser deliberada.
 | Nova fonte de dado, ou fonte que mudou de endpoint | "De onde vem cada dado", diagrama de fluxo |
 | Novo motor, ou motor removido | "Superfície atual" (contagem), seção do motor, diagrama |
 | Novo ponto de IA, ou mudança no que ele recebe/devolve | "Onde a IA entra" **e** [`analises-ia.md`](./analises-ia.md) |
-| Nova tela, ou tela que mudou de propósito | "As onze telas", "Superfície atual" |
+| Nova tela, ou tela que mudou de propósito | "As doze telas", "Superfície atual" |
 | Novo endpoint | "Superfície atual" (contagem) |
 | Limitação resolvida | "Limites conhecidos" — remover o item e dizer onde passou a ser tratado |
 | Nova varredura de produção com números diferentes | "O estado medido" (incluindo a data) |
