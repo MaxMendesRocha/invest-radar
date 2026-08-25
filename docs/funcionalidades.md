@@ -900,7 +900,7 @@ parcial, só enxerga menos longe.
 receita, EBIT, lucro, ativo, caixa, dívida, patrimônio e caixa operacional, direto do DFP (anual,
 desde 2015) e do ITR (trimestral, desde 2020) da CVM. Como cada arquivo traz dois exercícios, a
 cobertura começa um ano antes de cada janela. Medido: **187.982 fatos, 625 companhias no anual e
-559 no trimestral, em 2min40s**. É o que torna possível perguntar sobre TENDÊNCIA — ver a seção
+559 no trimestral**, em 3 a 7 minutos conforme o portal da CVM responde. É o que torna possível perguntar sobre TENDÊNCIA — ver a seção
 própria acima.
 
 O mesmo job atualiza `company_tickers`, a **ponte ticker → CNPJ**, a partir do Formulário
@@ -1071,7 +1071,7 @@ de valor.
 A CVM publica as demonstrações padronizadas das companhias abertas — anuais (DFP) e
 trimestrais (ITR) — em dados abertos, **no mesmo portal, formato e pipeline** do informe
 mensal de FII que já era ingerido. Medido na ingestão real: **187.982 fatos, 625
-companhias, de 2014 a 2026, em 2min40s**.
+companhias, de 2014 a 2026**.
 
 Três colunas separam esta tabela de um cache de indicadores. `period_end` é o que o número
 descreve; **`published_at` é quando ele passou a ser público** — na Petrobras, de 54 a 85

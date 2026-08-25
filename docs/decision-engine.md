@@ -128,7 +128,8 @@ O ITR tem estrutura idêntica à do DFP — mesmos arquivos, mesmos códigos, me
 anual termina em 31/12/2025 e a trimestral em 30/06/2026.
 
 Ingestão medida: **187.982 fatos** (56.751 anuais + 131.231 trimestrais), 625 companhias
-no anual e 559 no trimestral, em **2min40s**.
+no anual e 559 no trimestral. A execução leva de **2min40s a 7 minutos** — medido mais de uma
+vez, e a variação é o tempo de resposta do portal da CVM, não o processamento.
 
 **O mesmo `period_end` é publicado duas vezes.** O ITR traz, para o mesmo fim de período,
 o trimestre isolado e o acumulado do ano — no 2T de 2025 do Banco do Brasil, R$ 78 mi e

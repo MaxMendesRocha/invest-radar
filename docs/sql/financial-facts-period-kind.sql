@@ -27,7 +27,8 @@
 -- sempre.
 --
 -- Esvaziar não custa nada porque nada aqui é original: cada linha é derivada de arquivo
--- público da CVM, e a reconstrução inteira (anual + trimestral) levou 2min40s na medição.
+-- público da CVM, e a reconstrução inteira (anual + trimestral) levou de 2min40s a 7min em
+-- medições repetidas — a variação é o tempo de resposta do portal, não do processamento.
 -- Migrar no lugar deixaria metade da série corrigida e metade não, que é pior do que
 -- qualquer uma das duas.
 
@@ -69,10 +70,6 @@ ALTER TABLE public.financial_facts
   ADD CONSTRAINT financial_facts_periodo_unico
   UNIQUE (cnpj, metric, period_end, period_kind, document_type, version);
 
--- Devolve o job ao estado de "nunca rodou", para ele reconstruir a série no próximo boot
--- em vez de esperar o gap de uma semana. Ver a nota no fim do arquivo.
-DELETE FROM public.job_runs WHERE job_name = 'sync-financial-facts';
-
 COMMIT;
 
 -- Conferência agora: 14 colunas, 0 linhas.
@@ -81,13 +78,26 @@ SELECT
      WHERE table_name = 'financial_facts') AS colunas,
   (SELECT count(*) FROM public.financial_facts) AS linhas;
 
--- O DELETE acima é o que faz o job rodar sozinho. Sem ele a série ficaria vazia por até
--- uma semana: o scheduler só pula a checagem de `minGapMs` quando NÃO existe registro
--- anterior em job_runs, e `sync-financial-facts` já tem o dele da ingestão do DFP — com
--- gap de 7 dias. Apagar a linha devolve o job ao estado de "nunca rodou", e ele dispara
--- ~30s depois do próximo boot (STARTUP_DELAY_MS).
+-- ===========================================================================
+-- SEGUNDA PARTE — rodar SÓ DEPOIS que o código novo estiver no ar.
+-- ===========================================================================
 --
--- Depois que ele rodar (~2min40s), a distribuição esperada é esta — 5 combinações,
+-- A tabela está vazia e a coluna é NOT NULL, então o código ANTIGO não consegue mais
+-- gravar nela: ele insere sem `period_kind` e a inserção é rejeitada. Isso por si só é
+-- inofensivo — mas o scheduler carimba `last_run_at` mesmo quando o job FALHA, e o gap é
+-- de uma semana. Ou seja: se o job antigo rodar nesta janela, ele falha, marca a hora, e
+-- a reconstrução fica esperando sete dias com a série vazia.
+--
+-- Por isso o comando abaixo está fora da transação e fora da ordem: ele é o gatilho, e
+-- disparar o gatilho antes de o código novo subir é justamente o que causa o problema.
+--
+-- Depois do deploy, rode esta linha. Ela devolve o job ao estado de "nunca rodou" — o
+-- scheduler só pula a checagem de `minGapMs` quando NÃO existe registro anterior —, e ele
+-- dispara ~30s depois do próximo boot (STARTUP_DELAY_MS), levando de 3 a 7 minutos.
+--
+--   DELETE FROM public.job_runs WHERE job_name = 'sync-financial-facts';
+--
+-- Depois que ele rodar, a distribuição esperada é esta — 5 combinações,
 -- ~188 mil linhas, nenhuma linha DFP classificada como trimestre:
 --
 --   DFP | exercicio |  25.364

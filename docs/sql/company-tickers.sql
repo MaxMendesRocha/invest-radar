@@ -47,10 +47,10 @@ CREATE INDEX IF NOT EXISTS company_tickers_cnpj_idx
 
 -- O mapa é preenchido pelo job `sync-financial-facts`, que passou a atualizar a ponte
 -- junto com as demonstrações — mesma fonte, mesmo portal, e uma é inútil sem a outra.
--- Se a série já tiver sido reconstruída e o job não for rodar tão cedo, apagar a linha
--- de job_runs devolve ele ao estado de "nunca rodou" e ele dispara no próximo boot:
 --
---   DELETE FROM public.job_runs WHERE job_name = 'sync-financial-facts';
+-- O gatilho do job (o DELETE em job_runs) é ÚNICO para os dois, e está descrito na
+-- segunda parte de financial-facts-period-kind.sql. Rodar de lá, depois do deploy: uma
+-- execução do job preenche a série e a ponte de uma vez.
 
 -- Conferência: 6 colunas, 0 linhas.
 SELECT
