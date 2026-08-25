@@ -29,7 +29,14 @@ CREATE TABLE IF NOT EXISTS public.financial_facts (
     version       integer NOT NULL,
     -- Já em reais: o arquivo publica em MIL e a conversão acontece na ingestão.
     value         numeric(24,2) NOT NULL,
+    -- DFP (exercício anual) ou ITR (informe trimestral).
     document_type text NOT NULL,
+    -- O que o período É: `saldo` (balanço, um instante), `exercicio` (o ano fiscal de um
+    -- DFP), `trimestre` (~3 meses de um ITR) ou `acumulado` (6 ou 9 meses de um ITR).
+    -- Não é redundante com as datas: o ITR publica o MESMO period_end duas vezes, uma com
+    -- o trimestre isolado e outra com o acumulado do ano, e sem esta coluna na chave
+    -- única dois terços do dado trimestral seriam descartados em silêncio.
+    period_kind   text NOT NULL,
     source_url    text,
     created_at    timestamp DEFAULT now() NOT NULL
 );
@@ -43,12 +50,12 @@ ALTER TABLE public.financial_facts
   DROP CONSTRAINT IF EXISTS financial_facts_periodo_unico;
 ALTER TABLE public.financial_facts
   ADD CONSTRAINT financial_facts_periodo_unico
-  UNIQUE (cnpj, metric, period_end, document_type, version);
+  UNIQUE (cnpj, metric, period_end, period_kind, document_type, version);
 
 CREATE INDEX IF NOT EXISTS financial_facts_cnpj_idx
   ON public.financial_facts USING btree (cnpj, metric, period_end);
 
--- Conferência: deve devolver 13 colunas e 0 linhas.
+-- Conferência: deve devolver 14 colunas e 0 linhas.
 SELECT
   (SELECT count(*) FROM information_schema.columns
      WHERE table_name = 'financial_facts') AS colunas,

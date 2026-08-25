@@ -5,6 +5,7 @@ import {
   getListAssetAnalysesQueryKey,
   type AssetAnalysis,
   type TrimSuggestion,
+  type DataConfidence,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -87,6 +88,40 @@ function DividendFrequencyBadge({ dividendFrequency }: { dividendFrequency: Asse
       <CalendarClock className="w-3.5 h-3.5 shrink-0" />
       <span className="font-medium text-foreground">Paga {dividendFrequency.toLowerCase()}</span>
       <span className="text-[10px] opacity-70 sm:ml-auto">a partir do histórico real dos últimos 12 meses</span>
+    </div>
+  );
+}
+
+/**
+ * O que faltava no dado que sustenta a nota.
+ *
+ * Fica FORA da área expansível de propósito. O score aparece em fonte grande no topo do
+ * card, e é justamente ele que a lacuna qualifica — esconder a ressalva atrás de um
+ * clique deixaria a afirmação forte visível e a ressalva opcional, que é exatamente o
+ * problema que este bloco existe para resolver.
+ */
+function ConfidenceCallout({ confidence }: { confidence?: DataConfidence | null }) {
+  if (!confidence || confidence.level === "suficiente") return null;
+
+  const blocks = confidence.level === "insuficiente";
+  return (
+    <div className={`mt-4 rounded-md border p-4 text-sm space-y-2 ${blocks ? "border-border bg-muted/50" : "border-yellow-500/20 bg-yellow-500/5"}`}>
+      <p className="font-medium">
+        {blocks
+          ? "Sem base para recomendar compra deste ativo agora."
+          : "Esta nota se apoia em dado incompleto."}
+      </p>
+      <ul className="text-muted-foreground space-y-1">
+        {confidence.gaps.map((gap) => (
+          <li key={gap.code} className="text-pretty">• {gap.message}</li>
+        ))}
+      </ul>
+      {blocks && (
+        <p className="text-muted-foreground text-pretty">
+          Isso não é uma avaliação negativa do ativo — é a ausência do dado necessário para
+          avaliá-lo. O score acima fica exibido para transparência, não como conclusão.
+        </p>
+      )}
     </div>
   );
 }
@@ -263,6 +298,8 @@ export default function Analise() {
                       <Progress value={analysis.score} className="h-2" />
                     </div>
                   </div>
+
+                  <ConfidenceCallout confidence={analysis.confidence} />
 
                   {isExpanded && (
                     <div className="mt-8 pt-6 border-t grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-top-4">

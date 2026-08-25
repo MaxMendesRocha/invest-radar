@@ -35,6 +35,11 @@ mas o universo inteiro cabia entre **43 e 74**, com 29% dos ativos empatados no 
 status `COMPRAR` e `VENDER`-por-fundamento **nunca dispararam** na vida do aplicativo. Ninguém
 tinha percebido porque ninguém tinha medido.
 
+**4. Sem base para afirmar, não se afirma.** O status `AGUARDAR` é a recusa de opinar, e vem
+antes dos outros três — não é um estado entre `MANTER` e `VENDER`. O app produzia uma nota com a
+mesma cara de confiança tendo visto três indicadores ou oito, e a partir dela dizia "Comprar".
+Ver a seção própria abaixo.
+
 ---
 
 ## Como o dado atravessa a aplicação
@@ -317,6 +322,34 @@ Testado contra o CYCR11 em 18/08 (preço R$8,20, P/VP 0,87): a régua devolveu R
 curva de P/VP, quase idêntico à faixa de R$8,00–R$9,00 que uma análise externa detalhada (CRI por
 CRI, devedor por devedor) chegou por conta própria — só que aqui é aritmética automática sobre uma
 régua já medida contra o universo real, não uma segunda opinião.
+
+### A mesma coisa para AÇÃO, por múltiplo normalizado contra o setor
+
+`computeStockPriceZones` (`stock-price-zones.ts`) fecha a maior assimetria entre as duas réguas:
+faixa de entrada em reais existia para FII e não para ação. Segue a mesma estrutura — **duas
+leituras independentes que podem discordar**, e não uma média.
+
+**Por lucro:** o múltiplo que o setor paga por lucro, aplicado ao lucro *normalizado* da companhia.
+**Por patrimônio:** o P/VP do setor aplicado ao valor patrimonial por ação.
+
+**Normalizado é a mediana de até cinco exercícios da CVM, não os últimos doze meses**, e a razão é
+medida: o desvio-padrão do lucro anual é **70% da média** na companhia mediana, e **53% das
+companhias tiveram ao menos um ano de prejuízo em cinco**. Avaliar pelo último exercício ancora a
+conta num número que quase nunca representa a empresa. Mediana e não média porque um prejuízo grande
+derruba a média — às vezes para o negativo — por causa de um único ano.
+
+Quanto isso muda: a razão mediana normalizado/último é 0,93, mas **29% das companhias têm
+normalizado abaixo de 70% do último ano** e 16% acima de 140%. Em 66 casos o sinal inverte — 27 com
+último exercício positivo e mediana negativa —, e nesses o motor **não produz faixa**, em vez de
+produzir uma com sinal trocado.
+
+A faixa vai do múltiplo do **p25 do setor** (o que se paga pelas mais baratas) ao da **mediana** (o
+que se paga por uma típica). Não há margem de segurança arbitrada: o intervalo é a dispersão medida
+do próprio setor, recalculada a cada varredura semanal.
+
+Das duas leituras, a de patrimônio é a mais firme, e isso também foi medido: sobre cinco exercícios,
+a volatilidade do patrimônio líquido é **0,20** contra **0,70** do lucro. As duas aparecem lado a
+lado; qual pesa mais é do leitor.
 
 ### Pares reais nomeados, não só a mediana
 
@@ -891,12 +924,24 @@ abaixo). Na primeira execução faz backfill de 2019 em diante; depois só o ano
 fechado não é republicado. Um ano que falha não derruba os outros — o detector opera com histórico
 parcial, só enxerga menos longe.
 
-**Demonstrações das companhias abertas** (semanal) — alimenta `financial_facts` com a série anual
-de receita, EBIT, lucro, ativo, caixa, dívida, patrimônio e caixa operacional, direto do DFP da
-CVM. Na primeira execução faz backfill de 2015 em diante e, como cada arquivo traz dois exercícios,
-cobre de 2014: medido em 57.048 fatos de 625 companhias em 52 segundos. Depois disso só rebaixa os
-dois anos mais recentes. É o que torna possível perguntar sobre TENDÊNCIA — ver a seção própria
-acima.
+**Demonstrações das companhias abertas** (semanal) — alimenta `financial_facts` com a série de
+receita, EBIT, lucro, ativo, caixa, dívida, patrimônio e caixa operacional, direto do DFP (anual,
+desde 2015) e do ITR (trimestral, desde 2020) da CVM. Como cada arquivo traz dois exercícios, a
+cobertura começa um ano antes de cada janela. Medido: **187.982 fatos, 625 companhias no anual e
+559 no trimestral**, em 3 a 7 minutos conforme o portal da CVM responde. É o que torna possível perguntar sobre TENDÊNCIA — ver a seção
+própria acima.
+
+O mesmo job atualiza `company_tickers`, a **ponte ticker → CNPJ**, a partir do Formulário
+Cadastral da CVM (3 MB para oito anos). Ela não é acessório: `financial_facts` é chaveada por
+CNPJ — PETR3 e PETR4 são a mesma demonstração — e a carteira é chaveada por ticker, então sem a
+ponte a série inteira não alcança um único ativo de ação. Medido: **650 tickers, zero apontando
+para mais de um CNPJ**, cobrindo 382 das 627 companhias com demonstração (61%); as demais são
+emissoras registradas sem ação em bolsa. BDR, FII e ETF não resolvem de propósito — Apple não
+presta contas à CVM, e fundo imobiliário tem registro próprio, que o app já lê pela brapi.
+
+A janela inteira é relida a cada execução, e não só os anos recentes. Não é desperdício: a
+conferência de escala (abaixo) só enxerga a contradição comparando anos, e com janela curta as
+linhas descartadas voltariam a entrar na semana seguinte — medido, 308 delas.
 
 > **Ao limpar `opportunities` manualmente, zere também a linha correspondente em `job_runs`.** O
 > scheduler decide se roda consultando `last_run_at`, e com o gap de uma semana a tela fica vazia
@@ -1051,9 +1096,10 @@ antes dele, então "o lucro está caindo?" e "a dívida está crescendo?" não e
 difíceis — eram impossíveis. E é justamente essa pergunta que separa desconto de armadilha
 de valor.
 
-A CVM publica as demonstrações padronizadas das companhias abertas (DFP) em dados abertos,
-**no mesmo portal, formato e pipeline** do informe mensal de FII que já era ingerido.
-Medido na ingestão real: **57.048 fatos, 625 companhias, de 2014 a 2026, em 52 segundos**.
+A CVM publica as demonstrações padronizadas das companhias abertas — anuais (DFP) e
+trimestrais (ITR) — em dados abertos, **no mesmo portal, formato e pipeline** do informe
+mensal de FII que já era ingerido. Medido na ingestão real: **187.982 fatos, 625
+companhias, de 2014 a 2026**.
 
 Três colunas separam esta tabela de um cache de indicadores. `period_end` é o que o número
 descreve; **`published_at` é quando ele passou a ser público** — na Petrobras, de 54 a 85
@@ -1066,6 +1112,33 @@ Cada DFP traz o exercício corrente **e** o anterior, então o mesmo período ap
 documentos, com datas de publicação distantes quase um ano. Por isso a leitura tem módulo
 próprio (`financial-history.ts`) com duas regras diferentes de propósito: **valor da maior
 versão, publicação da menor data.**
+
+**O trimestral publica o mesmo fim de período duas vezes:** uma linha com o trimestre
+isolado e outra com o acumulado do ano. No 2T de 2025 do Banco do Brasil, R$ 78 mi e
+R$ 149 mi ambos em 30/06. Medido no arquivo de 2025, 1.794 de 2.706 chaves têm mais de um
+período — daí a coluna `period_kind` (`saldo`, `exercicio`, `trimestre`, `acumulado`) na
+chave única. Sem ela, **22.689 linhas** seriam descartadas em silêncio, e quais
+sobreviveriam dependeria da ordem das linhas no arquivo. As duas formas são guardadas
+porque uma confere a outra: 1T + 2T fecham com o semestre em **96,4%** dos casos, e o resto
+erra em unidades de porcento porque a companhia retificou o 1T ao publicar o 2T. Por isso
+`getFinancialSeries` pede a frequência (anual ou trimestral) e nunca mistura as duas na
+mesma série. **O último trimestre do exercício praticamente não existe no ITR** (0,11% das
+linhas) e precisa ser derivado do anual.
+
+**A escala declarada às vezes está errada, e o parser não pode repassar isso.** A
+ODONTOPREV declarou MIL no 1T de 2021, UNIDADE no 2T e MIL no 3T, com valores da mesma
+ordem de grandeza — ao pé da letra o 2T virava mil vezes menor, uma queda de 99,9%
+inventada sobre uma empresa real. A ingestão descarta as linhas cuja escala contradiz a que
+a companhia usou no resto da série (513 no anual, 1.594 no trimestral). Descarta e **não
+corrige**: corrigir seria afirmar o que o declarante quis dizer, e buraco na série o motor
+enxerga, número errado não.
+
+**O código da conta nem sempre é o identificador estável.** No lucro líquido é o rótulo: banco
+tem DRE mais curta, a numeração desloca, e "Lucro/Prejuízo Consolidado do Período" aparece em
+`3.09`, `3.11` e `3.13`. Chaveando por `3.11`, **17 das 664 companhias ficavam sem lucro nenhum**
+— Itaú, Santander e BTG entre elas — e duas recebiam o número da linha errada, que é pior: não
+falta dado, entra dado errado em silêncio. Buscando pelo rótulo são 625 de 627, e as duas que
+sobram são listagens recentes sem exercício anual fechado.
 
 **O que a fonte não entrega:** capex. O plano de contas é padronizado, o texto ao lado não
 é — a conta `6.01` tem 3 rótulos entre as companhias, mas a subconta `6.02.01` tem **310
@@ -1206,6 +1279,46 @@ que permite dizer que um FII "Forte" e uma ação "Forte" significam aproximadam
 Antes da recalibragem esta tabela teria uma única linha útil: **150 ativos, todos `MANTER`**. Hoje
 são 17 `COMPRAR`, 4 `VENDER`, 99 `MANTER` e 30 sem análise por falta de evidência — que também é
 uma resposta.
+
+---
+
+## O portão de dado insuficiente (`AGUARDAR`)
+
+A nota saía com a mesma cara de confiança tendo visto três indicadores ou oito, com cotação de
+hoje ou com o último preço guardado de duas semanas atrás. `AGUARDAR` é a recusa de opinar.
+
+**É uma lista de lacunas nomeadas, e não uma nota de 0 a 100.** Cada peso de uma média ponderada
+seria um número arbitrado — o mesmo erro que o terceiro princípio existe para impedir. O que se
+guarda é o fato conferível ("3 de 8 indicadores vieram"), com uma severidade que decide sozinha:
+`bloqueia` leva a `AGUARDAR` e tira o ativo das Oportunidades, `limita` só acompanha a análise
+como ressalva na tela. O nível (`suficiente` / `parcial` / `insuficiente`) é a pior lacuna
+presente.
+
+Os limiares saem de medição ou de fatos de calendário, nunca de escolha:
+
+| Lacuna | Efeito | De onde vem o corte |
+|---|---|---|
+| Sem cotação | bloqueia | a posição está sendo avaliada pelo preço médio de compra |
+| Cotação parada > 7 dias | bloqueia | o maior fechamento contínuo da B3 é o carnaval, 5 dias corridos |
+| Cotação parada ≤ 7 dias | limita | a chamada ao vivo falhou e o app caiu no preço guardado |
+| Um único indicador | bloqueia | a nota **é** esse indicador |
+| Menos de metade da régua | limita | as 81 ações do universo têm 6,9 indicadores em média |
+
+**A assimetria que isso corrigiu:** ação já exigia 3 indicadores, mas **FII não tinha piso
+nenhum** — bastava uma das quatro dimensões, e a renormalização levava o peso do yield de 35% a
+100%. O fundo saía com nota cheia apoiada num número só.
+
+**O que o portão não cala:** `VENDER` por concentração sobrevive, porque quanto do patrimônio
+está num papel é conta sobre a carteira da própria pessoa e não depende de provedor. Calar sobre
+uma posição de 60% porque a cotação envelheceu trocaria um alerta real por silêncio. Na triagem
+pré-compra o resultado vira `sem_dados` e não `nao_atende`: reprovar o ativo por falha do
+provedor seria o mesmo erro na direção oposta.
+
+**Uma ideia que a medição derrubou:** marcar indicador implausível (o P/L 149.050 que a brapi
+devolve para BDR é corrupção da razão de conversão). Medindo a faixa real com as demonstrações da
+CVM sobre 505 companhias, o ROE tem mediana de 9,5%, p99 de 243% e **máximo de 1877** — empresa
+com patrimônio pequeno e lucro normal produz ROE absurdo e verdadeiro. Qualquer faixa que pegasse
+o BDR reprovaria empresa real, e o caso do BDR já é barrado pelo mínimo de indicadores.
 
 ---
 

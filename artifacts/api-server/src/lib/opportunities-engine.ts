@@ -63,18 +63,40 @@ const MIN_SECTOR_SAMPLE = 3;
  * "mediana do setor".
  */
 function median(values: (number | null)[]): number | null {
-  const real = values.filter((v): v is number => v != null).sort((a, b) => a - b);
-  if (real.length === 0) return null;
-  const mid = Math.floor(real.length / 2);
-  return real.length % 2 === 0 ? (real[mid - 1] + real[mid]) / 2 : real[mid];
+  return percentile(values, 0.5);
 }
 
+/**
+ * Percentil por ordenação, sem interpolação — o valor devolvido é sempre um número que
+ * uma companhia real do setor tem de fato.
+ *
+ * Interpolar entre dois vizinhos produziria um P/L que ninguém pratica, e a faixa de
+ * entrada derivada dele afirmaria uma precisão que a amostra (mínimo de 3, ver
+ * MIN_SECTOR_SAMPLE) não sustenta.
+ */
+const numeroOuNulo = (v: number | null): string | null => (v != null ? String(v) : null);
+
+function percentile(values: (number | null)[], q: number): number | null {
+  const real = values.filter((v): v is number => v != null).sort((a, b) => a - b);
+  if (real.length === 0) return null;
+  if (q === 0.5 && real.length % 2 === 0) {
+    const mid = real.length / 2;
+    return (real[mid - 1] + real[mid]) / 2;
+  }
+  return real[Math.min(real.length - 1, Math.floor(q * real.length))];
+}
+
+// Exportada para poder ser exercitada com um punhado de tickers reais sem rodar a
+// varredura inteira, que faz uma chamada de IA por candidato. É de onde saem os quartis
+// que a faixa de entrada de ação consome (stock-price-zones.ts), então conseguir rodá-la
+// isolada é o que permite conferir a faixa contra dado de verdade.
+//
 // Médias setoriais reais a partir de TODO o universo com fundamentos disponíveis
 // (não só os candidatos que passaram no score mínimo) — usar só os "aprovados" pra
 // calcular a média enviesaria pra cima, fazendo qualquer ativo parecer caro por
 // comparação. Setor vem de Fundamentals.sector (summaryProfile real da brapi.dev),
 // mesma fonte já usada em sectorFor().
-function computeSectorBenchmarks(
+export function computeSectorBenchmarks(
   fundamentalsByTicker: Map<string, Fundamentals>,
   fiiProfileByTicker: Map<string, FiiProfile>,
 ): InsertSectorBenchmark[] {
@@ -101,6 +123,12 @@ function computeSectorBenchmarks(
       avgReturnOnEquity: avgReturnOnEquity != null ? String(avgReturnOnEquity) : null,
       avgDividendYield: avgDividendYield != null ? String(avgDividendYield) : null,
       avgProfitMargins: avgProfitMargins != null ? String(avgProfitMargins) : null,
+      // Quartis de P/L e P/VP: é deles que sai a FAIXA de entrada em reais, e não só a
+      // comparação "caro ou barato contra os pares". Mesmo scan, sem custo novo.
+      p25PriceEarnings: numeroOuNulo(percentile(list.map((f) => f.priceEarnings), 0.25)),
+      p75PriceEarnings: numeroOuNulo(percentile(list.map((f) => f.priceEarnings), 0.75)),
+      p25PriceToBook: numeroOuNulo(percentile(list.map((f) => f.priceToBook), 0.25)),
+      p75PriceToBook: numeroOuNulo(percentile(list.map((f) => f.priceToBook), 0.75)),
       sampleSize: list.length,
     });
   }
@@ -165,6 +193,13 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
           }, 0, undefined, now)
         : analyzeFundamentals(fundamentals, dps12m);
     if (!analysis.available || analysis.score < MIN_OPPORTUNITY_SCORE) return null;
+
+    // Uma oportunidade é uma sugestão de compra, então o portão de dado insuficiente
+    // vale aqui como vale na análise: sem base para afirmar, o ativo não entra na lista
+    // em vez de entrar com a nota que os poucos indicadores disponíveis produziram. O
+    // caso concreto é o FII avaliado só pelo yield — a renormalização levava um peso de
+    // 35% a 100% e o fundo saía com nota alta apoiada num número só.
+    if (analysis.confidence.level === "insuficiente") return null;
 
     // Elegibilidade de FII: liquidez de negociação e patrimônio, pisos medidos contra
     // o universo real (ver evalFiiEligibility). Score bom não basta — um FII com

@@ -9,6 +9,7 @@ import { describeDuPontBreakdown, DEFAULT_CONCENTRATION_LIMITS, type Concentrati
 import { describeFinancialHealth, type FinancialHealth } from "./financial-health-engine";
 import { describeFiiProfile, describeFiiInterestRateSensitivity, describeFiiCvmComposition, describeFiiPriceZones, type FiiPriceZones } from "./fii-engine";
 import { describeFiiPeers, type FiiPeer } from "./sector-benchmarks";
+import { describeStockPriceZones, type StockPriceZones } from "./stock-price-zones";
 import type { FiiProfile } from "./market-data";
 import type { FiiCvmData } from "./cvm-data";
 import { describeInvestorProfile, PROFILE_PROMPT_GUIDANCE, type InvestorProfileContext } from "./investor-profile-context";
@@ -20,6 +21,12 @@ export interface AssetRecommendationInput {
   score: number;
   scoreClassification: string;
   status: string;
+  /**
+   * Lacunas de dado que o motor encontrou. Vão para o prompt porque o status AGUARDAR
+   * sem o motivo faria a IA inventar um — e o motivo aqui é sempre um fato conferível
+   * ("3 de 8 indicadores"), exatamente o tipo de coisa que ela não deve produzir sozinha.
+   */
+  confidenceGaps: string[];
   positives: string[];
   risks: string[];
   newsItems: string[]; // já formatadas com "[Impacto] título" (formatHeadline)
@@ -37,6 +44,10 @@ export interface AssetRecommendationInput {
   fiiProfile: FiiProfile | null; // só pra FIIs — null pra qualquer outra categoria (ver getFiiProfiles)
   fiiCvmData: FiiCvmData | null; // composição real + taxa de administração real, via CVM (ver cvm-data.ts) — null pra qualquer outra categoria ou fundo fora do informe mais recente
   fiiPriceZones: FiiPriceZones | null; // zonas de preço em R$ derivadas das curvas reais de P/VP e yield (ver computeFiiPriceZones, fii-engine.ts) — null pra qualquer outra categoria ou sem P/VP real
+  /** O equivalente para AÇÃO: múltiplo do setor sobre lucro normalizado e sobre patrimônio (stock-price-zones.ts). Null para FII, que tem régua própria, e sem referência do setor. */
+  stockPriceZones: StockPriceZones | null;
+  /** Cotação atual, para as faixas de entrada aparecerem ao lado do preço. Null sem cotação. */
+  price: number | null;
   fiiPeers: FiiPeer[]; // pares reais nomeados do mesmo segmento (ver getFiiPeers, sector-benchmarks.ts) — array vazio pra qualquer outra categoria ou sem pares na última varredura
   sectorComparison: string;
   dividendValue: string; // já formatado pelo chamador via describeDividendValue (dividend-value-engine.ts) // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts) — precisa do Fundamentals bruto, que esse módulo não importa só por isso
@@ -56,7 +67,7 @@ const recommendationCache = new Map<string, { text: string; fetchedAt: number }>
 
 
 function buildPrompt(input: AssetRecommendationInput): string {
-  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, fiiPeers, sectorComparison, dividendValue, investorProfile } = input;
+  const { ticker, score, scoreClassification, status, confidenceGaps, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, stockPriceZones, price, fiiPeers, sectorComparison, dividendValue, investorProfile } = input;
 
   const taxLine = tax
     ? tax.exempt
@@ -85,6 +96,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
   const fiiRateSensitivityLine = describeFiiInterestRateSensitivity(fiiProfile?.segmentType ?? null, macro.selicTrend);
   const fiiCvmCompositionLine = describeFiiCvmComposition(fiiCvmData);
   const fiiPriceZonesLine = describeFiiPriceZones(fiiPriceZones);
+  const stockPriceZonesLine = price != null ? describeStockPriceZones(stockPriceZones, price) : "";
   const fiiPeersLine = describeFiiPeers(fiiPeers);
 
   return (
@@ -94,6 +106,14 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `Escreva em português do Brasil, de forma objetiva.\n\n` +
     `Ativo: ${ticker}\n` +
     `Score do Radar: ${score}/100 (${scoreClassification}), status: ${status}\n` +
+    (confidenceGaps.length > 0
+      ? `Lacunas no dado que sustenta esta análise: ${confidenceGaps.join("; ")}\n`
+        + (status === "AGUARDAR"
+          ? `ATENÇÃO: o status é AGUARDAR porque o dado é insuficiente, não porque o ativo é ruim. `
+            + `Explique a lacuna e diga que não há base para recomendar compra agora. NÃO conclua nada `
+            + `sobre a qualidade do ativo a partir do score, que está apoiado em dado incompleto.\n`
+          : "")
+      : "") +
     `Pontos positivos (fundamentos reais): ${positives.join("; ") || "nenhum"}\n` +
     `Pontos de atenção (fundamentos reais): ${risks.join("; ") || "nenhum"}\n` +
     `Notícias recentes classificadas: ${newsItems.join(" | ") || "nenhuma"}\n` +
@@ -110,6 +130,7 @@ function buildPrompt(input: AssetRecommendationInput): string {
     (fiiRateSensitivityLine ? `${fiiRateSensitivityLine}\n` : "") +
     (fiiCvmCompositionLine ? `${fiiCvmCompositionLine}\n` : "") +
     (fiiPriceZonesLine ? `${fiiPriceZonesLine}\n` : "") +
+    (stockPriceZonesLine ? `${stockPriceZonesLine}\n` : "") +
     (fiiPeersLine ? `${fiiPeersLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n` +
     `${dividendValue}\n\n` +

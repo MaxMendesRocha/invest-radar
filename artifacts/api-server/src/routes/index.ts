@@ -10,6 +10,7 @@ import transactionsRouter from "./transactions";
 import analysisRouter from "./analysis";
 import macroRouter from "./macro";
 import priceTargetsRouter from "./price-targets";
+import importRouter from "./import";
 import internalRouter from "./internal";
 
 const router: IRouter = Router();
@@ -25,6 +26,7 @@ router.use(transactionsRouter);
 router.use(analysisRouter);
 router.use(macroRouter);
 router.use(priceTargetsRouter);
+router.use(importRouter);
 router.use(internalRouter);
 
 export default router;

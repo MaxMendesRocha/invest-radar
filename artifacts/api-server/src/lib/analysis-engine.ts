@@ -1,8 +1,14 @@
 import type { DividendEvent, Fundamentals, FiiProfile } from "./market-data";
 import { classifyDividendFrequency, computeDistributionMomentum, sumLast12Months } from "./market-data";
 import { computeFinancialHealth, financialHealthSignals } from "./financial-health-engine";
+import { assessDataConfidence, CONFIANCA_PLENA, type DataConfidence, type PriceState } from "./data-confidence-engine";
 
-export type AnalysisStatus = "COMPRAR" | "MANTER" | "VENDER";
+/**
+ * `AGUARDAR` é o portão de dado insuficiente: o app não tem base para afirmar nada
+ * sobre o ativo agora. Não é um status intermediário entre MANTER e VENDER — é a recusa
+ * de opinar, e por isso vem antes de qualquer um dos outros. Ver resolveAnalysisStatus.
+ */
+export type AnalysisStatus = "COMPRAR" | "MANTER" | "VENDER" | "AGUARDAR";
 export type ScoreClassification = "Excelente" | "Forte" | "Estavel" | "Atencao" | "Critico";
 
 /**
@@ -21,6 +27,8 @@ export interface AnalysisResult {
   positives: string[];
   risks: string[];
   monitoringRecommendation: string;
+  /** Quanto do dado que sustenta esta nota realmente chegou. Ver data-confidence-engine. */
+  confidence: DataConfidence;
 }
 
 interface MetricEval {
@@ -332,8 +340,18 @@ export function resolveAnalysisStatus(
   score: number,
   positionPercent: number,
   limits: ConcentrationLimits = DEFAULT_CONCENTRATION_LIMITS,
+  confidence: DataConfidence = CONFIANCA_PLENA,
 ): AnalysisStatus {
-  if (score < SELL_SCORE_THRESHOLD || positionPercent > limits.critical) return "VENDER";
+  const overConcentrated = positionPercent > limits.critical;
+
+  // Dado insuficiente derruba o argumento sobre o ATIVO, e só ele. A concentração é
+  // aritmética sobre a carteira da própria pessoa — quantos por cento do patrimônio
+  // estão nesse papel não depende de provedor nenhum, então continua valendo mesmo
+  // quando o app não sabe mais nada sobre o ativo. Calar sobre uma posição de 60% do
+  // patrimônio porque a cotação envelheceu seria trocar um alerta real por silêncio.
+  if (confidence.level === "insuficiente") return overConcentrated ? "VENDER" : "AGUARDAR";
+
+  if (score < SELL_SCORE_THRESHOLD || overConcentrated) return "VENDER";
   if (score >= BUY_SCORE_THRESHOLD && positionPercent < limits.high) return "COMPRAR";
   return "MANTER";
 }
@@ -357,8 +375,12 @@ export function resolveStatusReason(
   score: number,
   positionPercent: number,
   limits: ConcentrationLimits = DEFAULT_CONCENTRATION_LIMITS,
+  confidence: DataConfidence = CONFIANCA_PLENA,
 ): StatusReason | null {
-  const weakFundamentals = score < SELL_SCORE_THRESHOLD;
+  // Com dado insuficiente a nota não sustenta a acusação de fundamento fraco — ela pode
+  // estar baixa só porque metade dos indicadores não veio. Sobra a concentração, que é
+  // medida na carteira e não depende de provedor.
+  const weakFundamentals = confidence.level !== "insuficiente" && score < SELL_SCORE_THRESHOLD;
   const overConcentrated = positionPercent > limits.critical;
   if (weakFundamentals && overConcentrated) return "fundamentos_e_concentracao";
   if (weakFundamentals) return "fundamentos";
@@ -409,15 +431,25 @@ function buildRecommendation(risks: string[]): string {
   return `Principal ponto de atenção: ${risks[0].toLowerCase()}. Acompanhar os próximos resultados trimestrais para confirmar se a tendência se mantém.`;
 }
 
+/**
+ * Sem dimensão nenhuma. O status era MANTER, que é uma afirmação — "fique como está" —
+ * feita justamente onde não há base para afirmar. AGUARDAR diz o que de fato acontece.
+ */
+const SEM_DADO: DataConfidence = assessDataConfidence({
+  dimensions: { available: 0, total: 0 },
+  price: { kind: "ao_vivo" },
+});
+
 const NO_FUNDAMENTALS_RESULT: AnalysisResult = {
   available: false,
   score: 0,
   scoreClassification: "Estavel",
-  status: "MANTER",
+  status: "AGUARDAR",
   statusReason: null,
   positives: [],
   risks: [],
   monitoringRecommendation: "Dados fundamentalistas não disponíveis para este ativo no momento.",
+  confidence: SEM_DADO,
 };
 
 // Renda fixa não é pontuada por fundamento — este score é um marcador neutro, não uma
@@ -434,6 +466,11 @@ const NOT_QUOTED_RESULT: AnalysisResult = {
   positives: [],
   risks: [],
   monitoringRecommendation: "Ativo de renda fixa ou fundo sem ticker de bolsa — fora do escopo da análise fundamentalista automatizada.",
+  // Confiança plena, e não "insuficiente": aqui não falta dado nenhum. A categoria está
+  // declarada fora do escopo da régua fundamentalista, que é diferente de o app ter
+  // tentado medir e não ter conseguido. Marcar como insuficiente jogaria todo Tesouro
+  // Direto para AGUARDAR, trocando uma informação correta por um alerta vazio.
+  confidence: CONFIANCA_PLENA,
 };
 
 // Fallback pra quando getFundamentals() não devolve dado real pra um ticker
@@ -443,11 +480,12 @@ const PENDING_RESULT: AnalysisResult = {
   available: false,
   score: 0,
   scoreClassification: "Estavel",
-  status: "MANTER",
+  status: "AGUARDAR",
   statusReason: null,
   positives: [],
   risks: [],
   monitoringRecommendation: "Não foi possível obter os fundamentos deste ativo agora — tente gerar a análise novamente em alguns minutos.",
+  confidence: SEM_DADO,
 };
 
 export function analysisForUnquotedAsset(): AnalysisResult {
@@ -520,7 +558,13 @@ export interface PurchaseScreening {
  */
 export function screenForPurchase(analysis: AnalysisResult): PurchaseScreening {
   return {
-    outcome: !analysis.available
+    // Confiança insuficiente cai em "sem_dados" e não em "não atende": as duas frases
+    // dizem coisas diferentes. "Não atende" é um veredito sobre o ativo — afirma que a
+    // régua foi aplicada e o ativo ficou abaixo do corte. Com dado insuficiente a régua
+    // não chegou a ser aplicada, e dizer "não atende" seria reprovar o ativo por uma
+    // falha do provedor. É o mesmo motivo de o portão existir do outro lado: aqui ele
+    // impede tanto o "compre" quanto o "não compre" apoiados em dado que não veio.
+    outcome: !analysis.available || analysis.confidence.level === "insuficiente"
       ? "sem_dados"
       : analysis.score >= BUY_SCORE_THRESHOLD
         ? "atende"
@@ -530,11 +574,15 @@ export function screenForPurchase(analysis: AnalysisResult): PurchaseScreening {
   };
 }
 
+/** Indicadores que a régua de ação tenta avaliar — o denominador da cobertura. */
+const TOTAL_INDICADORES_ACAO = 8;
+
 export function analyzeFundamentals(
   f: Fundamentals,
   dps12m: number | null = null,
   positionPercent = 0,
   limits: ConcentrationLimits = DEFAULT_CONCENTRATION_LIMITS,
+  price: PriceState = { kind: "ao_vivo" },
 ): AnalysisResult {
   const fundamentalMetrics = [
     evalPE(f.priceEarnings),
@@ -548,6 +596,11 @@ export function analyzeFundamentals(
   ].filter((m): m is MetricEval => m != null);
 
   if (fundamentalMetrics.length < MIN_FUNDAMENTAL_METRICS) return NO_FUNDAMENTALS_RESULT;
+
+  const confidence = assessDataConfidence({
+    dimensions: { available: fundamentalMetrics.length, total: TOTAL_INDICADORES_ACAO },
+    price,
+  });
 
   const fundamentosScore = fundamentalMetrics.reduce((sum, m) => sum + m.score, 0) / fundamentalMetrics.length;
 
@@ -587,11 +640,12 @@ export function analyzeFundamentals(
     available: true,
     score,
     scoreClassification: scoreClassification(score),
-    status: resolveAnalysisStatus(score, positionPercent, limits),
-    statusReason: resolveStatusReason(score, positionPercent, limits),
+    status: resolveAnalysisStatus(score, positionPercent, limits, confidence),
+    statusReason: resolveStatusReason(score, positionPercent, limits, confidence),
     positives,
     risks,
     monitoringRecommendation: buildRecommendation(risks),
+    confidence,
   };
 }
 
@@ -715,6 +769,9 @@ export interface FiiAnalysisInput {
  * dimensões próprias — ver o bloco de comentário acima sobre por que a régua de ação
  * não serve aqui.
  */
+/** Dimensões da régua de FII: yield, P/VP, regularidade e direção da distribuição. */
+const TOTAL_DIMENSOES_FII = 4;
+
 export function analyzeFii(
   input: FiiAnalysisInput,
   positionPercent = 0,
@@ -765,6 +822,16 @@ export function analyzeFii(
   // caso real dos 5 tickers do universo que o provider não reconhece como FII.
   if (components.length === 0) return NO_FUNDAMENTALS_RESULT;
 
+  // Com UMA dimensão a nota é essa dimensão: a renormalização abaixo transforma um peso
+  // de 35% em 100%, e o fundo sai com nota cheia apoiada só no yield. A régua de ação já
+  // se protegia disso com o mínimo de 3 indicadores; a de FII não tinha piso nenhum, e é
+  // essa a assimetria que o portão fecha.
+  const confidence = assessDataConfidence({
+    dimensions: { available: components.length, total: TOTAL_DIMENSOES_FII },
+    price: price == null ? { kind: "ausente" } : { kind: "ao_vivo" },
+    now: new Date(now),
+  });
+
   const totalWeight = components.reduce((sum, c) => sum + c.weight, 0);
   const score = Math.round(components.reduce((sum, c) => sum + c.score * c.weight, 0) / totalWeight);
 
@@ -791,11 +858,12 @@ export function analyzeFii(
     available: true,
     score,
     scoreClassification: scoreClassification(score),
-    status: resolveAnalysisStatus(score, positionPercent, limits),
-    statusReason: resolveStatusReason(score, positionPercent, limits),
+    status: resolveAnalysisStatus(score, positionPercent, limits, confidence),
+    statusReason: resolveStatusReason(score, positionPercent, limits, confidence),
     positives,
     risks,
     monitoringRecommendation: buildRecommendation(risks),
+    confidence,
   };
 }
 

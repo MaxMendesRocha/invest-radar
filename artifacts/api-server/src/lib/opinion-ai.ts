@@ -8,6 +8,7 @@ import { describeDuPontBreakdown, type DuPontBreakdown } from "./analysis-engine
 import { describeFinancialHealth, type FinancialHealth } from "./financial-health-engine";
 import { describeFiiProfile, describeFiiInterestRateSensitivity, describeFiiCvmComposition, describeFiiPriceZones, type FiiPriceZones } from "./fii-engine";
 import { describeFiiPeers, type FiiPeer } from "./sector-benchmarks";
+import { describeStockPriceZones, type StockPriceZones } from "./stock-price-zones";
 import type { FiiProfile } from "./market-data";
 import type { FiiCvmData } from "./cvm-data";
 import { describeInvestorProfile, PROFILE_PROMPT_GUIDANCE, type InvestorProfileContext } from "./investor-profile-context";
@@ -40,6 +41,8 @@ export interface PrePurchaseOpinionInput {
   fiiProfile: FiiProfile | null; // só pra FIIs — null pra qualquer outra categoria (ver getFiiProfiles)
   fiiCvmData: FiiCvmData | null; // composição real + taxa de administração real, via CVM (ver cvm-data.ts) — null pra qualquer outra categoria ou fundo fora do informe mais recente
   fiiPriceZones: FiiPriceZones | null; // zonas de preço em R$ derivadas das curvas reais de P/VP e yield (ver computeFiiPriceZones, fii-engine.ts) — null pra qualquer outra categoria ou sem P/VP real
+  /** O equivalente para AÇÃO: múltiplo do setor sobre lucro normalizado e sobre patrimônio (stock-price-zones.ts). Null para FII, que tem régua própria, e sem referência do setor. */
+  stockPriceZones: StockPriceZones | null;
   fiiPeers: FiiPeer[]; // pares reais nomeados do mesmo segmento (ver getFiiPeers, sector-benchmarks.ts) — array vazio pra qualquer outra categoria ou sem pares na última varredura
   sectorComparison: string;
   dividendValue: string; // já formatado pelo chamador via describeDividendValue (dividend-value-engine.ts) // já formatado pelo chamador via describeSectorComparison (sector-benchmarks.ts)
@@ -59,7 +62,7 @@ function getClient(): Anthropic | null {
 const opinionCache = new Map<string, { text: string; fetchedAt: number }>();
 
 function buildPrompt(input: PrePurchaseOpinionInput): string {
-  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, fiiPeers, sectorComparison, dividendValue, newsItems, macro, investorProfile } = input;
+  const { ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, stockPriceZones, fiiPeers, sectorComparison, dividendValue, newsItems, macro, investorProfile } = input;
 
   const fundamentalsLine = available
     ? `Score do Radar: ${score}/100 (${scoreClassification})\nPontos positivos (fundamentos reais): ${positives.join("; ") || "nenhum"}\nPontos de atenção (fundamentos reais): ${risks.join("; ") || "nenhum"}`
@@ -83,6 +86,7 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
   const fiiRateSensitivityLine = describeFiiInterestRateSensitivity(fiiProfile?.segmentType ?? null, macro.selicTrend);
   const fiiCvmCompositionLine = describeFiiCvmComposition(fiiCvmData);
   const fiiPriceZonesLine = describeFiiPriceZones(fiiPriceZones);
+  const stockPriceZonesLine = describeStockPriceZones(stockPriceZones, price);
   const fiiPeersLine = describeFiiPeers(fiiPeers);
 
   return (
@@ -103,6 +107,7 @@ function buildPrompt(input: PrePurchaseOpinionInput): string {
     (fiiRateSensitivityLine ? `${fiiRateSensitivityLine}\n` : "") +
     (fiiCvmCompositionLine ? `${fiiCvmCompositionLine}\n` : "") +
     (fiiPriceZonesLine ? `${fiiPriceZonesLine}\n` : "") +
+    (stockPriceZonesLine ? `${stockPriceZonesLine}\n` : "") +
     (fiiPeersLine ? `${fiiPeersLine}\n` : "") +
     `Comparação com pares do setor: ${sectorComparison}\n` +
     `${dividendValue}\n` +

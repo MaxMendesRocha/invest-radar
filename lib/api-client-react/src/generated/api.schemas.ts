@@ -1260,6 +1260,54 @@ export interface TrimSuggestion {
   taxEstimate?: null | TaxEstimate;
 }
 
+export type DataGapCode = typeof DataGapCode[keyof typeof DataGapCode];
+
+
+export const DataGapCode = {
+  sem_cotacao: 'sem_cotacao',
+  cotacao_datada: 'cotacao_datada',
+  cotacao_muito_datada: 'cotacao_muito_datada',
+  sem_dimensoes: 'sem_dimensoes',
+  dimensao_unica: 'dimensao_unica',
+  cobertura_parcial: 'cobertura_parcial',
+} as const;
+
+/**
+ * "bloqueia" leva o status a AGUARDAR e tira o ativo das Oportunidades; "limita" só acompanha a análise como ressalva.
+ */
+export type DataGapSeverity = typeof DataGapSeverity[keyof typeof DataGapSeverity];
+
+
+export const DataGapSeverity = {
+  bloqueia: 'bloqueia',
+  limita: 'limita',
+} as const;
+
+export interface DataGap {
+  code: DataGapCode;
+  /** "bloqueia" leva o status a AGUARDAR e tira o ativo das Oportunidades; "limita" só acompanha a análise como ressalva. */
+  severity: DataGapSeverity;
+  /** Frase pronta para a tela, sempre com o número medido e não só o rótulo. */
+  message: string;
+}
+
+export type DataConfidenceLevel = typeof DataConfidenceLevel[keyof typeof DataConfidenceLevel];
+
+
+export const DataConfidenceLevel = {
+  suficiente: 'suficiente',
+  parcial: 'parcial',
+  insuficiente: 'insuficiente',
+} as const;
+
+export interface DataConfidence {
+  level: DataConfidenceLevel;
+  gaps: DataGap[];
+}
+
+/**
+ * AGUARDAR é o portão de dado insuficiente: o app não tem base para afirmar nada sobre o ativo agora. Não é um estado intermediário entre MANTER e VENDER — é a recusa de opinar, e vem antes dos outros três. O motivo está em `confidence.gaps`. Um VENDER por concentração sobrevive ao portão, porque quanto do patrimônio está no papel é conta sobre a carteira do próprio usuário e não depende de provedor nenhum.
+ */
 export type AssetAnalysisStatus = typeof AssetAnalysisStatus[keyof typeof AssetAnalysisStatus];
 
 
@@ -1267,6 +1315,7 @@ export const AssetAnalysisStatus = {
   COMPRAR: 'COMPRAR',
   MANTER: 'MANTER',
   VENDER: 'VENDER',
+  AGUARDAR: 'AGUARDAR',
 } as const;
 
 /**
@@ -1312,6 +1361,7 @@ export interface AssetAnalysis {
   ticker: string;
   /** False when a full fundamentalist analysis isn't available yet (pending a data source) — score/status are placeholders and should not be shown. */
   available: boolean;
+  /** AGUARDAR é o portão de dado insuficiente: o app não tem base para afirmar nada sobre o ativo agora. Não é um estado intermediário entre MANTER e VENDER — é a recusa de opinar, e vem antes dos outros três. O motivo está em `confidence.gaps`. Um VENDER por concentração sobrevive ao portão, porque quanto do patrimônio está no papel é conta sobre a carteira do próprio usuário e não depende de provedor nenhum. */
   status: AssetAnalysisStatus;
   /**
      * Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: "fundamentos" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), "concentracao" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).
@@ -1330,6 +1380,7 @@ export interface AssetAnalysis {
   /** Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível. */
   taxEstimate?: null | TaxEstimate;
   technical: TechnicalIndicators | null;
+  confidence: DataConfidence;
   /**
      * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
      * @nullable
@@ -1868,6 +1919,118 @@ export interface StarterPortfolios {
   variableSplitBasis: StarterPortfoliosVariableSplitBasis;
   treasury: StarterPortfoliosTreasury;
   profiles: StarterPortfolio[];
+}
+
+export interface BrokerImportUpload {
+  /** Um ou mais PDFs, em qualquer ordem e sem rótulo. Até 12 arquivos de 8 MB cada. Campos separados por tipo de documento só criariam a chance de trocá-los de lugar — os arquivos se identificam sozinhos. */
+  files: Blob[];
+}
+
+export type BrokerTradeSide = typeof BrokerTradeSide[keyof typeof BrokerTradeSide];
+
+
+export const BrokerTradeSide = {
+  compra: 'compra',
+  venda: 'venda',
+} as const;
+
+/**
+ * Uma operação como a nota registra — sem ticker, porque a nota não tem.
+ */
+export interface BrokerTrade {
+  /** Chave de idempotência — reimportar o mesmo PDF não duplica. */
+  noteNumber: string;
+  /** Data do PREGÃO, não a de liquidação (D+2). */
+  tradeDate: string;
+  side: BrokerTradeSide;
+  /** VISTA, FRACIONARIO... O fracionário é o mesmo papel, só o lote muda. */
+  market: string;
+  /** Especificação do título como está no papel. Nunca um ticker inferido. */
+  specification: string;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+export type BrokerImportPositionStatus = typeof BrokerImportPositionStatus[keyof typeof BrokerImportPositionStatus];
+
+
+export const BrokerImportPositionStatus = {
+  casado: 'casado',
+  ambiguo: 'ambiguo',
+  sem_correspondencia: 'sem_correspondencia',
+} as const;
+
+/**
+ * Uma posição conciliada. `casado` significa que o nome bateu com uma única posição em custódia e o preço confirmou; `ambiguo` e `sem_correspondencia` são perguntas para quem confere, nunca linhas para gravar.
+ */
+export interface BrokerImportPosition {
+  /** Raiz da especificação, com a classe preservada — PETROBRAS ON e PETROBRAS PN são PETR3 e PETR4, e agrupá-las fundiria dois ativos numa posição só. */
+  specificationRoot: string;
+  specifications: string[];
+  /** @nullable */
+  ticker: string | null;
+  /**
+     * Derivada do ticker pela convenção da B3, nunca do rótulo em português do PDF. Null quando o sufixo 11 não separa FII, ETF e unit — aí a tela pergunta.
+     * @nullable
+     */
+  category: string | null;
+  status: BrokerImportPositionStatus;
+  /** Compras menos vendas. Negativo é saída, e nesse caso não haver posição em custódia é o esperado. */
+  netQuantity: number;
+  /** @nullable */
+  custodyQuantity: number | null;
+  /**
+     * Custódia menos líquido das notas. Positivo = a posição já existia antes da janela.
+     * @nullable
+     */
+  quantityBefore: number | null;
+  /** Por que o status é esse, em uma frase, para a tela repetir sem reinterpretar. */
+  reason: string;
+  /** Tickers em custódia que o nome não descartou — a lista que a tela oferece. */
+  candidates: string[];
+  trades: BrokerTrade[];
+}
+
+export type BrokerImportPreviewCustodyOnlyItem = {
+  ticker: string;
+  quantity: number;
+  description: string;
+};
+
+export type BrokerImportPreviewDocumentsItemKind = typeof BrokerImportPreviewDocumentsItemKind[keyof typeof BrokerImportPreviewDocumentsItemKind];
+
+
+export const BrokerImportPreviewDocumentsItemKind = {
+  nota_de_corretagem: 'nota_de_corretagem',
+  extrato_de_custodia: 'extrato_de_custodia',
+  desconhecido: 'desconhecido',
+} as const;
+
+export type BrokerImportPreviewDocumentsItem = {
+  fileName: string;
+  kind: BrokerImportPreviewDocumentsItemKind;
+  itemCount: number;
+};
+
+export interface BrokerImportPreview {
+  positions: BrokerImportPosition[];
+  /** Posições em custódia que nenhuma nota explica — compradas antes da janela. */
+  custodyOnly: BrokerImportPreviewCustodyOnlyItem[];
+  /**
+     * Data da foto do saldo. O extrato é um retrato, e a data dele importa.
+     * @nullable
+     */
+  custodyDate: string | null;
+  noteNumbers: string[];
+  /** Taxas e emolumentos somados. Zero é comum em corretora sem taxa. */
+  totalCosts: number;
+  /** O que foi reconhecido em cada arquivo enviado. */
+  documents: BrokerImportPreviewDocumentsItem[];
+  /** O que atrapalhou, em linguagem de quem está na tela. Lista vazia significa que todos os arquivos foram lidos. */
+  problems: string[];
+  /** Números de nota que já estão na carteira. O arquivo da corretora traz o período inteiro, então reenviar o que já entrou é o caminho normal. */
+  alreadyImported: string[];
 }
 
 export interface IncomeGoalInput {

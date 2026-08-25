@@ -29,8 +29,33 @@ function sqlStateOf(err: unknown, depth = 0): string | null {
   return sqlStateOf((err as { cause?: unknown }).cause, depth + 1);
 }
 
-/** 42P01 = undefined_table. Em produção significa uma coisa só: migração não aplicada. */
-const UNDEFINED_TABLE = "42P01";
+/**
+ * Em produção estes dois significam uma coisa só: migração não aplicada.
+ *
+ * 42703 (coluna inexistente) entrou junto com 42P01 (tabela inexistente) porque o modo
+ * de falha é o mesmo e a correção também. Nem toda migração cria tabela — várias só
+ * acrescentam coluna a uma que já existe, e nesse caso a tabela responde normalmente
+ * até o primeiro SELECT que cita a coluna nova.
+ */
+const MIGRACAO_PENDENTE = new Set(["42P01", "42703"]);
+
+/**
+ * Erro do multer ao receber o upload. Identificado por nome e código, sem importar o
+ * multer aqui — este middleware trata a requisição, não conhece as bibliotecas que a
+ * produziram, e é o mesmo critério de pato já usado para o corpo malformado acima.
+ */
+const LIMITES_DE_UPLOAD: Record<string, string> = {
+  LIMIT_FILE_SIZE: "Arquivo grande demais. Cada PDF precisa ter até 8 MB.",
+  LIMIT_FILE_COUNT: "Arquivos demais em um envio. Envie até 12 por vez.",
+  LIMIT_UNEXPECTED_FILE: "Campo de arquivo inesperado no envio.",
+};
+
+function uploadLimit(err: unknown): string | null {
+  if (!err || typeof err !== "object") return null;
+  const e = err as { name?: unknown; code?: unknown };
+  if (e.name !== "MulterError" || typeof e.code !== "string") return null;
+  return LIMITES_DE_UPLOAD[e.code] ?? "Não foi possível receber os arquivos enviados.";
+}
 
 /**
  * Erro do express.json() ao ler o corpo. Ele marca o próprio erro com `status`/
@@ -69,16 +94,26 @@ export const errorHandler: ErrorRequestHandler = (
     return;
   }
 
+  // Limite de upload estourado é escolha de quem enviou, e a resposta precisa dizer qual
+  // limite foi — "erro interno" num arquivo de 20 MB manda a pessoa tentar de novo
+  // exatamente do mesmo jeito. 413 é o status que o navegador e o cliente já entendem.
+  const limite = uploadLimit(err);
+  if (limite) {
+    logger.warn({ method: req.method, url: req.originalUrl.split("?")[0] }, "limite de upload excedido");
+    res.status(413).json({ error: limite });
+    return;
+  }
+
   const sqlState = sqlStateOf(err);
   logger.error({ err, sqlState, method: req.method, url: req.originalUrl.split("?")[0] }, "unhandled error");
 
-  if (sqlState === UNDEFINED_TABLE) {
+  if (sqlState && MIGRACAO_PENDENTE.has(sqlState)) {
     // 503 e não 500: o código está correto, o banco é que está atrás dele. Distinguir
     // importa porque a correção é um comando de migração, não um deploy.
     res.status(503).json({
       error:
-        "Este recurso depende de uma tabela que ainda não existe no banco deste ambiente. " +
-        "A migração do schema precisa ser aplicada.",
+        "Este recurso depende de uma tabela ou coluna que ainda não existe no banco deste " +
+        "ambiente. A migração do schema precisa ser aplicada.",
     });
     return;
   }

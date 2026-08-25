@@ -20,3 +20,4 @@ export * from "./dividend-dismissals";
 export * from "./fii-monthly-reports";
 export * from "./financial-facts";
 export * from "./asset-purchases";
+export * from "./company-tickers";

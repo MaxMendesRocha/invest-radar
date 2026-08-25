@@ -15,6 +15,22 @@ export const sectorBenchmarksTable = pgTable("sector_benchmarks", {
   avgReturnOnEquity: numeric("avg_return_on_equity", { precision: 10, scale: 6 }),
   avgDividendYield: numeric("avg_dividend_yield", { precision: 10, scale: 6 }),
   avgProfitMargins: numeric("avg_profit_margins", { precision: 10, scale: 6 }),
+  /**
+   * Primeiro e terceiro quartis de P/L e P/VP do setor.
+   *
+   * A mediana sozinha responde "caro ou barato contra os pares", que é uma pergunta de
+   * comparação. Faixa de entrada em reais é outra pergunta — precisa de DISPERSÃO, porque
+   * a faixa é justamente o intervalo entre "preço de pechincha para este setor" e "preço
+   * normal para este setor". Sem os quartis só dá para produzir um ponto, e ponto único
+   * afirma uma precisão que não existe.
+   *
+   * Nulos até a primeira varredura semanal depois do deploy: são subproduto do mesmo scan
+   * que já calcula a mediana, sem chamada nova a provedor nenhum.
+   */
+  p25PriceEarnings: numeric("p25_price_earnings", { precision: 10, scale: 4 }),
+  p75PriceEarnings: numeric("p75_price_earnings", { precision: 10, scale: 4 }),
+  p25PriceToBook: numeric("p25_price_to_book", { precision: 10, scale: 4 }),
+  p75PriceToBook: numeric("p75_price_to_book", { precision: 10, scale: 4 }),
   sampleSize: integer("sample_size").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

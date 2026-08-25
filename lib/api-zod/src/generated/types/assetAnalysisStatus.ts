@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * AGUARDAR é o portão de dado insuficiente: o app não tem base para afirmar nada sobre o ativo agora. Não é um estado intermediário entre MANTER e VENDER — é a recusa de opinar, e vem antes dos outros três. O motivo está em `confidence.gaps`. Um VENDER por concentração sobrevive ao portão, porque quanto do patrimônio está no papel é conta sobre a carteira do próprio usuário e não depende de provedor nenhum.
+ */
 export type AssetAnalysisStatus = typeof AssetAnalysisStatus[keyof typeof AssetAnalysisStatus];
 
 
@@ -13,4 +16,5 @@ export const AssetAnalysisStatus = {
   COMPRAR: 'COMPRAR',
   MANTER: 'MANTER',
   VENDER: 'VENDER',
+  AGUARDAR: 'AGUARDAR',
 } as const;

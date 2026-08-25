@@ -45,6 +45,19 @@ export const assetPurchasesTable = pgTable("asset_purchases", {
    * a interface diz isso em vez de fingir que houve uma operação registrada.
    */
   isInitialBalance: boolean("is_initial_balance").notNull().default(false),
+  /**
+   * Número da nota de corretagem, quando o lançamento veio da importação de PDF.
+   *
+   * É a chave de idempotência: reimportar o mesmo arquivo não pode duplicar a compra, e
+   * o arquivo do Nubank exporta o período inteiro — quem importa em agosto e de novo em
+   * setembro reenvia agosto junto. Sem isto a segunda importação dobraria a quantidade e
+   * envenenaria o preço médio, que é justamente o número que esta tabela existe para
+   * proteger.
+   *
+   * Nulo em lançamento digitado à mão e no saldo inicial: eles não têm nota, e inventar
+   * um identificador para poder ter unicidade transformaria "não sei" em "é diferente".
+   */
+  brokerNoteNumber: text("broker_note_number"),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

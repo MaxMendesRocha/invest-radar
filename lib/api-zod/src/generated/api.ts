@@ -854,6 +854,55 @@ export const GetStarterPortfoliosResponse = zod.object({
 
 
 /**
+ * Não grava nada. Recebe os PDFs, descobre sozinho qual documento é qual pelo cabeçalho e devolve o que entendeu para conferência humana. A separação entre ler e gravar é o recurso, não uma etapa dele: desfazer lançamento errado dentro da carteira é mais difícil do que não criá-lo.
+ * @summary Lê nota de corretagem e extrato de custódia em PDF e devolve a conciliação
+ */
+export const PreviewBrokerImportBody = zod.object({
+  "files": zod.array(zod.instanceof(File)).describe('Um ou mais PDFs, em qualquer ordem e sem rótulo. Até 12 arquivos de 8 MB cada. Campos separados por tipo de documento só criariam a chance de trocá-los de lugar — os arquivos se identificam sozinhos.')
+})
+
+export const PreviewBrokerImportResponse = zod.object({
+  "positions": zod.array(zod.object({
+  "specificationRoot": zod.string().describe('Raiz da especificação, com a classe preservada — PETROBRAS ON e PETROBRAS PN são PETR3 e PETR4, e agrupá-las fundiria dois ativos numa posição só.'),
+  "specifications": zod.array(zod.string()),
+  "ticker": zod.string().nullable(),
+  "category": zod.string().nullable().describe('Derivada do ticker pela convenção da B3, nunca do rótulo em português do PDF. Null quando o sufixo 11 não separa FII, ETF e unit — aí a tela pergunta.'),
+  "status": zod.enum(['casado', 'ambiguo', 'sem_correspondencia']),
+  "netQuantity": zod.number().describe('Compras menos vendas. Negativo é saída, e nesse caso não haver posição em custódia é o esperado.'),
+  "custodyQuantity": zod.number().nullable(),
+  "quantityBefore": zod.number().nullable().describe('Custódia menos líquido das notas. Positivo = a posição já existia antes da janela.'),
+  "reason": zod.string().describe('Por que o status é esse, em uma frase, para a tela repetir sem reinterpretar.'),
+  "candidates": zod.array(zod.string()).describe('Tickers em custódia que o nome não descartou — a lista que a tela oferece.'),
+  "trades": zod.array(zod.object({
+  "noteNumber": zod.string().describe('Chave de idempotência — reimportar o mesmo PDF não duplica.'),
+  "tradeDate": zod.coerce.date().describe('Data do PREGÃO, não a de liquidação (D+2).'),
+  "side": zod.enum(['compra', 'venda']),
+  "market": zod.string().describe('VISTA, FRACIONARIO... O fracionário é o mesmo papel, só o lote muda.'),
+  "specification": zod.string().describe('Especificação do título como está no papel. Nunca um ticker inferido.'),
+  "quantity": zod.number(),
+  "price": zod.number(),
+  "total": zod.number()
+}).describe('Uma operação como a nota registra — sem ticker, porque a nota não tem.'))
+}).describe('Uma posição conciliada. `casado` significa que o nome bateu com uma única posição em custódia e o preço confirmou; `ambiguo` e `sem_correspondencia` são perguntas para quem confere, nunca linhas para gravar.')),
+  "custodyOnly": zod.array(zod.object({
+  "ticker": zod.string(),
+  "quantity": zod.number(),
+  "description": zod.string()
+})).describe('Posições em custódia que nenhuma nota explica — compradas antes da janela.'),
+  "custodyDate": zod.coerce.date().nullable().describe('Data da foto do saldo. O extrato é um retrato, e a data dele importa.'),
+  "noteNumbers": zod.array(zod.string()),
+  "totalCosts": zod.number().describe('Taxas e emolumentos somados. Zero é comum em corretora sem taxa.'),
+  "documents": zod.array(zod.object({
+  "fileName": zod.string(),
+  "kind": zod.enum(['nota_de_corretagem', 'extrato_de_custodia', 'desconhecido']),
+  "itemCount": zod.number()
+})).describe('O que foi reconhecido em cada arquivo enviado.'),
+  "problems": zod.array(zod.string()).describe('O que atrapalhou, em linguagem de quem está na tela. Lista vazia significa que todos os arquivos foram lidos.'),
+  "alreadyImported": zod.array(zod.string()).describe('Números de nota que já estão na carteira. O arquivo da corretora traz o período inteiro, então reenviar o que já entrou é o caminho normal.')
+})
+
+
+/**
  * @summary Meta de renda passiva e progresso rumo a ela
  */
 export const GetIncomeGoalResponse = zod.object({
@@ -1229,7 +1278,7 @@ export const DeleteTransactionResponse = zod.void()
 export const ListAssetAnalysesResponseItem = zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
-  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
+  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER', 'AGUARDAR']).describe('AGUARDAR é o portão de dado insuficiente: o app não tem base para afirmar nada sobre o ativo agora. Não é um estado intermediário entre MANTER e VENDER — é a recusa de opinar, e vem antes dos outros três. O motivo está em `confidence.gaps`. Um VENDER por concentração sobrevive ao portão, porque quanto do patrimônio está no papel é conta sobre a carteira do próprio usuário e não depende de provedor nenhum.'),
   "statusReason": zod.union([zod.literal('fundamentos'),zod.literal('concentracao'),zod.literal('fundamentos_e_concentracao'),zod.literal(null)]).nullish().describe('Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: \"fundamentos\" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), \"concentracao\" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).'),
   "trimSuggestion": zod.union([zod.null(),zod.object({
   "value": zod.number().describe('Valor a reduzir, em reais.'),
@@ -1281,6 +1330,14 @@ export const ListAssetAnalysesResponseItem = zod.object({
 }).nullable(),
   "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
 }).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
+  "confidence": zod.object({
+  "level": zod.enum(['suficiente', 'parcial', 'insuficiente']),
+  "gaps": zod.array(zod.object({
+  "code": zod.enum(['sem_cotacao', 'cotacao_datada', 'cotacao_muito_datada', 'sem_dimensoes', 'dimensao_unica', 'cobertura_parcial']),
+  "severity": zod.enum(['bloqueia', 'limita']).describe('\"bloqueia\" leva o status a AGUARDAR e tira o ativo das Oportunidades; \"limita\" só acompanha a análise como ressalva.'),
+  "message": zod.string().describe('Frase pronta para a tela, sempre com o número medido e não só o rótulo.')
+}))
+}),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "updatedAt": zod.coerce.date()
 })
@@ -1297,7 +1354,7 @@ export const GetAssetAnalysisParams = zod.object({
 export const GetAssetAnalysisResponse = zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
-  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
+  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER', 'AGUARDAR']).describe('AGUARDAR é o portão de dado insuficiente: o app não tem base para afirmar nada sobre o ativo agora. Não é um estado intermediário entre MANTER e VENDER — é a recusa de opinar, e vem antes dos outros três. O motivo está em `confidence.gaps`. Um VENDER por concentração sobrevive ao portão, porque quanto do patrimônio está no papel é conta sobre a carteira do próprio usuário e não depende de provedor nenhum.'),
   "statusReason": zod.union([zod.literal('fundamentos'),zod.literal('concentracao'),zod.literal('fundamentos_e_concentracao'),zod.literal(null)]).nullish().describe('Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: \"fundamentos\" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), \"concentracao\" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).'),
   "trimSuggestion": zod.union([zod.null(),zod.object({
   "value": zod.number().describe('Valor a reduzir, em reais.'),
@@ -1349,6 +1406,14 @@ export const GetAssetAnalysisResponse = zod.object({
 }).nullable(),
   "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
 }).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
+  "confidence": zod.object({
+  "level": zod.enum(['suficiente', 'parcial', 'insuficiente']),
+  "gaps": zod.array(zod.object({
+  "code": zod.enum(['sem_cotacao', 'cotacao_datada', 'cotacao_muito_datada', 'sem_dimensoes', 'dimensao_unica', 'cobertura_parcial']),
+  "severity": zod.enum(['bloqueia', 'limita']).describe('\"bloqueia\" leva o status a AGUARDAR e tira o ativo das Oportunidades; \"limita\" só acompanha a análise como ressalva.'),
+  "message": zod.string().describe('Frase pronta para a tela, sempre com o número medido e não só o rótulo.')
+}))
+}),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "updatedAt": zod.coerce.date()
 })
@@ -1450,7 +1515,7 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "analyses": zod.array(zod.object({
   "ticker": zod.string(),
   "available": zod.boolean().describe('False when a full fundamentalist analysis isn\'t available yet (pending a data source) — score\/status are placeholders and should not be shown.'),
-  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER']),
+  "status": zod.enum(['COMPRAR', 'MANTER', 'VENDER', 'AGUARDAR']).describe('AGUARDAR é o portão de dado insuficiente: o app não tem base para afirmar nada sobre o ativo agora. Não é um estado intermediário entre MANTER e VENDER — é a recusa de opinar, e vem antes dos outros três. O motivo está em `confidence.gaps`. Um VENDER por concentração sobrevive ao portão, porque quanto do patrimônio está no papel é conta sobre a carteira do próprio usuário e não depende de provedor nenhum.'),
   "statusReason": zod.union([zod.literal('fundamentos'),zod.literal('concentracao'),zod.literal('fundamentos_e_concentracao'),zod.literal(null)]).nullish().describe('Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: \"fundamentos\" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), \"concentracao\" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).'),
   "trimSuggestion": zod.union([zod.null(),zod.object({
   "value": zod.number().describe('Valor a reduzir, em reais.'),
@@ -1502,6 +1567,14 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
 }).nullable(),
   "crossSignal": zod.union([zod.literal('golden_cross_recente'),zod.literal('death_cross_recente'),zod.literal('acima_sma200'),zod.literal('abaixo_sma200'),zod.literal(null)]).nullable()
 }).describe('Indicadores técnicos determinísticos calculados sobre 1 ano de candles diários reais (technical-engine.ts) — cada campo é null quando não há histórico suficiente pra calculá-lo, nunca um valor estimado.'),zod.null()]),
+  "confidence": zod.object({
+  "level": zod.enum(['suficiente', 'parcial', 'insuficiente']),
+  "gaps": zod.array(zod.object({
+  "code": zod.enum(['sem_cotacao', 'cotacao_datada', 'cotacao_muito_datada', 'sem_dimensoes', 'dimensao_unica', 'cobertura_parcial']),
+  "severity": zod.enum(['bloqueia', 'limita']).describe('\"bloqueia\" leva o status a AGUARDAR e tira o ativo das Oportunidades; \"limita\" só acompanha a análise como ressalva.'),
+  "message": zod.string().describe('Frase pronta para a tela, sempre com o número medido e não só o rótulo.')
+}))
+}),
   "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
   "updatedAt": zod.coerce.date()
 })),
