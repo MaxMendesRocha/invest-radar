@@ -65,6 +65,7 @@ export default function Importar() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const [arquivos, setArquivos] = useState<File[]>([]);
   const [preview, setPreview] = useState<BrokerImportPreview | null>(null);
   const [escolhas, setEscolhas] = useState<Record<string, Escolha>>({});
   const [resultado, setResultado] = useState<BrokerImportResult | null>(null);
@@ -101,9 +102,36 @@ export default function Importar() {
     },
   });
 
-  function enviarArquivos(files: FileList | null) {
+  /**
+   * Os arquivos se ACUMULAM entre seleções, e é isso que faz a tela funcionar no celular.
+   *
+   * A versão anterior mandava `e.target.files` direto, e o seletor de arquivos do Android
+   * costuma deixar escolher um por vez — então a segunda escolha SUBSTITUÍA a primeira, e
+   * chegava ao servidor só o último PDF. O sintoma era enganoso: a nota era lida, cinco
+   * notas apareciam na tela, e o aviso dizia que faltava o extrato mesmo com o extrato
+   * tendo sido escolhido. `multiple` no input não resolve; ele depende de o seletor do
+   * aparelho permitir marcar vários, e muitos não permitem.
+   *
+   * A deduplicação é por nome + tamanho + data: escolher o mesmo arquivo duas vezes é
+   * comum quando não se tem certeza se a primeira escolha pegou.
+   */
+  function adicionarArquivos(files: FileList | null) {
     if (!files || files.length === 0) return;
-    previewMutation.mutate({ data: { files: Array.from(files) } });
+    // `Array.from` AGORA, e não dentro do atualizador de estado. `FileList` é uma view viva
+    // do input: limpar `input.value` (o que o onChange faz logo em seguida, para permitir
+    // reescolher o mesmo arquivo) esvazia a lista, e o atualizador — que roda depois —
+    // encontraria zero arquivo. Foi assim que a primeira versão desta correção falhou.
+    const novos = Array.from(files);
+    setArquivos((atuais) => {
+      const chave = (f: File) => `${f.name}|${f.size}|${f.lastModified}`;
+      const vistos = new Set(atuais.map(chave));
+      return [...atuais, ...novos.filter((f) => !vistos.has(chave(f)))];
+    });
+  }
+
+  function lerArquivos(lista = arquivos) {
+    if (lista.length === 0) return;
+    previewMutation.mutate({ data: { files: lista } });
   }
 
   function confirmar() {
@@ -148,10 +176,16 @@ export default function Importar() {
       </div>
 
       {!preview && !resultado && (
-        <EnvioDeArquivos onFiles={enviarArquivos} carregando={previewMutation.isPending} />
+        <EnvioDeArquivos
+          arquivos={arquivos}
+          onAdicionar={adicionarArquivos}
+          onRemover={(i) => setArquivos((a) => a.filter((_, j) => j !== i))}
+          onLer={() => lerArquivos()}
+          carregando={previewMutation.isPending}
+        />
       )}
 
-      {resultado && <Resultado resultado={resultado} onNovaImportacao={() => setResultado(null)} />}
+      {resultado && <Resultado resultado={resultado} onNovaImportacao={() => { setResultado(null); setArquivos([]); }} />}
 
       {preview && (
         <>
@@ -163,6 +197,32 @@ export default function Importar() {
                 <ul className="list-disc pl-4 space-y-1 mt-1">
                   {preview.problems.map((p) => <li key={p}>{p}</li>)}
                 </ul>
+                {/*
+                  Descobrir que faltou o extrato NA conferência é o caso comum, porque é
+                  aqui que a falta fica visível. Mandar recomeçar perderia os arquivos já
+                  escolhidos — o que resolve é acrescentar e reler no mesmo lugar.
+                */}
+                {preview.custodyDate == null && (
+                  <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm font-medium hover:bg-muted/50">
+                    <FileUp className="h-4 w-4" />
+                    {previewMutation.isPending ? "Lendo…" : "Adicionar o extrato de custódia e reler"}
+                    <input
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      multiple
+                      className="sr-only"
+                      disabled={previewMutation.isPending}
+                      onChange={(e) => {
+                        const novos = Array.from(e.target.files ?? []);
+                        e.target.value = "";
+                        if (novos.length === 0) return;
+                        const juntos = [...arquivos, ...novos];
+                        setArquivos(juntos);
+                        lerArquivos(juntos);
+                      }}
+                    />
+                  </label>
+                )}
               </AlertDescription>
             </Alert>
           )}
@@ -216,7 +276,7 @@ export default function Importar() {
               {commitMutation.isPending ? "Gravando…" : `Importar ${marcadas} posição(ões)`}
             </Button>
             <Button variant="ghost" onClick={() => setPreview(null)} disabled={commitMutation.isPending}>
-              Cancelar
+              Voltar aos arquivos
             </Button>
           </div>
         </>
@@ -474,20 +534,35 @@ function Resultado({ resultado, onNovaImportacao }: { resultado: BrokerImportRes
   );
 }
 
-function EnvioDeArquivos({ onFiles, carregando }: { onFiles: (f: FileList | null) => void; carregando: boolean }) {
+function EnvioDeArquivos({
+  arquivos,
+  onAdicionar,
+  onRemover,
+  onLer,
+  carregando,
+}: {
+  arquivos: File[];
+  onAdicionar: (f: FileList | null) => void;
+  onRemover: (i: number) => void;
+  onLer: () => void;
+  carregando: boolean;
+}) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Envie os dois documentos</CardTitle>
         <CardDescription>
-          Pode mandar os dois de uma vez, em qualquer ordem — o app identifica cada um pelo
-          cabeçalho. Até 12 arquivos de 8 MB.
+          Escolha os dois — se o seu celular só deixar pegar um por vez, escolha de novo e o
+          segundo se soma ao primeiro. A ordem não importa: o app identifica cada um pelo
+          cabeçalho.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed p-8 text-center hover:bg-muted/50">
           <FileUp className="h-8 w-8 text-muted-foreground" />
-          <span className="font-medium">{carregando ? "Lendo os PDFs…" : "Escolher arquivos PDF"}</span>
+          <span className="font-medium">
+            {arquivos.length === 0 ? "Escolher arquivos PDF" : "Adicionar mais um arquivo"}
+          </span>
           <span className="text-sm text-muted-foreground">Nota de corretagem e extrato de custódia</span>
           <input
             type="file"
@@ -495,9 +570,37 @@ function EnvioDeArquivos({ onFiles, carregando }: { onFiles: (f: FileList | null
             multiple
             className="sr-only"
             disabled={carregando}
-            onChange={(e) => onFiles(e.target.files)}
+            // Zera o valor para que escolher O MESMO arquivo de novo ainda dispare o
+            // evento — sem isto, quem removeu um por engano não conseguiria repô-lo.
+            onChange={(e) => { onAdicionar(e.target.files); e.target.value = ""; }}
           />
         </label>
+
+        {arquivos.length > 0 && (
+          <div className="space-y-2">
+            {arquivos.map((f, i) => (
+              <div key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                <FileUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {Math.round(f.size / 1024)} KB
+                </span>
+                <Button variant="ghost" size="sm" onClick={() => onRemover(i)} disabled={carregando}>
+                  Remover
+                </Button>
+              </div>
+            ))}
+            <Button onClick={onLer} disabled={carregando} className="w-full sm:w-auto">
+              {carregando ? "Lendo os PDFs…" : `Ler ${arquivos.length} arquivo(s)`}
+            </Button>
+            {arquivos.length === 1 && (
+              <p className="text-sm font-medium text-amber-700 dark:text-amber-500">
+                Só um arquivo escolhido. Sozinha, a nota não diz o ticker e o extrato não diz o
+                preço — adicione o outro antes de ler.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="text-sm text-muted-foreground space-y-2">
           <p>
