@@ -20,6 +20,12 @@ export interface AssetRecommendationInput {
   score: number;
   scoreClassification: string;
   status: string;
+  /**
+   * Lacunas de dado que o motor encontrou. Vão para o prompt porque o status AGUARDAR
+   * sem o motivo faria a IA inventar um — e o motivo aqui é sempre um fato conferível
+   * ("3 de 8 indicadores"), exatamente o tipo de coisa que ela não deve produzir sozinha.
+   */
+  confidenceGaps: string[];
   positives: string[];
   risks: string[];
   newsItems: string[]; // já formatadas com "[Impacto] título" (formatHeadline)
@@ -56,7 +62,7 @@ const recommendationCache = new Map<string, { text: string; fetchedAt: number }>
 
 
 function buildPrompt(input: AssetRecommendationInput): string {
-  const { ticker, score, scoreClassification, status, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, fiiPeers, sectorComparison, dividendValue, investorProfile } = input;
+  const { ticker, score, scoreClassification, status, confidenceGaps, positives, risks, newsItems, macro, tax, positionPercent, concentrationLimits, dividendTrend, technical, riskAdjusted, duPont, financialHealth, sector, fiiProfile, fiiCvmData, fiiPriceZones, fiiPeers, sectorComparison, dividendValue, investorProfile } = input;
 
   const taxLine = tax
     ? tax.exempt
@@ -94,6 +100,14 @@ function buildPrompt(input: AssetRecommendationInput): string {
     `Escreva em português do Brasil, de forma objetiva.\n\n` +
     `Ativo: ${ticker}\n` +
     `Score do Radar: ${score}/100 (${scoreClassification}), status: ${status}\n` +
+    (confidenceGaps.length > 0
+      ? `Lacunas no dado que sustenta esta análise: ${confidenceGaps.join("; ")}\n`
+        + (status === "AGUARDAR"
+          ? `ATENÇÃO: o status é AGUARDAR porque o dado é insuficiente, não porque o ativo é ruim. `
+            + `Explique a lacuna e diga que não há base para recomendar compra agora. NÃO conclua nada `
+            + `sobre a qualidade do ativo a partir do score, que está apoiado em dado incompleto.\n`
+          : "")
+      : "") +
     `Pontos positivos (fundamentos reais): ${positives.join("; ") || "nenhum"}\n` +
     `Pontos de atenção (fundamentos reais): ${risks.join("; ") || "nenhum"}\n` +
     `Notícias recentes classificadas: ${newsItems.join(" | ") || "nenhuma"}\n` +

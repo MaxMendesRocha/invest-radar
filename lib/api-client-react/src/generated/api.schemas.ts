@@ -1260,6 +1260,54 @@ export interface TrimSuggestion {
   taxEstimate?: null | TaxEstimate;
 }
 
+export type DataGapCode = typeof DataGapCode[keyof typeof DataGapCode];
+
+
+export const DataGapCode = {
+  sem_cotacao: 'sem_cotacao',
+  cotacao_datada: 'cotacao_datada',
+  cotacao_muito_datada: 'cotacao_muito_datada',
+  sem_dimensoes: 'sem_dimensoes',
+  dimensao_unica: 'dimensao_unica',
+  cobertura_parcial: 'cobertura_parcial',
+} as const;
+
+/**
+ * "bloqueia" leva o status a AGUARDAR e tira o ativo das Oportunidades; "limita" só acompanha a análise como ressalva.
+ */
+export type DataGapSeverity = typeof DataGapSeverity[keyof typeof DataGapSeverity];
+
+
+export const DataGapSeverity = {
+  bloqueia: 'bloqueia',
+  limita: 'limita',
+} as const;
+
+export interface DataGap {
+  code: DataGapCode;
+  /** "bloqueia" leva o status a AGUARDAR e tira o ativo das Oportunidades; "limita" só acompanha a análise como ressalva. */
+  severity: DataGapSeverity;
+  /** Frase pronta para a tela, sempre com o número medido e não só o rótulo. */
+  message: string;
+}
+
+export type DataConfidenceLevel = typeof DataConfidenceLevel[keyof typeof DataConfidenceLevel];
+
+
+export const DataConfidenceLevel = {
+  suficiente: 'suficiente',
+  parcial: 'parcial',
+  insuficiente: 'insuficiente',
+} as const;
+
+export interface DataConfidence {
+  level: DataConfidenceLevel;
+  gaps: DataGap[];
+}
+
+/**
+ * AGUARDAR é o portão de dado insuficiente: o app não tem base para afirmar nada sobre o ativo agora. Não é um estado intermediário entre MANTER e VENDER — é a recusa de opinar, e vem antes dos outros três. O motivo está em `confidence.gaps`. Um VENDER por concentração sobrevive ao portão, porque quanto do patrimônio está no papel é conta sobre a carteira do próprio usuário e não depende de provedor nenhum.
+ */
 export type AssetAnalysisStatus = typeof AssetAnalysisStatus[keyof typeof AssetAnalysisStatus];
 
 
@@ -1267,6 +1315,7 @@ export const AssetAnalysisStatus = {
   COMPRAR: 'COMPRAR',
   MANTER: 'MANTER',
   VENDER: 'VENDER',
+  AGUARDAR: 'AGUARDAR',
 } as const;
 
 /**
@@ -1312,6 +1361,7 @@ export interface AssetAnalysis {
   ticker: string;
   /** False when a full fundamentalist analysis isn't available yet (pending a data source) — score/status are placeholders and should not be shown. */
   available: boolean;
+  /** AGUARDAR é o portão de dado insuficiente: o app não tem base para afirmar nada sobre o ativo agora. Não é um estado intermediário entre MANTER e VENDER — é a recusa de opinar, e vem antes dos outros três. O motivo está em `confidence.gaps`. Um VENDER por concentração sobrevive ao portão, porque quanto do patrimônio está no papel é conta sobre a carteira do próprio usuário e não depende de provedor nenhum. */
   status: AssetAnalysisStatus;
   /**
      * Por que o status é VENDER — null nos demais. As duas causas pedem ações opostas: "fundamentos" é sobre o ativo (a tese piorou, e não há quantidade calculável a vender), "concentracao" é sobre o tamanho da posição (o ativo pode ser ótimo, e a resposta é reduzir até a faixa saudável).
@@ -1330,6 +1380,7 @@ export interface AssetAnalysis {
   /** Estimativa ISOLADA de IR sobre ganho de capital se o ativo fosse vendido agora (assume ser a única venda de renda variável do mês) — null pra renda_fixa/fundos ou quando o preço atual não está disponível. */
   taxEstimate?: null | TaxEstimate;
   technical: TechnicalIndicators | null;
+  confidence: DataConfidence;
   /**
      * Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
      * @nullable

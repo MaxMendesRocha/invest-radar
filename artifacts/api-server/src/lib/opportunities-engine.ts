@@ -166,6 +166,13 @@ export async function regenerateOpportunities(): Promise<{ summary: string }> {
         : analyzeFundamentals(fundamentals, dps12m);
     if (!analysis.available || analysis.score < MIN_OPPORTUNITY_SCORE) return null;
 
+    // Uma oportunidade é uma sugestão de compra, então o portão de dado insuficiente
+    // vale aqui como vale na análise: sem base para afirmar, o ativo não entra na lista
+    // em vez de entrar com a nota que os poucos indicadores disponíveis produziram. O
+    // caso concreto é o FII avaliado só pelo yield — a renormalização levava um peso de
+    // 35% a 100% e o fundo saía com nota alta apoiada num número só.
+    if (analysis.confidence.level === "insuficiente") return null;
+
     // Elegibilidade de FII: liquidez de negociação e patrimônio, pisos medidos contra
     // o universo real (ver evalFiiEligibility). Score bom não basta — um FII com
     // fundamentos excelentes mas negociado a menos de R$700 mil/dia é uma sugestão

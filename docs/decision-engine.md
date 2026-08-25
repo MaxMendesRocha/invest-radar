@@ -220,21 +220,105 @@ vale, e está em `source_url`. As camadas, não nesta escala.
 
 ---
 
+## O portão de dado insuficiente
+
+O app produzia uma nota com exatamente a mesma cara de confiança tendo visto três
+indicadores ou oito, e a partir dela dizia "Comprar". `AGUARDAR` é a recusa de opinar, e
+vem **antes** dos outros três status — não é um estado entre MANTER e VENDER.
+
+### Lacuna nomeada, e não `DataConfidence = 0–100`
+
+A especificação pede uma nota de 0 a 100 somando cinco componentes ponderados (30%
+freshness, 25% completeness, …). Cada um desses pesos seria arbitrado, e este projeto já
+pagou essa conta uma vez. O que se entrega no lugar é uma **lista de lacunas
+verificáveis**, cada uma com severidade que decide sozinha:
+
+| Lacuna | Severidade | Limiar, e de onde ele vem |
+|---|---|---|
+| `sem_cotacao` | bloqueia | não há preço nenhum; a posição está sendo avaliada pelo preço médio de compra |
+| `cotacao_muito_datada` | bloqueia | > 7 dias. O maior fechamento contínuo da B3 é o carnaval (sexta → quarta, 5 dias corridos); acima de uma semana não há explicação de calendário |
+| `cotacao_datada` | limita | ≤ 7 dias — a chamada ao vivo falhou e o app caiu no último preço guardado |
+| `sem_dimensoes` | bloqueia | nenhum indicador |
+| `dimensao_unica` | bloqueia | a nota **é** esse indicador; mesmo argumento que já justificava o mínimo de 3 para ação |
+| `cobertura_parcial` | limita | menos de metade da régua. As 81 ações do universo têm 6,9 indicadores em média, então o corte atinge a exceção |
+
+As três faixas da especificação sobrevivem (`suficiente` / `parcial` / `insuficiente`),
+decididas pela pior lacuna presente — regra transparente em vez de soma ponderada.
+
+### A assimetria que a medição revelou
+
+A régua de ação exigia 3 indicadores. **A de FII não tinha piso nenhum:** bastava uma das
+quatro dimensões, e a renormalização transformava um peso de 35% (yield) em 100%. O fundo
+saía com nota cheia apoiada num número só. `dimensao_unica` fecha isso.
+
+### O que o portão NÃO cala
+
+`VENDER` por concentração sobrevive. Quanto do patrimônio está num papel é aritmética
+sobre a carteira da própria pessoa — não depende de provedor nenhum. Calar sobre uma
+posição de 60% porque a cotação envelheceu seria trocar um alerta real por silêncio. Já o
+`statusReason` de fundamento fraco some: a nota pode estar baixa só porque metade dos
+indicadores não veio.
+
+Na triagem pré-compra o resultado vira `sem_dados`, e não `nao_atende` — "não atende"
+afirma que a régua foi aplicada e o ativo ficou abaixo do corte, e com dado insuficiente a
+régua não chegou a ser aplicada.
+
+### Duas ideias derrubadas por medição
+
+**Faixa de plausibilidade do valor.** A intenção era marcar indicador absurdo — o P/L
+149.050 que a brapi devolve para TSMC34 é corrupção da razão de conversão do BDR, e o
+`interpolate` satura, então o clamp decide a nota e não o dado (TSMC34 → 22 "Crítico",
+LILY34 com P/L 2,6 → 92 "Excelente"). Medi a faixa real com as demonstrações da CVM antes
+de definir limiar, sobre 505 companhias:
+
+| | p01 | mediana | p99 | máximo |
+|---|---|---|---|---|
+| ROE | −229% | **9,5%** | 243% | **1877** |
+| Margem líquida | −454% | 5,6% | 156% | 13,8 |
+
+Companhia com patrimônio pequeno e lucro normal produz ROE que parece absurdo e é
+verdadeiro. Qualquer faixa que pegasse o BDR corrompido reprovaria empresa real — e o caso
+do BDR já é barrado pelo mínimo de indicadores. A ideia saiu.
+
+(De passagem: a curva de `evalROE` termina em 25%, e o p99 do universo real é 243%. Isso é
+calibração de score, não de confiança, e fica registrado aqui sem ser mexido — mexer exige
+medir o efeito sobre o universo inteiro.)
+
+**Cruzamento brapi × CVM (§172).** Era o sinal mais valioso que faltava. Duas descobertas
+o adiaram:
+
+1. **Cruzar razões não funciona.** Comparei o mesmo ROE visto pelo anual e pelos quatro
+   trimestres mais recentes — duas visões *legítimas*, ambas da CVM. Divergência mediana
+   de **32%**, p90 de 237%, e 13% das empresas acima de 2×. Qualquer limiar apertado
+   marcaria ruído. Cruzar **níveis** (`netIncome` contra `lucro_liquido`) é o caminho
+   certo, porque é o mesmo número com a mesma definição.
+2. **Falta a ponte ticker → CNPJ.** `financial_facts` é chaveada por CNPJ; o app só
+   conhece o CNPJ de **FII**, que vem do endpoint de fundos da brapi. Para ação não há
+   mapa, e o cadastro da CVM (`cad_cia_aberta.csv`) **não publica ticker**.
+
+Ou seja: os 187.982 fatos ingeridos ainda **não alcançam nenhum ativo de ação do usuário**.
+Isso bloqueia o cruzamento, o valor justo por múltiplo e as regras de deterioração — os
+três itens seguintes desta lista. Construir esse mapa passou a ser o pré-requisito de
+tudo, e as fontes candidatas são a lista de empresas listadas da B3 ou o casamento por
+nome entre `DENOM_SOCIAL` da CVM e o `longName` da brapi.
+
+---
+
 ## Ordem sugerida
 
 1. ~~`financial_facts` a partir do DFP da CVM~~ — **feito**.
 2. ~~**ITR (trimestral)**, mesma tabela~~ — **feito**, com uma coluna a mais na chave
    (`period_kind`) porque o trimestral publica o mesmo `period_end` duas vezes.
-3. **`DataConfidenceScore` + portão de AGUARDAR** (§5, §29.1). O app já sabe `priceAsOf`,
-   `pricesStale`, quais fundamentos vieram nulos e o `sampleSize` de cada setor — falta
-   virar um número explícito. E agora tem um insumo novo: **cross-validation brapi × CVM**
-   (§172), porque dois lucros líquidos discordando é sinal real de confiança baixa.
-4. **Percentis P10/P50/P90 por setor** (§7, §142). A varredura semanal já busca os
+3. ~~**Confiança no dado + portão de AGUARDAR**~~ — **feito**, com duas mudanças de
+   desenho decididas por medição. Ver a seção própria abaixo.
+4. **Ponte ticker → CNPJ** — pré-requisito descoberto no item 3, e que bloqueia os itens
+   6 e 7. Sem ele a série da CVM não alcança nenhuma ação da carteira.
+5. **Percentis P10/P50/P90 por setor** (§7, §142). A varredura semanal já busca os
    fundamentos do universo inteiro e calcula a mediana; guardar os percentis custa uma
    coluna.
-5. **Valor justo por múltiplo normalizado → faixas de entrada para ações** (§45–48), com
+6. **Valor justo por múltiplo normalizado → faixas de entrada para ações** (§45–48), com
    Bear/Base/Bull saindo da dispersão observada do setor em vez de cenário arbitrado.
-6. **Regras de deterioração** (§27), agora que a série existe: `consecutiveDeclines` já
+7. **Regras de deterioração** (§27), agora que a série existe: `consecutiveDeclines` já
    está em `financial-history.ts`.
 
 ---

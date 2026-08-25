@@ -2547,9 +2547,42 @@ components:
             - type: "null"
             - $ref: "#/components/schemas/TaxEstimate"
 
+    # Confiança no DADO que sustenta a análise — não no ativo, e não na conclusão.
+    #
+    # Deliberadamente uma lista de lacunas nomeadas, e não a nota de 0 a 100 que a
+    # especificação pede: cada peso de uma soma ponderada seria um número arbitrado.
+    # "3 de 8 indicadores vieram" é conferível; "DataConfidence 62" seria opinião com
+    # aparência de medida. As três faixas sobrevivem, decididas pela pior lacuna.
+    DataGap:
+      type: object
+      required: [code, severity, message]
+      properties:
+        code:
+          type: string
+          enum: [sem_cotacao, cotacao_datada, cotacao_muito_datada, sem_dimensoes, dimensao_unica, cobertura_parcial]
+        severity:
+          type: string
+          enum: [bloqueia, limita]
+          description: "\"bloqueia\" leva o status a AGUARDAR e tira o ativo das Oportunidades; \"limita\" só acompanha a análise como ressalva."
+        message:
+          type: string
+          description: Frase pronta para a tela, sempre com o número medido e não só o rótulo.
+
+    DataConfidence:
+      type: object
+      required: [level, gaps]
+      properties:
+        level:
+          type: string
+          enum: [suficiente, parcial, insuficiente]
+        gaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataGap"
+
     AssetAnalysis:
       type: object
-      required: [ticker, available, status, score, scoreClassification, positives, risks, newsItems, alerts, monitoringRecommendation, technical, updatedAt]
+      required: [ticker, available, status, score, scoreClassification, positives, risks, newsItems, alerts, monitoringRecommendation, technical, confidence, updatedAt]
       properties:
         ticker:
           type: string
@@ -2558,7 +2591,14 @@ components:
           description: False when a full fundamentalist analysis isn't available yet (pending a data source) — score/status are placeholders and should not be shown.
         status:
           type: string
-          enum: [COMPRAR, MANTER, VENDER]
+          enum: [COMPRAR, MANTER, VENDER, AGUARDAR]
+          description: >-
+            AGUARDAR é o portão de dado insuficiente: o app não tem base para afirmar
+            nada sobre o ativo agora. Não é um estado intermediário entre MANTER e
+            VENDER — é a recusa de opinar, e vem antes dos outros três. O motivo está
+            em `confidence.gaps`. Um VENDER por concentração sobrevive ao portão, porque
+            quanto do patrimônio está no papel é conta sobre a carteira do próprio
+            usuário e não depende de provedor nenhum.
         statusReason:
           type: ["string", "null"]
           enum: [fundamentos, concentracao, fundamentos_e_concentracao, null]
@@ -2608,6 +2648,8 @@ components:
           anyOf:
             - $ref: "#/components/schemas/TechnicalIndicators"
             - type: "null"
+        confidence:
+          $ref: "#/components/schemas/DataConfidence"
         dividendFrequency:
           type: ["string", "null"]
           enum: [Mensal, Trimestral, Semestral, Anual, Irregular, null]

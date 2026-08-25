@@ -24,6 +24,7 @@ import {
   type DividendEvent,
 } from "../lib/market-data";
 import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, analyzeFii, computeDuPontBreakdown, computeTrimSuggestion, resolveStatusReason, screenForPurchase, type AnalysisResult, concentrationLimitsFor, type ConcentrationLimits } from "../lib/analysis-engine";
+import { CONFIANCA_PLENA, type PriceState, type DataConfidence } from "../lib/data-confidence-engine";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline, type NewsImpact } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { getCdiTrailingAnnual } from "../lib/benchmark-data";
@@ -193,11 +194,13 @@ function computeAnalysis(
   positionPercentByTicker: Map<string, number>,
   limits: ConcentrationLimits,
   fiiContext: FiiContext = EMPTY_FII_CONTEXT,
+  priceStateByTicker: Map<string, PriceState> = new Map(),
 ): AnalysisResult {
   if (!QUOTED_CATEGORIES.has(category)) return analysisForUnquotedAsset();
   const upper = ticker.toUpperCase();
   const fundamentals = fundamentalsByTicker.get(upper);
   const positionPercent = positionPercentByTicker.get(upper) ?? 0;
+  const priceState = priceStateByTicker.get(upper) ?? { kind: "ao_vivo" as const };
 
   // FII tem régua própria — ver o bloco de comentário em analysis-engine.ts sobre por
   // que a de ação distorce (P/VP e dividend yield significam outra coisa aqui).
@@ -215,7 +218,7 @@ function computeAnalysis(
   }
 
   return fundamentals
-    ? analyzeFundamentals(fundamentals, dps12mByTicker.get(upper) ?? null, positionPercent, limits)
+    ? analyzeFundamentals(fundamentals, dps12mByTicker.get(upper) ?? null, positionPercent, limits, priceState)
     : pendingAnalysis();
 }
 
@@ -263,6 +266,13 @@ interface PositionContext {
   percents: Map<string, number>;
   values: Map<string, number>;
   prices: Map<string, number>;
+  /**
+   * De onde veio o preço de cada ticker: ao vivo, guardado (provedor fora do ar) ou
+   * nenhum. `buildPositionContext` já tinha essa informação e a descartava, ficando só
+   * com o número — e é exatamente ela que separa uma nota apoiada em cotação de hoje de
+   * uma apoiada no último preço de duas semanas atrás.
+   */
+  priceStates: Map<string, PriceState>;
   total: number;
 }
 
@@ -272,18 +282,26 @@ async function buildPositionContext(
   const quoted = await getPricesFor(assets);
   const values = new Map<string, number>();
   const prices = new Map<string, number>();
+  const priceStates = new Map<string, PriceState>();
   let total = 0;
   for (const asset of assets) {
+    const ticker = asset.ticker.toUpperCase();
+    const point = quoted.get(ticker);
     // Renda fixa privada não tem cotação: cai no preço médio, que é o valor da posição.
-    const price = quoted.get(asset.ticker.toUpperCase())?.price ?? parseFloat(asset.averagePrice);
+    const price = point?.price ?? parseFloat(asset.averagePrice);
     const value = parseFloat(asset.quantity) * price;
-    prices.set(asset.ticker.toUpperCase(), price);
-    values.set(asset.ticker.toUpperCase(), value);
+    prices.set(ticker, price);
+    values.set(ticker, value);
+    // `asOf` preenchido significa que a chamada ao vivo falhou e o app caiu no último
+    // preço guardado — ver getPricesFor. Ticker fora do mapa não tem preço nenhum.
+    priceStates.set(ticker, point == null
+      ? { kind: "ausente" }
+      : point.asOf == null ? { kind: "ao_vivo" } : { kind: "datada", capturedAt: point.asOf });
     total += value;
   }
   const percents = new Map<string, number>();
   for (const [ticker, value] of values) percents.set(ticker, total > 0 ? (value / total) * 100 : 0);
-  return { percents, values, prices, total };
+  return { percents, values, prices, priceStates, total };
 }
 
 interface DividendDerivedMaps {
@@ -439,6 +457,11 @@ function serializePersisted(
     // positivos, riscos). Não recalculado a cada leitura.
     taxEstimate: row.taxEstimate ? (JSON.parse(row.taxEstimate) as TaxEstimate) : null,
     technical: row.technical ? (JSON.parse(row.technical) as TechnicalIndicators) : null,
+    // Linha gravada antes desta coluna existir não tem lacuna registrada. Vira
+    // "suficiente" e não "insuficiente" de propósito: a ausência aqui é falta de
+    // registro, não falta de dado, e marcar como insuficiente jogaria toda análise
+    // antiga para AGUARDAR na primeira leitura depois do deploy.
+    confidence: row.confidence ? (JSON.parse(row.confidence) as DataConfidence) : CONFIANCA_PLENA,
     // Diferente de taxEstimate/technical, sempre recalculado ao vivo (não persistido)
     // — é barato (mesmo histórico de dividendos já cacheado por 6h) e não faz
     // sentido ficar parado até a próxima geração manual.
@@ -508,6 +531,7 @@ function toApiShape(ticker: string, result: AnalysisResult, newsItems: NewsItemV
     // que null, pra quem consome a API não precisar tratar campo ausente.
     taxEstimate: null as TaxEstimate | null,
     technical: null as TechnicalIndicators | null,
+    confidence: result.confidence,
     dividendFrequency,
     updatedAt: new Date().toISOString(),
   };
@@ -530,6 +554,7 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
     concentrationLimitsForUser(req.session.userId!),
   ]);
   const positionPercentByTicker = positionContext.percents;
+  const priceStateByTicker = positionContext.priceStates;
   const fiiContext = await buildFiiContext(assets.map((a) => ({ ticker: a.ticker, category: a.category })), eventsByTicker);
 
   const result = await Promise.all(
@@ -538,7 +563,7 @@ router.get("/analysis/assets", requireAuth, async (req, res): Promise<void> => {
       const existing = analysisMap.get(asset.ticker);
       if (existing) return serializePersisted(existing, dividendFrequency, { asset, context: positionContext, limits: concentrationLimits });
       const newsItems = await getNewsItemsFor(asset.ticker, asset.category);
-      const analysisResult = computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits, fiiContext);
+      const analysisResult = computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits, fiiContext, priceStateByTicker);
       return toApiShape(asset.ticker, analysisResult, newsItems, dividendFrequency, buildTrim(analysisResult, asset.ticker, asset, positionContext, concentrationLimits));
     })
   );
@@ -573,6 +598,7 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
   const allAssets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
   const positionContext = await buildPositionContext(allAssets);
   const positionPercentByTicker = positionContext.percents;
+  const priceStateByTicker = positionContext.priceStates;
   const concentrationLimits = await concentrationLimitsForUser(req.session.userId!);
 
   if (existing) {
@@ -594,7 +620,7 @@ router.get("/analysis/assets/:ticker", requireAuth, async (req, res): Promise<vo
     : [new Map<string, Fundamentals>(), { dps12mByTicker: new Map<string, number | null>(), dividendFrequencyByTicker: new Map<string, DividendFrequencyLabel | null>(), eventsByTicker: new Map<string, DividendEvent[]>() }];
   const dividendFrequency = dividendFrequencyByTicker.get(asset.ticker.toUpperCase()) ?? null;
   const fiiContext = await buildFiiContext([{ ticker: asset.ticker, category: asset.category }], eventsByTicker);
-  const analysisResult = computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits, fiiContext);
+  const analysisResult = computeAnalysis(asset.ticker, asset.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits, fiiContext, priceStateByTicker);
   res.json(toApiShape(asset.ticker, analysisResult, newsItems, dividendFrequency, buildTrim(analysisResult, asset.ticker, asset, positionContext, concentrationLimits)));
 });
 
@@ -828,6 +854,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   // isso não custa uma segunda ida à rede.
   const positionContext = await buildPositionContext(assets);
   const positionPercentByTicker = positionContext.percents;
+  const priceStateByTicker = positionContext.priceStates;
   const { limits: concentrationLimits, profile: investorProfile } = await profileContextForUser(req.session.userId!);
 
   const fiiContext = await buildFiiContext(
@@ -836,7 +863,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
   );
 
   const analyses = assets.map((a) => {
-    const result = computeAnalysis(a.ticker, a.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits, fiiContext);
+    const result = computeAnalysis(a.ticker, a.category, fundamentalsByTicker, dps12mByTicker, positionPercentByTicker, concentrationLimits, fiiContext, priceStateByTicker);
     return {
       ticker: a.ticker.toUpperCase(),
       ...result,
@@ -940,6 +967,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         score: analysis.score,
         scoreClassification: analysis.scoreClassification,
         status: analysis.status,
+        confidenceGaps: analysis.confidence.gaps.map((g) => g.message),
         positives: analysis.positives,
         risks: analysis.risks,
         newsItems: aiNewsItems,
@@ -980,6 +1008,7 @@ router.post("/analysis/generate", requireAuth, async (req, res): Promise<void> =
         monitoringRecommendation: analysis.monitoringRecommendation,
         taxEstimate: tax ? JSON.stringify(tax) : null,
         technical: technical ? JSON.stringify(technical) : null,
+        confidence: JSON.stringify(analysis.confidence),
       });
     })
   );

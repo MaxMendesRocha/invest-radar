@@ -35,6 +35,11 @@ mas o universo inteiro cabia entre **43 e 74**, com 29% dos ativos empatados no 
 status `COMPRAR` e `VENDER`-por-fundamento **nunca dispararam** na vida do aplicativo. Ninguém
 tinha percebido porque ninguém tinha medido.
 
+**4. Sem base para afirmar, não se afirma.** O status `AGUARDAR` é a recusa de opinar, e vem
+antes dos outros três — não é um estado entre `MANTER` e `VENDER`. O app produzia uma nota com a
+mesma cara de confiança tendo visto três indicadores ou oito, e a partir dela dizia "Comprar".
+Ver a seção própria abaixo.
+
 ---
 
 ## Como o dado atravessa a aplicação
@@ -1231,6 +1236,46 @@ que permite dizer que um FII "Forte" e uma ação "Forte" significam aproximadam
 Antes da recalibragem esta tabela teria uma única linha útil: **150 ativos, todos `MANTER`**. Hoje
 são 17 `COMPRAR`, 4 `VENDER`, 99 `MANTER` e 30 sem análise por falta de evidência — que também é
 uma resposta.
+
+---
+
+## O portão de dado insuficiente (`AGUARDAR`)
+
+A nota saía com a mesma cara de confiança tendo visto três indicadores ou oito, com cotação de
+hoje ou com o último preço guardado de duas semanas atrás. `AGUARDAR` é a recusa de opinar.
+
+**É uma lista de lacunas nomeadas, e não uma nota de 0 a 100.** Cada peso de uma média ponderada
+seria um número arbitrado — o mesmo erro que o terceiro princípio existe para impedir. O que se
+guarda é o fato conferível ("3 de 8 indicadores vieram"), com uma severidade que decide sozinha:
+`bloqueia` leva a `AGUARDAR` e tira o ativo das Oportunidades, `limita` só acompanha a análise
+como ressalva na tela. O nível (`suficiente` / `parcial` / `insuficiente`) é a pior lacuna
+presente.
+
+Os limiares saem de medição ou de fatos de calendário, nunca de escolha:
+
+| Lacuna | Efeito | De onde vem o corte |
+|---|---|---|
+| Sem cotação | bloqueia | a posição está sendo avaliada pelo preço médio de compra |
+| Cotação parada > 7 dias | bloqueia | o maior fechamento contínuo da B3 é o carnaval, 5 dias corridos |
+| Cotação parada ≤ 7 dias | limita | a chamada ao vivo falhou e o app caiu no preço guardado |
+| Um único indicador | bloqueia | a nota **é** esse indicador |
+| Menos de metade da régua | limita | as 81 ações do universo têm 6,9 indicadores em média |
+
+**A assimetria que isso corrigiu:** ação já exigia 3 indicadores, mas **FII não tinha piso
+nenhum** — bastava uma das quatro dimensões, e a renormalização levava o peso do yield de 35% a
+100%. O fundo saía com nota cheia apoiada num número só.
+
+**O que o portão não cala:** `VENDER` por concentração sobrevive, porque quanto do patrimônio
+está num papel é conta sobre a carteira da própria pessoa e não depende de provedor. Calar sobre
+uma posição de 60% porque a cotação envelheceu trocaria um alerta real por silêncio. Na triagem
+pré-compra o resultado vira `sem_dados` e não `nao_atende`: reprovar o ativo por falha do
+provedor seria o mesmo erro na direção oposta.
+
+**Uma ideia que a medição derrubou:** marcar indicador implausível (o P/L 149.050 que a brapi
+devolve para BDR é corrupção da razão de conversão). Medindo a faixa real com as demonstrações da
+CVM sobre 505 companhias, o ROE tem mediana de 9,5%, p99 de 243% e **máximo de 1877** — empresa
+com patrimônio pequeno e lucro normal produz ROE absurdo e verdadeiro. Qualquer faixa que pegasse
+o BDR reprovaria empresa real, e o caso do BDR já é barrado pelo mínimo de indicadores.
 
 ---
 
