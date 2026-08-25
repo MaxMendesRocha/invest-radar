@@ -33,7 +33,9 @@ import type {
   AssetUpdate,
   AuthResponse,
   BenchmarkComparison,
+  BrokerImportConfirmation,
   BrokerImportPreview,
+  BrokerImportResult,
   BrokerImportUpload,
   DismissPendingDividendInput,
   ErrorResponse,
@@ -2461,6 +2463,78 @@ export const usePreviewBrokerImport = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getPreviewBrokerImportMutationOptions(options));
+    }
+
+export const getCommitBrokerImportUrl = () => {
+
+
+
+
+  return `/api/portfolio/import/commit`
+}
+
+/**
+ * O único ponto da importação que escreve. Recebe o que a pessoa confirmou na tela e valida como validaria um cadastro digitado — o corpo não é confiável só por ter vindo do próprio preview. Grava SÓ COMPRA: venda exige custo da posição, resultado e imposto, e nada disso está na nota. As vendas lidas voltam em salesNotImported para a tela dizer onde registrá-las.
+ * @summary Grava as compras conferidas na importação
+ */
+export const commitBrokerImport = async (brokerImportConfirmation: BrokerImportConfirmation, options?: RequestInit): Promise<BrokerImportResult> => {
+
+  return customFetch<BrokerImportResult>(getCommitBrokerImportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(brokerImportConfirmation)
+  }
+);}
+
+
+
+
+
+export const getCommitBrokerImportMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitBrokerImport>>, TError,{data: BodyType<BrokerImportConfirmation>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof commitBrokerImport>>, TError,{data: BodyType<BrokerImportConfirmation>}, TContext> => {
+
+const mutationKey = ['commitBrokerImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof commitBrokerImport>>, {data: BodyType<BrokerImportConfirmation>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  commitBrokerImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CommitBrokerImportMutationResult = NonNullable<Awaited<ReturnType<typeof commitBrokerImport>>>
+    export type CommitBrokerImportMutationBody = BodyType<BrokerImportConfirmation>
+    export type CommitBrokerImportMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Grava as compras conferidas na importação
+ */
+export const useCommitBrokerImport = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitBrokerImport>>, TError,{data: BodyType<BrokerImportConfirmation>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof commitBrokerImport>>,
+        TError,
+        {data: BodyType<BrokerImportConfirmation>},
+        TContext
+      > => {
+      return useMutation(getCommitBrokerImportMutationOptions(options));
     }
 
 export const getGetIncomeGoalUrl = () => {

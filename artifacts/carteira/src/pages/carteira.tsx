@@ -210,6 +210,18 @@ function EmptyPortfolioMessage() {
         </Link>{" "}
         — como um investidor de cada perfil montaria a sua do zero.
       </p>
+      {/*
+        Quem JÁ investe cai neste mesmo vazio, e para essa pessoa a resposta não é uma
+        carteira sugerida: é trazer o que ela já tem. Digitar posição a posição é onde o
+        histórico morre, e a importação existe justamente para pular isso.
+      */}
+      <p className="text-sm">
+        Já investe e quer trazer o que tem?{" "}
+        <Link href="/importar" className="underline underline-offset-4 hover:text-foreground">
+          Importe sua nota de corretagem
+        </Link>{" "}
+        — o PDF da corretora vira lançamento, com preço médio calculado.
+      </p>
     </div>
   );
 }

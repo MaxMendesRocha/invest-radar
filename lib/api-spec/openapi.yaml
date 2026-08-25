@@ -771,6 +771,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /portfolio/import/commit:
+    post:
+      operationId: commitBrokerImport
+      tags: [portfolio]
+      summary: Grava as compras conferidas na importação
+      description: >-
+        O único ponto da importação que escreve. Recebe o que a pessoa confirmou na tela e
+        valida como validaria um cadastro digitado — o corpo não é confiável só por ter
+        vindo do próprio preview. Grava SÓ COMPRA: venda exige custo da posição, resultado
+        e imposto, e nada disso está na nota. As vendas lidas voltam em salesNotImported
+        para a tela dizer onde registrá-las.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrokerImportConfirmation"
+      responses:
+        "201":
+          description: O que foi gravado, o que foi pulado e o que foi recusado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrokerImportResult"
+        "400":
+          description: Corpo inválido ou nenhuma posição para importar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /portfolio/income-goal:
     get:
       operationId: getIncomeGoal
@@ -3310,6 +3341,87 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StarterPortfolio"
+
+    BrokerImportConfirmation:
+      type: object
+      required: [positions]
+      properties:
+        positions:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [ticker, category, trades]
+            properties:
+              ticker:
+                type: string
+                description: Código de negociação confirmado na tela. Revalidado no servidor.
+              category:
+                type: string
+                enum: [acoes, fiis, etfs, bdrs]
+              trades:
+                type: array
+                minItems: 1
+                items:
+                  type: object
+                  required: [noteNumber, tradeDate, side, quantity, price]
+                  properties:
+                    noteNumber:
+                      type: string
+                    tradeDate:
+                      type: string
+                      format: date
+                    side:
+                      type: string
+                      enum: [compra, venda]
+                    quantity:
+                      type: number
+                      exclusiveMinimum: 0
+                    price:
+                      type: number
+                      exclusiveMinimum: 0
+
+    BrokerImportResult:
+      type: object
+      required: [imported, skippedNotes, salesNotImported, rejected]
+      properties:
+        imported:
+          type: array
+          items:
+            type: object
+            required: [ticker, purchases, quantity]
+            properties:
+              ticker: { type: string }
+              purchases: { type: integer }
+              quantity: { type: number }
+        skippedNotes:
+          type: array
+          description: Notas puladas por já estarem na carteira. Reimportar o período inteiro é o uso normal.
+          items:
+            type: string
+        salesNotImported:
+          type: array
+          description: >-
+            Vendas lidas e não gravadas. A nota traz só o preço de venda; o custo da
+            posição, o resultado e o imposto vêm do histórico da carteira, e errar ali
+            gravaria um número de imposto errado.
+          items:
+            type: object
+            required: [ticker, quantity, price, tradeDate]
+            properties:
+              ticker: { type: string }
+              quantity: { type: number }
+              price: { type: number }
+              tradeDate: { type: string, format: date }
+        rejected:
+          type: array
+          description: Recusadas na validação. Nenhuma delas foi gravada.
+          items:
+            type: object
+            required: [ticker, reason]
+            properties:
+              ticker: { type: string }
+              reason: { type: string }
 
     BrokerImportUpload:
       type: object

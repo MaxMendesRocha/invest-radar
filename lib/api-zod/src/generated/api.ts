@@ -903,6 +903,52 @@ export const PreviewBrokerImportResponse = zod.object({
 
 
 /**
+ * O único ponto da importação que escreve. Recebe o que a pessoa confirmou na tela e valida como validaria um cadastro digitado — o corpo não é confiável só por ter vindo do próprio preview. Grava SÓ COMPRA: venda exige custo da posição, resultado e imposto, e nada disso está na nota. As vendas lidas voltam em salesNotImported para a tela dizer onde registrá-las.
+ * @summary Grava as compras conferidas na importação
+ */
+export const commitBrokerImportBodyPositionsItemTradesItemQuantityExclusiveMin = 0;
+
+export const commitBrokerImportBodyPositionsItemTradesItemPriceExclusiveMin = 0;
+
+
+
+
+
+export const CommitBrokerImportBody = zod.object({
+  "positions": zod.array(zod.object({
+  "ticker": zod.string().describe('Código de negociação confirmado na tela. Revalidado no servidor.'),
+  "category": zod.enum(['acoes', 'fiis', 'etfs', 'bdrs']),
+  "trades": zod.array(zod.object({
+  "noteNumber": zod.string(),
+  "tradeDate": zod.coerce.date(),
+  "side": zod.enum(['compra', 'venda']),
+  "quantity": zod.number().gt(commitBrokerImportBodyPositionsItemTradesItemQuantityExclusiveMin),
+  "price": zod.number().gt(commitBrokerImportBodyPositionsItemTradesItemPriceExclusiveMin)
+})).min(1)
+})).min(1)
+})
+
+export const CommitBrokerImportResponse = zod.object({
+  "imported": zod.array(zod.object({
+  "ticker": zod.string(),
+  "purchases": zod.number(),
+  "quantity": zod.number()
+})),
+  "skippedNotes": zod.array(zod.string()).describe('Notas puladas por já estarem na carteira. Reimportar o período inteiro é o uso normal.'),
+  "salesNotImported": zod.array(zod.object({
+  "ticker": zod.string(),
+  "quantity": zod.number(),
+  "price": zod.number(),
+  "tradeDate": zod.coerce.date()
+})).describe('Vendas lidas e não gravadas. A nota traz só o preço de venda; o custo da posição, o resultado e o imposto vêm do histórico da carteira, e errar ali gravaria um número de imposto errado.'),
+  "rejected": zod.array(zod.object({
+  "ticker": zod.string(),
+  "reason": zod.string()
+})).describe('Recusadas na validação. Nenhuma delas foi gravada.')
+})
+
+
+/**
  * @summary Meta de renda passiva e progresso rumo a ela
  */
 export const GetIncomeGoalResponse = zod.object({

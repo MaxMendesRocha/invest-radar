@@ -18,7 +18,8 @@ import {
   Settings as SettingsIcon,
   LogOut,
   Menu,
-  MoreHorizontal
+  MoreHorizontal,
+  FileUp,
 } from "lucide-react";
 import { useGetMe, useLogout, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,6 +47,9 @@ const NAV_ITEMS = [
   // Compass e não uma carteira: o ícone diz "por onde começar", que é o que a tela
   // entrega. Repetir a metáfora de carteira do item acima só duplicaria a silhueta.
   { href: "/carteira-de-partida", label: "Carteira de Partida", icon: Compass },
+  // Logo depois da carteira: importar é como a carteira ganha conteúdo, e quem procura
+  // "adicionar ativo" tem de encontrar o caminho automático no mesmo lugar do manual.
+  { href: "/importar", label: "Importar Nota", icon: FileUp },
   { href: "/radar", label: "Radar Inteligente", icon: BellRing },
   { href: "/analise", label: "Análise de Ativos", icon: Gauge },
   { href: "/parecer", label: "Parecer de Ativo", icon: FileSearch },
