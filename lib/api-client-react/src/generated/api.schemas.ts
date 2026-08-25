@@ -1921,6 +1921,118 @@ export interface StarterPortfolios {
   profiles: StarterPortfolio[];
 }
 
+export interface BrokerImportUpload {
+  /** Um ou mais PDFs, em qualquer ordem e sem rótulo. Até 12 arquivos de 8 MB cada. Campos separados por tipo de documento só criariam a chance de trocá-los de lugar — os arquivos se identificam sozinhos. */
+  files: Blob[];
+}
+
+export type BrokerTradeSide = typeof BrokerTradeSide[keyof typeof BrokerTradeSide];
+
+
+export const BrokerTradeSide = {
+  compra: 'compra',
+  venda: 'venda',
+} as const;
+
+/**
+ * Uma operação como a nota registra — sem ticker, porque a nota não tem.
+ */
+export interface BrokerTrade {
+  /** Chave de idempotência — reimportar o mesmo PDF não duplica. */
+  noteNumber: string;
+  /** Data do PREGÃO, não a de liquidação (D+2). */
+  tradeDate: string;
+  side: BrokerTradeSide;
+  /** VISTA, FRACIONARIO... O fracionário é o mesmo papel, só o lote muda. */
+  market: string;
+  /** Especificação do título como está no papel. Nunca um ticker inferido. */
+  specification: string;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+export type BrokerImportPositionStatus = typeof BrokerImportPositionStatus[keyof typeof BrokerImportPositionStatus];
+
+
+export const BrokerImportPositionStatus = {
+  casado: 'casado',
+  ambiguo: 'ambiguo',
+  sem_correspondencia: 'sem_correspondencia',
+} as const;
+
+/**
+ * Uma posição conciliada. `casado` significa que o nome bateu com uma única posição em custódia e o preço confirmou; `ambiguo` e `sem_correspondencia` são perguntas para quem confere, nunca linhas para gravar.
+ */
+export interface BrokerImportPosition {
+  /** Raiz da especificação, com a classe preservada — PETROBRAS ON e PETROBRAS PN são PETR3 e PETR4, e agrupá-las fundiria dois ativos numa posição só. */
+  specificationRoot: string;
+  specifications: string[];
+  /** @nullable */
+  ticker: string | null;
+  /**
+     * Derivada do ticker pela convenção da B3, nunca do rótulo em português do PDF. Null quando o sufixo 11 não separa FII, ETF e unit — aí a tela pergunta.
+     * @nullable
+     */
+  category: string | null;
+  status: BrokerImportPositionStatus;
+  /** Compras menos vendas. Negativo é saída, e nesse caso não haver posição em custódia é o esperado. */
+  netQuantity: number;
+  /** @nullable */
+  custodyQuantity: number | null;
+  /**
+     * Custódia menos líquido das notas. Positivo = a posição já existia antes da janela.
+     * @nullable
+     */
+  quantityBefore: number | null;
+  /** Por que o status é esse, em uma frase, para a tela repetir sem reinterpretar. */
+  reason: string;
+  /** Tickers em custódia que o nome não descartou — a lista que a tela oferece. */
+  candidates: string[];
+  trades: BrokerTrade[];
+}
+
+export type BrokerImportPreviewCustodyOnlyItem = {
+  ticker: string;
+  quantity: number;
+  description: string;
+};
+
+export type BrokerImportPreviewDocumentsItemKind = typeof BrokerImportPreviewDocumentsItemKind[keyof typeof BrokerImportPreviewDocumentsItemKind];
+
+
+export const BrokerImportPreviewDocumentsItemKind = {
+  nota_de_corretagem: 'nota_de_corretagem',
+  extrato_de_custodia: 'extrato_de_custodia',
+  desconhecido: 'desconhecido',
+} as const;
+
+export type BrokerImportPreviewDocumentsItem = {
+  fileName: string;
+  kind: BrokerImportPreviewDocumentsItemKind;
+  itemCount: number;
+};
+
+export interface BrokerImportPreview {
+  positions: BrokerImportPosition[];
+  /** Posições em custódia que nenhuma nota explica — compradas antes da janela. */
+  custodyOnly: BrokerImportPreviewCustodyOnlyItem[];
+  /**
+     * Data da foto do saldo. O extrato é um retrato, e a data dele importa.
+     * @nullable
+     */
+  custodyDate: string | null;
+  noteNumbers: string[];
+  /** Taxas e emolumentos somados. Zero é comum em corretora sem taxa. */
+  totalCosts: number;
+  /** O que foi reconhecido em cada arquivo enviado. */
+  documents: BrokerImportPreviewDocumentsItem[];
+  /** O que atrapalhou, em linguagem de quem está na tela. Lista vazia significa que todos os arquivos foram lidos. */
+  problems: string[];
+  /** Números de nota que já estão na carteira. O arquivo da corretora traz o período inteiro, então reenviar o que já entrou é o caminho normal. */
+  alreadyImported: string[];
+}
+
 export interface IncomeGoalInput {
   /** @minimum 1 */
   targetMonthlyIncome: number;

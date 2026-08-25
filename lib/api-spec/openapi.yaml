@@ -721,6 +721,56 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /portfolio/import/preview:
+    post:
+      operationId: previewBrokerImport
+      tags: [portfolio]
+      summary: Lê nota de corretagem e extrato de custódia em PDF e devolve a conciliação
+      description: >-
+        Não grava nada. Recebe os PDFs, descobre sozinho qual documento é qual pelo
+        cabeçalho e devolve o que entendeu para conferência humana. A separação entre ler
+        e gravar é o recurso, não uma etapa dele: desfazer lançamento errado dentro da
+        carteira é mais difícil do que não criá-lo.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/BrokerImportUpload"
+      responses:
+        "200":
+          description: O que a importação entendeu, para conferência antes de gravar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrokerImportPreview"
+        "400":
+          description: Nenhum arquivo enviado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Arquivo grande demais ou arquivos demais
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: >-
+            Nenhuma nota de corretagem reconhecida. Devolve `documents` e `problems` para
+            a tela dizer o que houve com cada arquivo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Muitas importações seguidas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /portfolio/income-goal:
     get:
       operationId: getIncomeGoal
@@ -3260,6 +3310,161 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StarterPortfolio"
+
+    BrokerImportUpload:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          description: >-
+            Um ou mais PDFs, em qualquer ordem e sem rótulo. Até 12 arquivos de 8 MB
+            cada. Campos separados por tipo de documento só criariam a chance de
+            trocá-los de lugar — os arquivos se identificam sozinhos.
+          items:
+            type: string
+            format: binary
+
+    BrokerTrade:
+      type: object
+      required: [noteNumber, tradeDate, side, market, specification, quantity, price, total]
+      description: Uma operação como a nota registra — sem ticker, porque a nota não tem.
+      properties:
+        noteNumber:
+          type: string
+          description: Chave de idempotência — reimportar o mesmo PDF não duplica.
+        tradeDate:
+          type: string
+          format: date
+          description: Data do PREGÃO, não a de liquidação (D+2).
+        side:
+          type: string
+          enum: [compra, venda]
+        market:
+          type: string
+          description: VISTA, FRACIONARIO... O fracionário é o mesmo papel, só o lote muda.
+        specification:
+          type: string
+          description: Especificação do título como está no papel. Nunca um ticker inferido.
+        quantity:
+          type: number
+        price:
+          type: number
+        total:
+          type: number
+
+    BrokerImportPosition:
+      type: object
+      required:
+        [specificationRoot, specifications, ticker, category, status, netQuantity,
+         custodyQuantity, quantityBefore, reason, candidates, trades]
+      description: >-
+        Uma posição conciliada. `casado` significa que o nome bateu com uma única posição
+        em custódia e o preço confirmou; `ambiguo` e `sem_correspondencia` são perguntas
+        para quem confere, nunca linhas para gravar.
+      properties:
+        specificationRoot:
+          type: string
+          description: >-
+            Raiz da especificação, com a classe preservada — PETROBRAS ON e PETROBRAS PN
+            são PETR3 e PETR4, e agrupá-las fundiria dois ativos numa posição só.
+        specifications:
+          type: array
+          items:
+            type: string
+        ticker:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+          description: >-
+            Derivada do ticker pela convenção da B3, nunca do rótulo em português do PDF.
+            Null quando o sufixo 11 não separa FII, ETF e unit — aí a tela pergunta.
+        status:
+          type: string
+          enum: [casado, ambiguo, sem_correspondencia]
+        netQuantity:
+          type: number
+          description: Compras menos vendas. Negativo é saída, e nesse caso não haver posição em custódia é o esperado.
+        custodyQuantity:
+          type: ["number", "null"]
+        quantityBefore:
+          type: ["number", "null"]
+          description: Custódia menos líquido das notas. Positivo = a posição já existia antes da janela.
+        reason:
+          type: string
+          description: Por que o status é esse, em uma frase, para a tela repetir sem reinterpretar.
+        candidates:
+          type: array
+          description: Tickers em custódia que o nome não descartou — a lista que a tela oferece.
+          items:
+            type: string
+        trades:
+          type: array
+          items:
+            $ref: "#/components/schemas/BrokerTrade"
+
+    BrokerImportPreview:
+      type: object
+      required:
+        [positions, custodyOnly, custodyDate, noteNumbers, totalCosts, documents,
+         problems, alreadyImported]
+      properties:
+        positions:
+          type: array
+          items:
+            $ref: "#/components/schemas/BrokerImportPosition"
+        custodyOnly:
+          type: array
+          description: Posições em custódia que nenhuma nota explica — compradas antes da janela.
+          items:
+            type: object
+            required: [ticker, quantity, description]
+            properties:
+              ticker:
+                type: string
+              quantity:
+                type: number
+              description:
+                type: string
+        custodyDate:
+          type: ["string", "null"]
+          format: date
+          description: Data da foto do saldo. O extrato é um retrato, e a data dele importa.
+        noteNumbers:
+          type: array
+          items:
+            type: string
+        totalCosts:
+          type: number
+          description: Taxas e emolumentos somados. Zero é comum em corretora sem taxa.
+        documents:
+          type: array
+          description: O que foi reconhecido em cada arquivo enviado.
+          items:
+            type: object
+            required: [fileName, kind, itemCount]
+            properties:
+              fileName:
+                type: string
+              kind:
+                type: string
+                enum: [nota_de_corretagem, extrato_de_custodia, desconhecido]
+              itemCount:
+                type: integer
+        problems:
+          type: array
+          description: >-
+            O que atrapalhou, em linguagem de quem está na tela. Lista vazia significa
+            que todos os arquivos foram lidos.
+          items:
+            type: string
+        alreadyImported:
+          type: array
+          description: >-
+            Números de nota que já estão na carteira. O arquivo da corretora traz o
+            período inteiro, então reenviar o que já entrou é o caminho normal.
+          items:
+            type: string
 
     IncomeGoalInput:
       type: object

@@ -33,6 +33,8 @@ import type {
   AssetUpdate,
   AuthResponse,
   BenchmarkComparison,
+  BrokerImportPreview,
+  BrokerImportUpload,
   DismissPendingDividendInput,
   ErrorResponse,
   EvolutionPoint,
@@ -2386,6 +2388,80 @@ export function useGetStarterPortfolios<TData = Awaited<ReturnType<typeof getSta
 
 
 
+
+export const getPreviewBrokerImportUrl = () => {
+
+
+
+
+  return `/api/portfolio/import/preview`
+}
+
+/**
+ * Não grava nada. Recebe os PDFs, descobre sozinho qual documento é qual pelo cabeçalho e devolve o que entendeu para conferência humana. A separação entre ler e gravar é o recurso, não uma etapa dele: desfazer lançamento errado dentro da carteira é mais difícil do que não criá-lo.
+ * @summary Lê nota de corretagem e extrato de custódia em PDF e devolve a conciliação
+ */
+export const previewBrokerImport = async (brokerImportUpload: BrokerImportUpload, options?: RequestInit): Promise<BrokerImportPreview> => {
+    const formData = new FormData();
+brokerImportUpload.files.forEach(value => formData.append(`files`, value));
+
+  return customFetch<BrokerImportPreview>(getPreviewBrokerImportUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+);}
+
+
+
+
+
+export const getPreviewBrokerImportMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewBrokerImport>>, TError,{data: BodyType<BrokerImportUpload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewBrokerImport>>, TError,{data: BodyType<BrokerImportUpload>}, TContext> => {
+
+const mutationKey = ['previewBrokerImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewBrokerImport>>, {data: BodyType<BrokerImportUpload>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewBrokerImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewBrokerImportMutationResult = NonNullable<Awaited<ReturnType<typeof previewBrokerImport>>>
+    export type PreviewBrokerImportMutationBody = BodyType<BrokerImportUpload>
+    export type PreviewBrokerImportMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Lê nota de corretagem e extrato de custódia em PDF e devolve a conciliação
+ */
+export const usePreviewBrokerImport = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewBrokerImport>>, TError,{data: BodyType<BrokerImportUpload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewBrokerImport>>,
+        TError,
+        {data: BodyType<BrokerImportUpload>},
+        TContext
+      > => {
+      return useMutation(getPreviewBrokerImportMutationOptions(options));
+    }
 
 export const getGetIncomeGoalUrl = () => {
 

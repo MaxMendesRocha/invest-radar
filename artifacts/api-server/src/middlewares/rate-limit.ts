@@ -28,6 +28,25 @@ export const loginRateLimiter = rateLimit({
   },
 });
 
+/**
+ * Limita a importação de PDF, que é o endpoint mais caro por requisição da API.
+ *
+ * Não é sobre autenticação — `requireAuth` já está na frente — é sobre CPU: extrair
+ * texto de doze PDFs de 8 MB é trabalho síncrono suficiente para prender o event loop
+ * e degradar todas as outras rotas do mesmo processo. O limite é generoso para uso
+ * humano (importar é uma ação rara, e conferir leva minutos) e apertado o bastante para
+ * um laço acidental do frontend não derrubar a API.
+ */
+export const importRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    res.status(429).json({ error: "Muitas importações seguidas. Aguarde alguns minutos." });
+  },
+});
+
 // Mais apertado que login: criar conta é uma ação rara no uso normal, e o mesmo
 // endpoint serve pra sondar quais e-mails já têm cadastro (o 409 "já está em
 // uso" confirma existência) — o limite também reduz o valor dessa sondagem.
