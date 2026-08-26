@@ -25,7 +25,7 @@ import {
 } from "../lib/market-data";
 import { analysisForUnquotedAsset, pendingAnalysis, noFundamentalsAnalysis, analyzeFundamentals, analyzeFii, computeDuPontBreakdown, computeTrimSuggestion, resolveStatusReason, screenForPurchase, type AnalysisResult, concentrationLimitsFor, type ConcentrationLimits } from "../lib/analysis-engine";
 import { CONFIANCA_PLENA, type PriceState, type DataConfidence } from "../lib/data-confidence-engine";
-import { computeStockPriceZones, sectorReferenceFrom } from "../lib/stock-price-zones";
+import { computeStockPriceZones, sectorReferenceFrom, summarizeStockPriceZones } from "../lib/stock-price-zones";
 import { normalizedEarningsFor } from "../lib/normalized-earnings";
 import { getNewsFor, resolveSearchTerm, type NewsHeadline, type NewsImpact } from "../lib/news";
 import { getMacroSnapshot } from "../lib/macro-data";
@@ -781,6 +781,23 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     // Triagem determinística, calculada aqui e não escrita pela IA — mesma divisão de
     // trabalho do resto do app: a IA redige, nunca decide enum nem nota.
     screening: screenForPurchase(analysis),
+    // As duas leituras de faixa de entrada e a decomposição do ROE deixam de ser só
+    // insumo do prompt e passam a aparecer na tela. Eram calculadas aqui desde sempre e
+    // só a IA via — o que significa que a conta existia e a pessoa recebia a paráfrase
+    // dela em vez do número.
+    //
+    // O DuPont vem de `computeDuPontBreakdown`, a MESMA fonte do ROE que a tela mostra na
+    // fileira de indicadores. Uma segunda decomposição a partir da série da CVM foi
+    // construída e descartada por isso: a identidade fecharia num valor levemente
+    // diferente do ROE logo acima, no mesmo card, e duas telas discordando é o defeito
+    // que a decomposição existe para tornar impossível.
+    stockPriceZones,
+    // A mesma redução que a lista de Oportunidades mostra como linha de veredito. Vai
+    // junto para que o selo de cada leitura no detalhe e a linha da lista venham da
+    // mesma comparação `preço × faixa` — refeita no frontend, um `<=` desalinhado faria
+    // as duas telas discordarem sobre o mesmo número.
+    priceZoneVerdict: summarizeStockPriceZones(stockPriceZones, price),
+    duPont,
     updatedAt: new Date().toISOString(),
   };
 

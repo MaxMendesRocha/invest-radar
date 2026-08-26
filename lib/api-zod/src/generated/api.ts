@@ -1248,7 +1248,13 @@ export const ListOpportunitiesResponse = zod.object({
   "horizon": zod.string(),
   "currentPrice": zod.number().nullish(),
   "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo. Mesmo campo e mesma semântica de Asset.priceAsOf.'),
-  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.')
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
+  "priceZoneVerdict": zod.object({
+  "earnings": zod.union([zod.literal('abaixo'),zod.literal('dentro'),zod.literal('acima'),zod.literal(null)]).nullable().describe('Onde a cotação cai na faixa por lucro normalizado. Null quando essa faixa não existe.'),
+  "book": zod.union([zod.literal('abaixo'),zod.literal('dentro'),zod.literal('acima'),zod.literal(null)]).nullable().describe('Onde a cotação cai na faixa por patrimônio. Null quando essa faixa não existe.'),
+  "lead": zod.enum(['lucro', 'patrimonio']).describe('Qual leitura encabeça a frase onde só cabe uma. É a de patrimônio sempre que ela existe, porque é a mais firme das duas: sobre cinco exercícios, a volatilidade mediana do patrimônio líquido é 0,20 contra 0,70 do lucro. Nunca é a mais favorável — encabeçar pela mais barata seria escolher a conclusão antes de fazer a conta.'),
+  "disagree": zod.boolean().describe('As duas leituras existem e não dizem a mesma coisa. É informação sobre a empresa, não erro de cálculo.')
+}).nullish().describe('As duas leituras de `StockPriceZones` reduzidas a onde a cotação cai em cada uma. Calculado no servidor, e não no cliente, para que a linha de veredito da lista de Oportunidades e os selos da régua no detalhe do ativo venham da mesma comparação — refeita nos dois lugares, um `<=` desalinhado faria as duas telas discordarem sobre o mesmo preço.\nNull fora de ação, ou quando nenhuma das duas faixas saiu.')
 }))
 })
 
@@ -1534,6 +1540,34 @@ export const GetAssetOpinionResponse = zod.object({
   "scoreThreshold": zod.number(),
   "riskCount": zod.number()
 }),
+  "stockPriceZones": zod.object({
+  "earnings": zod.object({
+  "low": zod.number().describe('Preço ao múltiplo do primeiro quartil do setor — a ponta barata da faixa.'),
+  "fair": zod.number().describe('Preço ao múltiplo da mediana do setor — o preço típico para este setor.')
+}).nullable(),
+  "book": zod.object({
+  "low": zod.number().describe('Preço ao múltiplo do primeiro quartil do setor — a ponta barata da faixa.'),
+  "fair": zod.number().describe('Preço ao múltiplo da mediana do setor — o preço típico para este setor.')
+}).nullable(),
+  "earningsBasis": zod.object({
+  "years": zod.number(),
+  "lossYears": zod.number(),
+  "volatility": zod.number()
+}).nullable().describe('Em que a leitura por lucro se apoia. Uma faixa de três exercícios com dois de prejuízo não vale o mesmo que uma de cinco lucrativos, e quem lê precisa ver a diferença.')
+}).nullable().describe('Duas leituras independentes do preço justo, cada uma como FAIXA e não como ponto: do múltiplo do primeiro quartil do setor (`low`) ao da mediana (`fair`). Null fora de ação — FII tem régua própria, e as duas contas aqui não significam a mesma coisa num fundo.\nNão existe \"preço teto\": a ponta alta é o preço TÍPICO do setor, não um máximo aceitável. São afirmações diferentes.'),
+  "priceZoneVerdict": zod.object({
+  "earnings": zod.union([zod.literal('abaixo'),zod.literal('dentro'),zod.literal('acima'),zod.literal(null)]).nullable().describe('Onde a cotação cai na faixa por lucro normalizado. Null quando essa faixa não existe.'),
+  "book": zod.union([zod.literal('abaixo'),zod.literal('dentro'),zod.literal('acima'),zod.literal(null)]).nullable().describe('Onde a cotação cai na faixa por patrimônio. Null quando essa faixa não existe.'),
+  "lead": zod.enum(['lucro', 'patrimonio']).describe('Qual leitura encabeça a frase onde só cabe uma. É a de patrimônio sempre que ela existe, porque é a mais firme das duas: sobre cinco exercícios, a volatilidade mediana do patrimônio líquido é 0,20 contra 0,70 do lucro. Nunca é a mais favorável — encabeçar pela mais barata seria escolher a conclusão antes de fazer a conta.'),
+  "disagree": zod.boolean().describe('As duas leituras existem e não dizem a mesma coisa. É informação sobre a empresa, não erro de cálculo.')
+}).nullable().describe('As duas leituras de `StockPriceZones` reduzidas a onde a cotação cai em cada uma. Calculado no servidor, e não no cliente, para que a linha de veredito da lista de Oportunidades e os selos da régua no detalhe do ativo venham da mesma comparação — refeita nos dois lugares, um `<=` desalinhado faria as duas telas discordarem sobre o mesmo preço.\nNull fora de ação, ou quando nenhuma das duas faixas saiu.'),
+  "duPont": zod.object({
+  "taxBurden": zod.number().describe('Lucro líquido ÷ lucro antes de impostos.'),
+  "interestBurden": zod.number().describe('Lucro antes de impostos ÷ EBIT.'),
+  "ebitMargin": zod.number().describe('EBIT ÷ receita total.'),
+  "assetTurnover": zod.number().describe('Receita ÷ ativo total.'),
+  "leverage": zod.number().describe('Ativo total ÷ patrimônio líquido.')
+}).nullable().describe('Decomposição de cinco fatores do ROE (padrão CFA). O produto dos cinco É o ROE, e vem da MESMA fonte que o ROE exibido nos indicadores — uma segunda decomposição a partir da série da CVM foi construída e descartada justamente para que os dois números não pudessem discordar no mesmo card.\nNull quando algum dos seis insumos falta: decomposição parcial convidaria a multiplicar o que sobrou.'),
   "updatedAt": zod.coerce.date()
 }).describe('Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (COMPRAR\/MANTER\/VENDER).')
 
@@ -1656,7 +1690,13 @@ export const GeneratePortfolioAnalysisResponse = zod.object({
   "horizon": zod.string(),
   "currentPrice": zod.number().nullish(),
   "priceAsOf": zod.coerce.date().nullish().describe('Preenchido só quando currentPrice é o último preço conhecido em vez da cotação de agora (provedor indisponível) — é a data dessa última cotação. Null quando o preço é ao vivo. Mesmo campo e mesma semântica de Asset.priceAsOf.'),
-  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.')
+  "dividendFrequency": zod.union([zod.literal('Mensal'),zod.literal('Trimestral'),zod.literal('Semestral'),zod.literal('Anual'),zod.literal('Irregular'),zod.literal(null)]).nullish().describe('Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.'),
+  "priceZoneVerdict": zod.object({
+  "earnings": zod.union([zod.literal('abaixo'),zod.literal('dentro'),zod.literal('acima'),zod.literal(null)]).nullable().describe('Onde a cotação cai na faixa por lucro normalizado. Null quando essa faixa não existe.'),
+  "book": zod.union([zod.literal('abaixo'),zod.literal('dentro'),zod.literal('acima'),zod.literal(null)]).nullable().describe('Onde a cotação cai na faixa por patrimônio. Null quando essa faixa não existe.'),
+  "lead": zod.enum(['lucro', 'patrimonio']).describe('Qual leitura encabeça a frase onde só cabe uma. É a de patrimônio sempre que ela existe, porque é a mais firme das duas: sobre cinco exercícios, a volatilidade mediana do patrimônio líquido é 0,20 contra 0,70 do lucro. Nunca é a mais favorável — encabeçar pela mais barata seria escolher a conclusão antes de fazer a conta.'),
+  "disagree": zod.boolean().describe('As duas leituras existem e não dizem a mesma coisa. É informação sobre a empresa, não erro de cálculo.')
+}).nullish().describe('As duas leituras de `StockPriceZones` reduzidas a onde a cotação cai em cada uma. Calculado no servidor, e não no cliente, para que a linha de veredito da lista de Oportunidades e os selos da régua no detalhe do ativo venham da mesma comparação — refeita nos dois lugares, um `<=` desalinhado faria as duas telas discordarem sobre o mesmo preço.\nNull fora de ação, ou quando nenhuma das duas faixas saiu.')
 }))
 })
 

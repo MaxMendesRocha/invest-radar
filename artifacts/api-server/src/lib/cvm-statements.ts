@@ -103,6 +103,28 @@ interface Account {
  */
 const LUCRO_CONSOLIDADO = /consolidado do per[íi]odo/i;
 
+/**
+ * O patrimônio líquido tem exatamente o mesmo problema, e ele é PIOR num banco.
+ *
+ * O balanço patrimonial passivo de instituição financeira usa outro plano de contas. O
+ * `2.03` que numa companhia comum é "Patrimônio Líquido Consolidado" vira outra coisa:
+ *
+ *   Banco do Brasil   2.03 = Provisões                                (R$ 39 bi)
+ *                     2.07 = Patrimônio Líquido Consolidado           (R$ 194 bi)
+ *   Itaú Unibanco     2.03 = Passivos Financeiros ao Custo Amortizado (R$ 2.351 bi)
+ *                     2.08 = Patrimônio Líquido Consolidado           (R$ 215 bi)
+ *
+ * Ou seja: pelo código, o Itaú entrava com um PASSIVO de R$ 2,3 trilhões no lugar do
+ * patrimônio — dez vezes o valor certo e de outra natureza. Não é lacuna, é número errado
+ * com cara de certo, e qualquer ROE ou alavancagem calculado sobre ele seria ficção.
+ *
+ * Medido no BPP consolidado de 2025: o rótulo "Patrimônio Líquido Consolidado" aparece em
+ * **438 de 438 companhias**. O código 2.03 cobriria 428 (97,7%); as outras 13 usam 2.07 ou
+ * 2.08. O rótulo é exato — não há falso positivo, porque nenhuma outra linha do passivo se
+ * chama assim.
+ */
+const PATRIMONIO_CONSOLIDADO = /^patrim[ôo]nio l[íi]quido consolidado$/i;
+
 /** Métricas extraídas, com a cobertura medida no DFP de 2024 (467 companhias). */
 export const ACCOUNT_MAP: Account[] = [
   { metric: "receita", statement: "DRE_con", code: "3.01", coverage: "100%" },
@@ -112,7 +134,7 @@ export const ACCOUNT_MAP: Account[] = [
   { metric: "caixa", statement: "BPA_con", code: "1.01.01", coverage: "99,1%" },
   { metric: "divida_curto_prazo", statement: "BPP_con", code: "2.01.04", coverage: "96,6%" },
   { metric: "divida_longo_prazo", statement: "BPP_con", code: "2.02.01", coverage: "98,7%" },
-  { metric: "patrimonio_liquido", statement: "BPP_con", code: "2.03", coverage: "100%" },
+  { metric: "patrimonio_liquido", statement: "BPP_con", label: PATRIMONIO_CONSOLIDADO, codePrefix: "2.", coverage: "100%" },
   // O fluxo de caixa vem em dois arquivos conforme o método da companhia (indireto ou
   // direto). O código da conta é o mesmo nos dois, então basta ler ambos.
   { metric: "caixa_operacional", statement: "DFC_MI_con", code: "6.01", coverage: "95,1%" },

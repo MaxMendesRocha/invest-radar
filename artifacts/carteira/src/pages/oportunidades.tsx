@@ -11,7 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { categoryLabel } from "@/lib/categories";
-import { Lightbulb, TrendingUp, ShieldAlert, ArrowRight, Target, RefreshCw, AlertTriangle } from "lucide-react";
+import { PriceZoneVerdictLine } from "@/components/price-zone-verdict";
+import { Link } from "wouter";
+import { Lightbulb, TrendingUp, ArrowRight, Target, RefreshCw, AlertTriangle } from "lucide-react";
 
 // Mesmo motivo do card de Indicadores Oficiais: o ponto do formato en-US colide com
 // o separador de milhar pt-BR usado no resto do app.
@@ -178,7 +180,12 @@ export default function Oportunidades() {
                 </div>
 
                 <div>
-                  <p className="text-sm font-medium mb-1 leading-relaxed text-pretty text-justify hyphens-auto">{opp.reason}</p>
+                  {/* A conclusão da régua, não a régua. As duas leituras desenhadas ficam
+                      no Parecer, a um clique daqui — numa lista de dez cards, dez pares de
+                      barras seriam ruído, e a linha diz o mesmo que elas concluem. */}
+                  {opp.priceZoneVerdict && <PriceZoneVerdictLine verdict={opp.priceZoneVerdict} />}
+
+                  <p className="text-sm font-medium mb-1 mt-3 leading-relaxed text-pretty text-justify hyphens-auto">{opp.reason}</p>
                   <div className="flex items-center gap-2 text-xs mt-2">
                     <span className="text-muted-foreground">Risco:</span>
                     <Badge variant={RISK_MAP[opp.riskLevel] as any} className="h-5 px-1.5 text-[10px] uppercase">
@@ -212,7 +219,7 @@ export default function Oportunidades() {
                   )}
                 </div>
               </CardContent>
-              <CardFooter className="pt-0 pb-4 flex gap-4">
+              <CardFooter className="pt-0 pb-4 flex flex-col gap-3 items-stretch">
                 <div className="w-full space-y-2">
                   {opp.positives.slice(0,2).map((p, i) => (
                     <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
@@ -220,6 +227,20 @@ export default function Oportunidades() {
                       <span>{p}</span>
                     </div>
                   ))}
+                </div>
+                {/* O score e o caminho para a conta que o sustenta. A nota sozinha é um
+                    número sem procedência; o Parecer é onde as faixas, a decomposição do
+                    ROE e os fatores de risco estão desenhados. */}
+                <div className="flex flex-wrap items-baseline justify-between gap-2 border-t pt-3 text-xs">
+                  <span className="font-mono text-muted-foreground tabular-nums">
+                    Score {Math.round(opp.score)}/100
+                  </span>
+                  <Link
+                    href={`/parecer/${opp.ticker}`}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    Ver análise →
+                  </Link>
                 </div>
               </CardFooter>
             </Card>

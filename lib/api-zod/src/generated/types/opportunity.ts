@@ -7,6 +7,7 @@
  */
 import type { OpportunityDividendFrequency } from './opportunityDividendFrequency';
 import type { OpportunityRiskLevel } from './opportunityRiskLevel';
+import type { PriceZoneVerdict } from './priceZoneVerdict';
 
 export interface Opportunity {
   id: number;
@@ -48,4 +49,5 @@ export interface Opportunity {
      * @nullable
      */
   dividendFrequency?: OpportunityDividendFrequency;
+  priceZoneVerdict?: PriceZoneVerdict | null;
 }

@@ -2,11 +2,64 @@ import { Router, type IRouter } from "express";
 import { db, jobRunsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getDividendEvents, classifyDividendFrequency } from "../lib/market-data";
+import { getPricesFor, getDividendEvents, classifyDividendFrequency, getFundamentals } from "../lib/market-data";
 import { OPPORTUNITIES_JOB } from "../lib/opportunities-engine";
 import { rankOpportunitiesFor } from "../lib/opportunity-ranking";
+import { getSectorBenchmark } from "../lib/sector-benchmarks";
+import { normalizedEarningsFor } from "../lib/normalized-earnings";
+import { computeStockPriceZones, sectorReferenceFrom, summarizeStockPriceZones, type ZonesVerdict } from "../lib/stock-price-zones";
 
 const router: IRouter = Router();
+
+/**
+ * A linha de veredito da lista: onde a cotação cai em relação às duas faixas de entrada.
+ *
+ * É a MESMA conta que a régua do detalhe mostra desenhada — a lista traz a conclusão, o
+ * detalhe traz a conta. Por isso passa por `computeStockPriceZones` e
+ * `summarizeStockPriceZones` em vez de guardar um veredito na tabela: a faixa é fixa
+ * entre varreduras, mas o preço não é, e um veredito gravado no domingo estaria afirmando
+ * na quinta uma coisa que o preço de quinta desmente.
+ *
+ * Só sai para ação: FII tem régua própria (`computeFiiPriceZones`), e P/L e P/VP de fundo
+ * não significam o que significam numa empresa. Renda fixa e fundos não têm faixa nenhuma.
+ * Em todos esses casos o campo vai `null` e a linha simplesmente não aparece.
+ */
+async function priceZoneVerdictsFor(
+  items: { ticker: string; category: string; sector: string | null }[],
+  prices: Map<string, { price: number }>,
+): Promise<Map<string, ZonesVerdict>> {
+  const cotados = items.filter((i) => i.category !== "fiis" && prices.get(i.ticker.toUpperCase())?.price != null);
+  if (cotados.length === 0) return new Map();
+
+  // Um `getSectorBenchmark` por setor DISTINTO, não por ativo: dez oportunidades caem
+  // tipicamente em três ou quatro setores.
+  const setores = Array.from(new Set(cotados.map((i) => i.sector).filter((s): s is string => s != null)));
+  const benchmarks = new Map(
+    await Promise.all(setores.map(async (s) => [s, await getSectorBenchmark(s)] as const)),
+  );
+
+  const fundamentalsByTicker = await getFundamentals(cotados.map((i) => i.ticker));
+
+  const pares = await Promise.all(
+    cotados.map(async (item) => {
+      const fundamentals = fundamentalsByTicker.get(item.ticker.toUpperCase());
+      const price = prices.get(item.ticker.toUpperCase())?.price;
+      if (!fundamentals || price == null) return null;
+
+      const zones = computeStockPriceZones({
+        price,
+        priceEarnings: fundamentals.priceEarnings,
+        priceToBook: fundamentals.priceToBook,
+        normalized: await normalizedEarningsFor(item.ticker),
+        sector: sectorReferenceFrom(item.sector ? benchmarks.get(item.sector) ?? null : null),
+      });
+      const verdict = summarizeStockPriceZones(zones, price);
+      return verdict ? ([item.ticker, verdict] as const) : null;
+    }),
+  );
+
+  return new Map(pares.filter((p): p is readonly [string, ZonesVerdict] => p != null));
+}
 
 router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
   // Ordenação vive em lib/opportunity-ranking.ts porque o plano de aporte
@@ -24,6 +77,8 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
     getDividendEvents(top10.map((item) => ({ ticker: item.ticker, category: item.category }))),
   ]);
   const now = Date.now();
+  // Depende de `prices`, então não entra no Promise.all acima.
+  const verdictByTicker = await priceZoneVerdictsFor(top10, prices);
   // A lista passa a vir envelopada: o consumidor precisa saber por qual critério ela
   // foi ordenada, senão a ordem muda sem explicação quando o objetivo do perfil muda.
   const items10 = top10.map((item) => {
@@ -42,6 +97,7 @@ router.get("/opportunities", requireAuth, async (req, res): Promise<void> => {
     sectorMedianYield: value?.sectorMedianYield ?? null,
     sectorSampleSize: value?.sampleSize ?? null,
     implausibleYield: value?.implausible ?? false,
+    priceZoneVerdict: verdictByTicker.get(item.ticker) ?? null,
     };
   });
 

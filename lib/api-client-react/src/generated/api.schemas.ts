@@ -1069,6 +1069,65 @@ export const OpportunityDividendFrequency = {
   Irregular: 'Irregular',
 } as const;
 
+/**
+ * Onde a cotação cai na faixa por lucro normalizado. Null quando essa faixa não existe.
+ * @nullable
+ */
+export type PriceZoneVerdictEarnings = typeof PriceZoneVerdictEarnings[keyof typeof PriceZoneVerdictEarnings] | null;
+
+
+export const PriceZoneVerdictEarnings = {
+  abaixo: 'abaixo',
+  dentro: 'dentro',
+  acima: 'acima',
+} as const;
+
+/**
+ * Onde a cotação cai na faixa por patrimônio. Null quando essa faixa não existe.
+ * @nullable
+ */
+export type PriceZoneVerdictBook = typeof PriceZoneVerdictBook[keyof typeof PriceZoneVerdictBook] | null;
+
+
+export const PriceZoneVerdictBook = {
+  abaixo: 'abaixo',
+  dentro: 'dentro',
+  acima: 'acima',
+} as const;
+
+/**
+ * Qual leitura encabeça a frase onde só cabe uma. É a de patrimônio sempre que ela existe, porque é a mais firme das duas: sobre cinco exercícios, a volatilidade mediana do patrimônio líquido é 0,20 contra 0,70 do lucro. Nunca é a mais favorável — encabeçar pela mais barata seria escolher a conclusão antes de fazer a conta.
+ */
+export type PriceZoneVerdictLead = typeof PriceZoneVerdictLead[keyof typeof PriceZoneVerdictLead];
+
+
+export const PriceZoneVerdictLead = {
+  lucro: 'lucro',
+  patrimonio: 'patrimonio',
+} as const;
+
+/**
+ * As duas leituras de `StockPriceZones` reduzidas a onde a cotação cai em cada uma. Calculado no servidor, e não no cliente, para que a linha de veredito da lista de Oportunidades e os selos da régua no detalhe do ativo venham da mesma comparação — refeita nos dois lugares, um `<=` desalinhado faria as duas telas discordarem sobre o mesmo preço.
+ * Null fora de ação, ou quando nenhuma das duas faixas saiu.
+ * @nullable
+ */
+export type PriceZoneVerdict = {
+  /**
+     * Onde a cotação cai na faixa por lucro normalizado. Null quando essa faixa não existe.
+     * @nullable
+     */
+  earnings: PriceZoneVerdictEarnings;
+  /**
+     * Onde a cotação cai na faixa por patrimônio. Null quando essa faixa não existe.
+     * @nullable
+     */
+  book: PriceZoneVerdictBook;
+  /** Qual leitura encabeça a frase onde só cabe uma. É a de patrimônio sempre que ela existe, porque é a mais firme das duas: sobre cinco exercícios, a volatilidade mediana do patrimônio líquido é 0,20 contra 0,70 do lucro. Nunca é a mais favorável — encabeçar pela mais barata seria escolher a conclusão antes de fazer a conta. */
+  lead: PriceZoneVerdictLead;
+  /** As duas leituras existem e não dizem a mesma coisa. É informação sobre a empresa, não erro de cálculo. */
+  disagree: boolean;
+} | null;
+
 export interface Opportunity {
   id: number;
   ticker: string;
@@ -1109,6 +1168,7 @@ export interface Opportunity {
      * @nullable
      */
   dividendFrequency?: OpportunityDividendFrequency;
+  priceZoneVerdict?: PriceZoneVerdict | null;
 }
 
 export interface OpportunityList {
@@ -1492,6 +1552,59 @@ export const AssetOpinionDividendFrequency = {
 } as const;
 
 /**
+ * @nullable
+ */
+export type PriceZone = {
+  /** Preço ao múltiplo do primeiro quartil do setor — a ponta barata da faixa. */
+  low: number;
+  /** Preço ao múltiplo da mediana do setor — o preço típico para este setor. */
+  fair: number;
+} | null;
+
+/**
+ * Em que a leitura por lucro se apoia. Uma faixa de três exercícios com dois de prejuízo não vale o mesmo que uma de cinco lucrativos, e quem lê precisa ver a diferença.
+ * @nullable
+ */
+export type StockPriceZonesEarningsBasis = {
+  years: number;
+  lossYears: number;
+  volatility: number;
+} | null;
+
+/**
+ * Duas leituras independentes do preço justo, cada uma como FAIXA e não como ponto: do múltiplo do primeiro quartil do setor (`low`) ao da mediana (`fair`). Null fora de ação — FII tem régua própria, e as duas contas aqui não significam a mesma coisa num fundo.
+ * Não existe "preço teto": a ponta alta é o preço TÍPICO do setor, não um máximo aceitável. São afirmações diferentes.
+ * @nullable
+ */
+export type StockPriceZones = {
+  earnings: PriceZone | null;
+  book: PriceZone | null;
+  /**
+     * Em que a leitura por lucro se apoia. Uma faixa de três exercícios com dois de prejuízo não vale o mesmo que uma de cinco lucrativos, e quem lê precisa ver a diferença.
+     * @nullable
+     */
+  earningsBasis: StockPriceZonesEarningsBasis;
+} | null;
+
+/**
+ * Decomposição de cinco fatores do ROE (padrão CFA). O produto dos cinco É o ROE, e vem da MESMA fonte que o ROE exibido nos indicadores — uma segunda decomposição a partir da série da CVM foi construída e descartada justamente para que os dois números não pudessem discordar no mesmo card.
+ * Null quando algum dos seis insumos falta: decomposição parcial convidaria a multiplicar o que sobrou.
+ * @nullable
+ */
+export type DuPontBreakdown = {
+  /** Lucro líquido ÷ lucro antes de impostos. */
+  taxBurden: number;
+  /** Lucro antes de impostos ÷ EBIT. */
+  interestBurden: number;
+  /** EBIT ÷ receita total. */
+  ebitMargin: number;
+  /** Receita ÷ ativo total. */
+  assetTurnover: number;
+  /** Ativo total ÷ patrimônio líquido. */
+  leverage: number;
+} | null;
+
+/**
  * Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (COMPRAR/MANTER/VENDER).
  */
 export interface AssetOpinion {
@@ -1529,6 +1642,9 @@ export interface AssetOpinion {
   newsItems: NewsItem[];
   opinion: string;
   screening: PurchaseScreening;
+  stockPriceZones: StockPriceZones | null;
+  priceZoneVerdict: PriceZoneVerdict | null;
+  duPont: DuPontBreakdown | null;
   updatedAt: string;
 }
 

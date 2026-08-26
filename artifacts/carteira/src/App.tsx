@@ -44,6 +44,10 @@ function ProtectedRoutes() {
           <Route path="/radar" component={Radar} />
           <Route path="/analise" component={Analise} />
           <Route path="/parecer" component={Parecer} />
+          {/* Mesma tela, já com o ticker consultado — é para onde "Ver análise" leva a
+              partir de um card de Oportunidades. Sem isso a pessoa cai na busca vazia e
+              redigita o ticker que acabou de clicar. */}
+          <Route path="/parecer/:ticker" component={Parecer} />
           <Route path="/oportunidades" component={Oportunidades} />
           <Route path="/dividendos" component={Dividendos} />
           <Route path="/vendas" component={Vendas} />
