@@ -115,18 +115,20 @@ o caixa das operações, com 100% de cobertura — suficiente para conversão de
 | caixa | `1.01.01` | 99,1% |
 | divida_curto_prazo | `2.01.04` | 96,6% |
 | divida_longo_prazo | `2.02.01` | 98,7% |
-| patrimonio_liquido | `2.03` | 100% |
+| patrimonio_liquido | rótulo `Patrimônio Líquido Consolidado` (`2.03`/`2.07`/`2.08`) | 100% |
 | caixa_operacional | `6.01` | 100% (somando método direto e indireto) |
 
-O código da conta é o mesmo para banco e para empresa operacional; só o rótulo muda
-(`3.01` é "Receita de Venda" na indústria e "Receitas de Intermediação Financeira" no
-banco). Chavear por código, e não por texto, é o que faz o mapeamento atravessar setores.
+Na maioria das métricas o código é o mesmo para banco e para empresa operacional; só o
+rótulo muda (`3.01` é "Receita de Venda" na indústria e "Receitas de Intermediação
+Financeira" no banco). Chavear por código, e não por texto, é o que faz o mapeamento
+atravessar setores.
 
-### A exceção que inverte a regra: o lucro líquido
+### Duas exceções que invertem a regra
 
-O parágrafo acima vale para oito das nove métricas. No lucro líquido acontece o inverso —
-**o rótulo é estável e o código é que se move** —, e descobrir isso custou um bug que ficou
-em produção.
+Em **duas** métricas acontece o inverso — **o rótulo é estável e o código é que se move**.
+As duas são de instituição financeira, e as duas custaram um bug.
+
+#### 1. O lucro líquido
 
 Banco tem DRE mais curta (sem custo de mercadoria vendida, sem as linhas intermediárias de
 uma indústria), então a numeração desloca. Medido no DFP de 2024, o rótulo
@@ -147,6 +149,29 @@ com toda a cara de certeza.
 Na base acumulada, **17 das 664 companhias não tinham uma única linha de lucro**, entre
 elas os maiores bancos do país. Depois da troca para busca por rótulo: **625 de 627**, e as
 duas que sobram são listagens recentes sem exercício anual fechado (têm lucro trimestral).
+
+#### 2. O patrimônio líquido — o mesmo defeito, pior
+
+O balanço patrimonial passivo de instituição financeira usa outro plano de contas inteiro,
+e o `2.03` que numa companhia comum é o patrimônio vira outra coisa:
+
+| | `2.03` — o que o código pegava | Onde o PL realmente está |
+|---|---|---|
+| Banco do Brasil | *Provisões* — R$ 39 bi | `2.07` — R$ 194 bi |
+| Itaú Unibanco | *Passivos Financeiros ao Custo Amortizado* — R$ 2.351 bi | `2.08` — R$ 215 bi |
+
+O Itaú entrava com **um passivo de R$ 2,3 trilhões gravado como patrimônio líquido** — dez
+vezes o valor certo, e de outra natureza. Qualquer ROE ou alavancagem calculado sobre isso
+seria ficção com cara de medição.
+
+Medido no BPP consolidado de 2025, o rótulo "Patrimônio Líquido Consolidado" aparece em
+**438 de 438 companhias**; o código `2.03` cobriria 428 (97,7%), e as outras 13 usam `2.07`
+ou `2.08`. Depois da correção, o PL sobre ativo total fica em 7,9% no Banco do Brasil e
+7,0% no Itaú — capitalização normal de banco — contra 34,1% na Petrobras e 39,7% na Vale.
+
+O defeito foi encontrado pela decomposição DuPont: nenhuma tela consumia
+`patrimonio_liquido` até então, então o número errado estava gravado sem nunca ter sido
+exibido. É o argumento a favor de construir a leitura antes de confiar no dado.
 
 O rótulo é seguro aqui, e isso foi conferido antes de trocar a regra: no DRE consolidado
 inteiro, "consolidado do período" aparece só nas linhas de lucro final — nenhum falso
