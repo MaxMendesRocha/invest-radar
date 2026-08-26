@@ -6,6 +6,9 @@ Este documento cobre a **superfície funcional inteira**: cada motor determinís
 entra, as doze telas e os limites conhecidos. Para os **prompts exatos** de cada ponto de IA,
 ver [`analises-ia.md`](./analises-ia.md), que é o complemento deste. Para decisões de
 arquitetura, gotchas de deploy e memória operacional do projeto, ver [`../replit.md`](../replit.md).
+Para o levantamento de **o que custaria ter isto como app de celular** — o que reusa, a
+lacuna de autenticação por token e os três caminhos possíveis — ver
+[`app-mobile.md`](./app-mobile.md).
 
 > **Este arquivo precisa ser atualizado junto com o comportamento que ele descreve.** Mudou um
 > limiar, um peso, uma fonte de dado, uma tela ou um motor? A alteração só está completa quando
