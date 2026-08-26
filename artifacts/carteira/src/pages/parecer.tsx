@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useRoute } from "wouter";
 import {
   useGetAssetOpinion, getGetAssetOpinionQueryKey,
   useListTreasuryBonds, getListTreasuryBondsQueryKey,
@@ -16,6 +17,8 @@ import { Search, Check, AlertTriangle, Newspaper, Sparkles, TrendingUp, Coins, L
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { NewsHeadlineItem } from "@/components/news-headline-item";
 import { TreasuryOpinionCard } from "@/components/treasury-opinion-card";
+import { PriceZoneRuler } from "@/components/price-zone-verdict";
+import { DuPontCard } from "@/components/dupont-card";
 
 /**
  * Preço-alvo do usuário para o ticker consultado.
@@ -211,8 +214,15 @@ const CROSS_SIGNAL_LABELS: Record<string, string> = {
 export default function Parecer() {
   const [mode, setMode] = useState<"cotado" | "tesouro">("cotado");
 
-  const [ticker, setTicker] = useState("");
-  const [submittedTicker, setSubmittedTicker] = useState<string | null>(null);
+  // Ticker vindo da URL (/parecer/BBAS3), que é como "Ver análise" chega aqui de
+  // Oportunidades. Serve só de valor INICIAL: depois de montada, quem manda é o campo de
+  // busca — amarrar o estado à rota faria a consulta seguinte voltar sozinha ao ticker da
+  // URL a cada renderização.
+  const [, params] = useRoute("/parecer/:ticker");
+  const tickerDaRota = params?.ticker ? params.ticker.toUpperCase() : null;
+
+  const [ticker, setTicker] = useState(tickerDaRota ?? "");
+  const [submittedTicker, setSubmittedTicker] = useState<string | null>(tickerDaRota);
 
   const { data: opinion, isLoading, isError, error } = useGetAssetOpinion(submittedTicker ?? "", {
     query: {
@@ -443,6 +453,17 @@ export default function Parecer() {
                 <p className="text-[10px] text-muted-foreground">Preço atual está a {rangePercent.toFixed(0)}% do range de 52 semanas.</p>
               </div>
             )}
+
+            {/* Motor primeiro, IA depois. As duas peças abaixo são conta — a régua contra
+                os múltiplos do setor e a decomposição do ROE — e ficam ACIMA do parecer
+                narrado de propósito: o texto da IA cita esses números, então quem lê
+                precisa tê-los visto antes de ler a interpretação deles. */}
+            <PriceZoneRuler
+              zones={opinion.stockPriceZones}
+              verdict={opinion.priceZoneVerdict}
+              price={opinion.price}
+            />
+            <DuPontCard duPont={opinion.duPont} />
 
             <div className="mt-8 pt-6 border-t grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-6">

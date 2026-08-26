@@ -7,7 +7,12 @@ import {
   EXERCICIOS_MINIMOS,
   EXERCICIOS_NORMALIZACAO,
 } from "../src/lib/normalized-earnings";
-import { computeStockPriceZones, type StockZonesInput } from "../src/lib/stock-price-zones";
+import {
+  computeStockPriceZones,
+  readPriceZone,
+  summarizeStockPriceZones,
+  type StockZonesInput,
+} from "../src/lib/stock-price-zones";
 import type { FinancialPeriod } from "../src/lib/financial-history";
 
 /**
@@ -125,6 +130,42 @@ check("sem preço não há nada", computeStockPriceZones({ ...base, price: 0 }),
 // mesmo que cinco lucrativos, e quem lê precisa ver a diferença.
 check("a faixa carrega quantos exercícios a sustentam",
   computeStockPriceZones({ ...base, normalized: normalizeEarnings(comPrejuizo) })!.earningsBasis?.lossYears, 1);
+
+// --- A redução que as duas telas leem ---------------------------------------
+//
+// A lista de Oportunidades mostra a conclusão e o Parecer mostra a conta; as duas leem
+// este mesmo objeto. Os casos abaixo fixam as bordas, que é onde uma segunda
+// implementação divergiria: preço exatamente na ponta da faixa, e qual leitura encabeça.
+
+// Faixa dos dois lados = [30, 50], com as bordas incluídas — preço NA ponta está dentro.
+check("preço abaixo do p25 é 'abaixo'", readPriceZone({ low: 30, fair: 50 }, 29.99), "abaixo");
+check("preço exatamente no p25 já é 'dentro'", readPriceZone({ low: 30, fair: 50 }, 30), "dentro");
+check("preço exatamente na mediana ainda é 'dentro'", readPriceZone({ low: 30, fair: 50 }, 50), "dentro");
+check("preço acima da mediana é 'acima'", readPriceZone({ low: 30, fair: 50 }, 50.01), "acima");
+
+// Sem faixa não há leitura. "Dentro" por ausência de referência seria afirmar que o preço
+// está normal quando não se sabe qual é o normal.
+check("sem faixa não há leitura", readPriceZone(null, 100), null);
+
+// A de patrimônio encabeça porque é a mais firme das duas — 0,20 de volatilidade mediana
+// contra 0,70 do lucro, medido sobre cinco exercícios da base. NÃO é a mais favorável:
+// aqui a de lucro diz "abaixo" (a leitura simpática) e mesmo assim não lidera.
+const zonasDiscordantes = computeStockPriceZones({ ...base, priceToBook: 1.5 })!;
+const v1 = summarizeStockPriceZones(zonasDiscordantes, 100)!;
+check("com as duas faixas, quem encabeça é a de patrimônio", v1.lead, "patrimonio");
+check("e a discordância é registrada, não resolvida", v1.disagree, true);
+
+// Com uma leitura só, ela é a linha inteira — não há o que encabeçar.
+check("sem faixa por patrimônio, quem encabeça é a de lucro",
+  summarizeStockPriceZones(computeStockPriceZones({ ...base, priceToBook: null })!, 100)!.lead, "lucro");
+check("e sem a outra não há discordância a declarar",
+  summarizeStockPriceZones(computeStockPriceZones({ ...base, priceToBook: null })!, 100)!.disagree, false);
+
+// Concordância entre as duas é o caso comum, e tem de ficar explícito que não é desacordo.
+check("duas leituras iguais não discordam",
+  summarizeStockPriceZones(computeStockPriceZones(base)!, 100)!.disagree, false);
+
+check("sem zonas não há veredito", summarizeStockPriceZones(null, 100), null);
 
 // --- Contra a base real -----------------------------------------------------
 

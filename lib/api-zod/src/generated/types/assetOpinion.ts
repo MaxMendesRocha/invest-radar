@@ -11,6 +11,7 @@ import type { AssetOpinionScoreClassification } from './assetOpinionScoreClassif
 import type { DividendEntitlementPreview } from './dividendEntitlementPreview';
 import type { DuPontBreakdown } from './duPontBreakdown';
 import type { NewsItem } from './newsItem';
+import type { PriceZoneVerdict } from './priceZoneVerdict';
 import type { PurchaseScreening } from './purchaseScreening';
 import type { StockPriceZones } from './stockPriceZones';
 import type { TechnicalIndicators } from './technicalIndicators';
@@ -54,6 +55,7 @@ export interface AssetOpinion {
   opinion: string;
   screening: PurchaseScreening;
   stockPriceZones: StockPriceZones | null;
+  priceZoneVerdict: PriceZoneVerdict | null;
   duPont: DuPontBreakdown | null;
   updatedAt: Date;
 }

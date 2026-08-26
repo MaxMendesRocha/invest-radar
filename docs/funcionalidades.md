@@ -354,6 +354,42 @@ Das duas leituras, a de patrimônio é a mais firme, e isso também foi medido: 
 a volatilidade do patrimônio líquido é **0,20** contra **0,70** do lucro. As duas aparecem lado a
 lado; qual pesa mais é do leitor.
 
+### Onde as duas leituras aparecem: a conclusão na lista, a conta no detalhe
+
+Em **Oportunidades**, cada card traz uma linha só — `ABAIXO DA FAIXA · por patrimônio · dentro, por
+lucro`. No **Parecer de Ativo**, a régua desenhada: as duas faixas com a cotação marcada, e o texto
+do desacordo quando ele existe. Numa lista de dez cards, dez pares de barras seriam ruído; a linha
+diz o que as barras concluem.
+
+Encabeça a leitura por **patrimônio** sempre que ela existe — a mais firme das duas pela medição
+acima. Nunca a mais favorável: encabeçar pela que estiver mais barata seria escolher a conclusão
+antes de fazer a conta.
+
+A comparação `preço × faixa` acontece **uma vez, no servidor** (`summarizeStockPriceZones`), e as
+duas telas leem o mesmo campo `priceZoneVerdict`. Se cada uma refizesse o `<`, bastaria um `<=`
+desalinhado para a lista dizer "abaixo" e o detalhe dizer "dentro" do mesmo preço. A régua do
+detalhe desenha as duas barras na **mesma escala de preço**: assim o marcador da cotação fica no
+mesmo ponto nas duas e o que se move é a faixa — com um eixo por barra, a discordância viraria
+artefato do desenho.
+
+### De onde vem o ROE: a decomposição com a identidade à vista
+
+O Parecer mostra os cinco fatores de `computeDuPontBreakdown` (carga fiscal, peso do juro, margem
+EBIT, giro, alavancagem) e, embaixo, o produto deles. **A identidade fecha sobre os números
+impressos, não sobre os de precisão cheia** — medido num caso de banco, os fatores exibidos davam
+18,9% enquanto a linha afirmava 19,2%, porque o produto usava o giro sem arredondar. Quem
+conferisse a conta na tela encontraria um erro numa linha que existe justamente para ser conferida.
+
+Os fatores vêm do **mesmo provedor** que calcula o ROE exibido nos indicadores. Uma segunda
+decomposição a partir da série da CVM foi construída e descartada por isso: ela fecharia num valor
+levemente diferente do ROE logo acima, no mesmo card. A decomposição tem de vir da mesma fonte que
+o ROE que ela decompõe.
+
+Os cinco não são ordenados, e a ausência é resultado de medição. A primeira versão elegia uma
+"alavanca dominante" comparando os logaritmos — como o ROE é o produto, no log é a soma. O harness
+derrubou no primeiro caso não-banco: margem é sempre fração e giro quase sempre também, enquanto
+alavancagem é sempre maior que 1, então ela ganhava *sempre*.
+
 ### Pares reais nomeados, não só a mediana
 
 `describeSectorComparison` (`sector-benchmarks.ts`) compara P/L, ROE e DY contra a mediana do

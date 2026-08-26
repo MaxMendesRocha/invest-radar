@@ -169,6 +169,56 @@ function bookZone(
   return { low: valorPatrimonialPorAcao * p25, fair: valorPatrimonialPorAcao * mediana };
 }
 
+/** Onde a cotação cai em relação a uma das duas faixas. */
+export type ZoneReading = "abaixo" | "dentro" | "acima";
+
+/**
+ * As duas leituras reduzidas ao que cabe numa linha, mais qual delas encabeça a frase.
+ *
+ * Existe para que a lista de Oportunidades e o detalhe do ativo não possam divergir: a
+ * lista mostra a conclusão, o detalhe mostra a conta, e a comparação `preço × faixa`
+ * acontece uma vez só, aqui. Se o frontend refizesse o `<` de cada lado, bastaria um
+ * `<=` desalinhado para uma tela dizer "dentro" e a outra "abaixo" do mesmo número.
+ */
+export interface ZonesVerdict {
+  earnings: ZoneReading | null;
+  book: ZoneReading | null;
+  /**
+   * Qual leitura vai na frente na linha da lista, onde só cabe uma.
+   *
+   * É a de patrimônio sempre que ela existe, e o motivo está medido no topo deste
+   * arquivo: sobre cinco exercícios, a volatilidade mediana do patrimônio líquido é 0,20
+   * contra 0,70 do lucro. A mais firme encabeça; a outra vai como ressalva. Nunca é a
+   * mais favorável — encabeçar pela que estiver mais barata seria escolher a conclusão
+   * antes de fazer a conta.
+   */
+  lead: "lucro" | "patrimonio";
+  /** As duas existem e não dizem a mesma coisa. O desacordo é a informação, não defeito. */
+  disagree: boolean;
+}
+
+/** `null` quando não há faixa — nunca "dentro" por ausência de referência. */
+export function readPriceZone(zone: PriceZone | null, price: number): ZoneReading | null {
+  if (!zone || !(price > 0)) return null;
+  if (price < zone.low) return "abaixo";
+  if (price > zone.fair) return "acima";
+  return "dentro";
+}
+
+export function summarizeStockPriceZones(zones: StockPriceZones | null, price: number): ZonesVerdict | null {
+  if (!zones) return null;
+  const earnings = readPriceZone(zones.earnings, price);
+  const book = readPriceZone(zones.book, price);
+  if (earnings == null && book == null) return null;
+
+  return {
+    earnings,
+    book,
+    lead: book != null ? "patrimonio" : "lucro",
+    disagree: earnings != null && book != null && earnings !== book,
+  };
+}
+
 const brl = (v: number): string => `R$ ${v.toFixed(2)}`;
 
 /**

@@ -1069,6 +1069,65 @@ export const OpportunityDividendFrequency = {
   Irregular: 'Irregular',
 } as const;
 
+/**
+ * Onde a cotação cai na faixa por lucro normalizado. Null quando essa faixa não existe.
+ * @nullable
+ */
+export type PriceZoneVerdictEarnings = typeof PriceZoneVerdictEarnings[keyof typeof PriceZoneVerdictEarnings] | null;
+
+
+export const PriceZoneVerdictEarnings = {
+  abaixo: 'abaixo',
+  dentro: 'dentro',
+  acima: 'acima',
+} as const;
+
+/**
+ * Onde a cotação cai na faixa por patrimônio. Null quando essa faixa não existe.
+ * @nullable
+ */
+export type PriceZoneVerdictBook = typeof PriceZoneVerdictBook[keyof typeof PriceZoneVerdictBook] | null;
+
+
+export const PriceZoneVerdictBook = {
+  abaixo: 'abaixo',
+  dentro: 'dentro',
+  acima: 'acima',
+} as const;
+
+/**
+ * Qual leitura encabeça a frase onde só cabe uma. É a de patrimônio sempre que ela existe, porque é a mais firme das duas: sobre cinco exercícios, a volatilidade mediana do patrimônio líquido é 0,20 contra 0,70 do lucro. Nunca é a mais favorável — encabeçar pela mais barata seria escolher a conclusão antes de fazer a conta.
+ */
+export type PriceZoneVerdictLead = typeof PriceZoneVerdictLead[keyof typeof PriceZoneVerdictLead];
+
+
+export const PriceZoneVerdictLead = {
+  lucro: 'lucro',
+  patrimonio: 'patrimonio',
+} as const;
+
+/**
+ * As duas leituras de `StockPriceZones` reduzidas a onde a cotação cai em cada uma. Calculado no servidor, e não no cliente, para que a linha de veredito da lista de Oportunidades e os selos da régua no detalhe do ativo venham da mesma comparação — refeita nos dois lugares, um `<=` desalinhado faria as duas telas discordarem sobre o mesmo preço.
+ * Null fora de ação, ou quando nenhuma das duas faixas saiu.
+ * @nullable
+ */
+export type PriceZoneVerdict = {
+  /**
+     * Onde a cotação cai na faixa por lucro normalizado. Null quando essa faixa não existe.
+     * @nullable
+     */
+  earnings: PriceZoneVerdictEarnings;
+  /**
+     * Onde a cotação cai na faixa por patrimônio. Null quando essa faixa não existe.
+     * @nullable
+     */
+  book: PriceZoneVerdictBook;
+  /** Qual leitura encabeça a frase onde só cabe uma. É a de patrimônio sempre que ela existe, porque é a mais firme das duas: sobre cinco exercícios, a volatilidade mediana do patrimônio líquido é 0,20 contra 0,70 do lucro. Nunca é a mais favorável — encabeçar pela mais barata seria escolher a conclusão antes de fazer a conta. */
+  lead: PriceZoneVerdictLead;
+  /** As duas leituras existem e não dizem a mesma coisa. É informação sobre a empresa, não erro de cálculo. */
+  disagree: boolean;
+} | null;
+
 export interface Opportunity {
   id: number;
   ticker: string;
@@ -1109,6 +1168,7 @@ export interface Opportunity {
      * @nullable
      */
   dividendFrequency?: OpportunityDividendFrequency;
+  priceZoneVerdict?: PriceZoneVerdict | null;
 }
 
 export interface OpportunityList {
@@ -1583,6 +1643,7 @@ export interface AssetOpinion {
   opinion: string;
   screening: PurchaseScreening;
   stockPriceZones: StockPriceZones | null;
+  priceZoneVerdict: PriceZoneVerdict | null;
   duPont: DuPontBreakdown | null;
   updatedAt: string;
 }

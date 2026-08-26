@@ -2482,6 +2482,8 @@ components:
           type: ["string", "null"]
           enum: [Mensal, Trimestral, Semestral, Anual, Irregular, null]
           description: Periodicidade real de pagamento de proventos nos últimos 12 meses, a partir do histórico real. Null se o ativo não pagou nada no período.
+        priceZoneVerdict:
+          $ref: "#/components/schemas/PriceZoneVerdict"
 
     OpportunitiesNextRefresh:
       type: object
@@ -2825,7 +2827,7 @@ components:
 
     AssetOpinion:
       type: object
-      required: [ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, newsItems, opinion, screening, stockPriceZones, duPont, updatedAt]
+      required: [ticker, name, available, score, scoreClassification, positives, risks, price, fiftyTwoWeekHigh, fiftyTwoWeekLow, fiveDayChangePercent, dividendTrend, technical, newsItems, opinion, screening, stockPriceZones, priceZoneVerdict, duPont, updatedAt]
       description: Parecer pré-compra sobre um ticker — não pressupõe que o ativo esteja na carteira, então não tem IR, % de concentração nem status de posição (COMPRAR/MANTER/VENDER).
       properties:
         ticker:
@@ -2902,11 +2904,46 @@ components:
           $ref: "#/components/schemas/PurchaseScreening"
         stockPriceZones:
           $ref: "#/components/schemas/StockPriceZones"
+        priceZoneVerdict:
+          $ref: "#/components/schemas/PriceZoneVerdict"
         duPont:
           $ref: "#/components/schemas/DuPontBreakdown"
         updatedAt:
           type: string
           format: date-time
+
+    PriceZoneVerdict:
+      type: ["object", "null"]
+      required: [earnings, book, lead, disagree]
+      description: >-
+        As duas leituras de `StockPriceZones` reduzidas a onde a cotação cai em cada uma.
+        Calculado no servidor, e não no cliente, para que a linha de veredito da lista de
+        Oportunidades e os selos da régua no detalhe do ativo venham da mesma comparação —
+        refeita nos dois lugares, um `<=` desalinhado faria as duas telas discordarem
+        sobre o mesmo preço.
+
+        Null fora de ação, ou quando nenhuma das duas faixas saiu.
+      properties:
+        earnings:
+          type: ["string", "null"]
+          enum: [abaixo, dentro, acima, null]
+          description: Onde a cotação cai na faixa por lucro normalizado. Null quando essa faixa não existe.
+        book:
+          type: ["string", "null"]
+          enum: [abaixo, dentro, acima, null]
+          description: Onde a cotação cai na faixa por patrimônio. Null quando essa faixa não existe.
+        lead:
+          type: string
+          enum: [lucro, patrimonio]
+          description: >-
+            Qual leitura encabeça a frase onde só cabe uma. É a de patrimônio sempre que
+            ela existe, porque é a mais firme das duas: sobre cinco exercícios, a
+            volatilidade mediana do patrimônio líquido é 0,20 contra 0,70 do lucro. Nunca
+            é a mais favorável — encabeçar pela mais barata seria escolher a conclusão
+            antes de fazer a conta.
+        disagree:
+          type: boolean
+          description: As duas leituras existem e não dizem a mesma coisa. É informação sobre a empresa, não erro de cálculo.
 
     StockPriceZones:
       type: ["object", "null"]
