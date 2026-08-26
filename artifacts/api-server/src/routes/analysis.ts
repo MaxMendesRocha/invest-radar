@@ -781,6 +781,18 @@ router.get("/analysis/opinion/:ticker", requireAuth, async (req, res): Promise<v
     // Triagem determinística, calculada aqui e não escrita pela IA — mesma divisão de
     // trabalho do resto do app: a IA redige, nunca decide enum nem nota.
     screening: screenForPurchase(analysis),
+    // As duas leituras de faixa de entrada e a decomposição do ROE deixam de ser só
+    // insumo do prompt e passam a aparecer na tela. Eram calculadas aqui desde sempre e
+    // só a IA via — o que significa que a conta existia e a pessoa recebia a paráfrase
+    // dela em vez do número.
+    //
+    // O DuPont vem de `computeDuPontBreakdown`, a MESMA fonte do ROE que a tela mostra na
+    // fileira de indicadores. Uma segunda decomposição a partir da série da CVM foi
+    // construída e descartada por isso: a identidade fecharia num valor levemente
+    // diferente do ROE logo acima, no mesmo card, e duas telas discordando é o defeito
+    // que a decomposição existe para tornar impossível.
+    stockPriceZones,
+    duPont,
     updatedAt: new Date().toISOString(),
   };
 
