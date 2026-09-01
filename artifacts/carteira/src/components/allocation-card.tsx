@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Target, Wallet, Pencil } from "lucide-react";
-import { formatCurrency, formatShortDate } from "@/lib/utils";
+import { formatCurrency, rateVintage } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   CATEGORY_LABEL,
@@ -205,7 +205,7 @@ function ContributionPlan() {
                         {index === 0 && <p className="text-xs text-muted-foreground text-pretty mt-0.5">{t.reason}</p>}
                         {t.sizing && <div className="mt-0.5"><SizingLine sizing={t.sizing} unitLabel="título" /></div>}
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          A partir de {formatCurrency(t.minimumInvestment)} · taxa de {formatShortDate(t.baseDate)}
+                          A partir de {formatCurrency(t.minimumInvestment)} · taxa de {rateVintage(t.baseDate)}
                         </p>
                       </div>
                     ))}

@@ -25,7 +25,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { analysisStatusConfigFor } from "@/lib/analysis-status";
-import { formatCurrency, formatPercent, formatShortDateTime, formatShortDate } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatShortDateTime, formatShortDate, baseDateVintage } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,58 +75,27 @@ function acceptsPriceTarget(category: string): boolean {
  * Formatar os dois com hora fazia o PU do Tesouro aparecer como "07/08 às 00h00" —
  * meia-noite não é quando o Tesouro publicou nada, é só o começo do dia virando hora.
  */
-// Dias da semana em minúscula: entram no meio de uma frase ("de sexta, 28/08"), não
-// como rótulo isolado.
-const DIA_DA_SEMANA = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
-
-/**
- * A data-base do Tesouro em UTC, sempre. `priceAsOf` de título público vem como
- * `2026-08-28T00:00:00Z`, e ler isso com `getDay()` num fuso a oeste de Greenwich
- * devolve o dia ANTERIOR — a meia-noite UTC de sexta é quinta às 21h em Brasília. O dia
- * da semana existe justamente para denunciar defasagem; errado por um, ele mentiria.
- */
-function partesDaDataBase(iso: string): { dia: string; utc: number } {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  const utc = Date.UTC(y, (m ?? 1) - 1, d ?? 1);
-  return { dia: DIA_DA_SEMANA[new Date(utc).getUTCDay()] ?? "", utc };
-}
-
 /**
  * Quando o preço exibido é de outro dia, dizer de QUE dia — e não só a data.
  *
- * O PU do Tesouro nunca é de agora: o dado aberto publica com um pregão de atraso, então
- * numa terça o app mostra o preço de segunda e numa segunda mostra o de sexta. A data
- * sozinha ("28/08") responde a que dia o valor se refere, mas não avisa que ele não é o
- * de hoje — quem lê à noite de segunda vê "28/08" e não converte para "isto é de sexta"
- * sem parar para pensar. O dia da semana faz essa conversão pelo leitor.
- *
- * `desatualizado` é outra coisa, e mais rara: o atraso normal é de um pregão, e nem um
- * feriado prolongado passa de quatro ou cinco dias corridos. Além de uma semana já não é
- * a natureza da fonte, é o job de sincronização parado — e aí vale o âmbar que o app usa
- * para cotação defasada de ação, porque aí é problema de verdade.
+ * A conta de vintage mora em `baseDateVintage` (lib/utils), e não aqui, porque as telas
+ * de sugestão de aporte mostram a mesma data-base do Tesouro. Duas implementações do
+ * mesmo cálculo divergiriam, e a que divergisse por um dia seria pior do que a data crua
+ * que ambas vieram substituir.
  */
 function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: string | null }): {
   texto: string;
   desatualizado: boolean;
 } {
   if (!asset.priceAsOf) return { texto: "", desatualizado: false };
+  // Ação com preço datado já É a anomalia — o provedor caiu. Continua em âmbar, e a hora
+  // importa tanto quanto o dia.
   if (!asset.treasuryBondType) {
-    // Ação com preço datado já É a anomalia — o provedor caiu. Continua em âmbar, e a
-    // hora importa tanto quanto o dia.
     return { texto: formatShortDateTime(asset.priceAsOf), desatualizado: true };
   }
 
-  const iso = asset.priceAsOf.slice(0, 10);
-  const { dia, utc } = partesDaDataBase(iso);
-  const agora = new Date();
-  const hoje = Date.UTC(agora.getFullYear(), agora.getMonth(), agora.getDate());
-  const diasCorridos = Math.round((hoje - utc) / 86_400_000);
-
-  if (diasCorridos <= 0) return { texto: formatShortDate(iso), desatualizado: false };
-  return {
-    texto: `de ${dia}, ${formatShortDate(iso)}`,
-    desatualizado: diasCorridos > 7,
-  };
+  const { dataCurta, dia, desatualizado } = baseDateVintage(asset.priceAsOf);
+  return { texto: dia ? `de ${dia}, ${dataCurta}` : dataCurta, desatualizado };
 }
 
 /**
