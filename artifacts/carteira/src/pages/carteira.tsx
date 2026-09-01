@@ -25,7 +25,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { analysisStatusConfigFor } from "@/lib/analysis-status";
-import { formatCurrency, formatPercent, formatShortDateTime, formatShortDate } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatShortDateTime, formatShortDate, baseDateVintage } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,9 +75,27 @@ function acceptsPriceTarget(category: string): boolean {
  * Formatar os dois com hora fazia o PU do Tesouro aparecer como "07/08 às 00h00" —
  * meia-noite não é quando o Tesouro publicou nada, é só o começo do dia virando hora.
  */
-function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: string | null }): string {
-  if (!asset.priceAsOf) return "";
-  return asset.treasuryBondType ? formatShortDate(asset.priceAsOf.slice(0, 10)) : formatShortDateTime(asset.priceAsOf);
+/**
+ * Quando o preço exibido é de outro dia, dizer de QUE dia — e não só a data.
+ *
+ * A conta de vintage mora em `baseDateVintage` (lib/utils), e não aqui, porque as telas
+ * de sugestão de aporte mostram a mesma data-base do Tesouro. Duas implementações do
+ * mesmo cálculo divergiriam, e a que divergisse por um dia seria pior do que a data crua
+ * que ambas vieram substituir.
+ */
+function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: string | null }): {
+  texto: string;
+  desatualizado: boolean;
+} {
+  if (!asset.priceAsOf) return { texto: "", desatualizado: false };
+  // Ação com preço datado já É a anomalia — o provedor caiu. Continua em âmbar, e a hora
+  // importa tanto quanto o dia.
+  if (!asset.treasuryBondType) {
+    return { texto: formatShortDateTime(asset.priceAsOf), desatualizado: true };
+  }
+
+  const { dataCurta, dia, desatualizado } = baseDateVintage(asset.priceAsOf);
+  return { texto: dia ? `de ${dia}, ${dataCurta}` : dataCurta, desatualizado };
 }
 
 /**
@@ -985,10 +1003,12 @@ export default function Carteira() {
                           <div className="text-xs font-sans text-muted-foreground">saldo estimado hoje</div>
                         )}
                         {asset.priceAsOf && (
-                          // Âmbar sinaliza problema, e título público datado não é
-                          // problema: o Tesouro publica o PU com atraso por natureza.
-                          <div className={`text-xs font-sans ${asset.treasuryBondType ? "text-muted-foreground" : "text-amber-700 dark:text-amber-500"}`}>
-                            {priceMoment(asset)}
+                          // Âmbar sinaliza problema. O atraso de um pregão do Tesouro não
+                          // é problema — é a natureza da fonte —, então ele fica neutro e
+                          // se explica pelo dia da semana. Âmbar só quando a série parou
+                          // de verdade (ver priceMoment).
+                          <div className={`text-xs font-sans ${priceMoment(asset).desatualizado ? "text-amber-700 dark:text-amber-500" : "text-muted-foreground"}`}>
+                            {priceMoment(asset).texto}
                           </div>
                         )}
                         {acceptsPriceTarget(asset.category) && (
@@ -1112,8 +1132,8 @@ export default function Carteira() {
                         <ChangeBadge changePercent={asset.changePercent} />
                       </div>
                       {asset.priceAsOf && (
-                        <div className={`text-xs ${asset.treasuryBondType ? "text-muted-foreground" : "text-amber-700 dark:text-amber-500"}`}>
-                          {priceMoment(asset)}
+                        <div className={`text-xs ${priceMoment(asset).desatualizado ? "text-amber-700 dark:text-amber-500" : "text-muted-foreground"}`}>
+                          {priceMoment(asset).texto}
                         </div>
                       )}
                       {acceptsPriceTarget(asset.category) && (

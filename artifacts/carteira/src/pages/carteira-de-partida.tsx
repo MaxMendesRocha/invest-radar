@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Compass, Landmark, ShieldAlert, ClipboardList, Wallet } from "lucide-react";
-import { formatCurrency, formatShortDate } from "@/lib/utils";
+import { formatCurrency, rateVintage } from "@/lib/utils";
 import {
   CATEGORY_LABEL,
   SUGGESTION_NOTE,
@@ -179,7 +179,7 @@ function TreasuryBlock({ treasury, hasProfile }: { treasury: StarterPortfolios["
                   contraponto, então só o primeiro leva a justificativa. */}
               {index === 0 && <p className="text-xs text-muted-foreground text-pretty mt-0.5">{t.reason}</p>}
               <p className="text-xs text-muted-foreground mt-0.5">
-                A partir de {formatCurrency(t.minimumInvestment)} · taxa de {formatShortDate(t.baseDate)}
+                A partir de {formatCurrency(t.minimumInvestment)} · taxa de {rateVintage(t.baseDate)}
               </p>
             </div>
           ))
