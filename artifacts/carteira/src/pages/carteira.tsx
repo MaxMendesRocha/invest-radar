@@ -75,9 +75,58 @@ function acceptsPriceTarget(category: string): boolean {
  * Formatar os dois com hora fazia o PU do Tesouro aparecer como "07/08 às 00h00" —
  * meia-noite não é quando o Tesouro publicou nada, é só o começo do dia virando hora.
  */
-function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: string | null }): string {
-  if (!asset.priceAsOf) return "";
-  return asset.treasuryBondType ? formatShortDate(asset.priceAsOf.slice(0, 10)) : formatShortDateTime(asset.priceAsOf);
+// Dias da semana em minúscula: entram no meio de uma frase ("de sexta, 28/08"), não
+// como rótulo isolado.
+const DIA_DA_SEMANA = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+
+/**
+ * A data-base do Tesouro em UTC, sempre. `priceAsOf` de título público vem como
+ * `2026-08-28T00:00:00Z`, e ler isso com `getDay()` num fuso a oeste de Greenwich
+ * devolve o dia ANTERIOR — a meia-noite UTC de sexta é quinta às 21h em Brasília. O dia
+ * da semana existe justamente para denunciar defasagem; errado por um, ele mentiria.
+ */
+function partesDaDataBase(iso: string): { dia: string; utc: number } {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  const utc = Date.UTC(y, (m ?? 1) - 1, d ?? 1);
+  return { dia: DIA_DA_SEMANA[new Date(utc).getUTCDay()] ?? "", utc };
+}
+
+/**
+ * Quando o preço exibido é de outro dia, dizer de QUE dia — e não só a data.
+ *
+ * O PU do Tesouro nunca é de agora: o dado aberto publica com um pregão de atraso, então
+ * numa terça o app mostra o preço de segunda e numa segunda mostra o de sexta. A data
+ * sozinha ("28/08") responde a que dia o valor se refere, mas não avisa que ele não é o
+ * de hoje — quem lê à noite de segunda vê "28/08" e não converte para "isto é de sexta"
+ * sem parar para pensar. O dia da semana faz essa conversão pelo leitor.
+ *
+ * `desatualizado` é outra coisa, e mais rara: o atraso normal é de um pregão, e nem um
+ * feriado prolongado passa de quatro ou cinco dias corridos. Além de uma semana já não é
+ * a natureza da fonte, é o job de sincronização parado — e aí vale o âmbar que o app usa
+ * para cotação defasada de ação, porque aí é problema de verdade.
+ */
+function priceMoment(asset: { priceAsOf?: string | null; treasuryBondType?: string | null }): {
+  texto: string;
+  desatualizado: boolean;
+} {
+  if (!asset.priceAsOf) return { texto: "", desatualizado: false };
+  if (!asset.treasuryBondType) {
+    // Ação com preço datado já É a anomalia — o provedor caiu. Continua em âmbar, e a
+    // hora importa tanto quanto o dia.
+    return { texto: formatShortDateTime(asset.priceAsOf), desatualizado: true };
+  }
+
+  const iso = asset.priceAsOf.slice(0, 10);
+  const { dia, utc } = partesDaDataBase(iso);
+  const agora = new Date();
+  const hoje = Date.UTC(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const diasCorridos = Math.round((hoje - utc) / 86_400_000);
+
+  if (diasCorridos <= 0) return { texto: formatShortDate(iso), desatualizado: false };
+  return {
+    texto: `de ${dia}, ${formatShortDate(iso)}`,
+    desatualizado: diasCorridos > 7,
+  };
 }
 
 /**
@@ -985,10 +1034,12 @@ export default function Carteira() {
                           <div className="text-xs font-sans text-muted-foreground">saldo estimado hoje</div>
                         )}
                         {asset.priceAsOf && (
-                          // Âmbar sinaliza problema, e título público datado não é
-                          // problema: o Tesouro publica o PU com atraso por natureza.
-                          <div className={`text-xs font-sans ${asset.treasuryBondType ? "text-muted-foreground" : "text-amber-700 dark:text-amber-500"}`}>
-                            {priceMoment(asset)}
+                          // Âmbar sinaliza problema. O atraso de um pregão do Tesouro não
+                          // é problema — é a natureza da fonte —, então ele fica neutro e
+                          // se explica pelo dia da semana. Âmbar só quando a série parou
+                          // de verdade (ver priceMoment).
+                          <div className={`text-xs font-sans ${priceMoment(asset).desatualizado ? "text-amber-700 dark:text-amber-500" : "text-muted-foreground"}`}>
+                            {priceMoment(asset).texto}
                           </div>
                         )}
                         {acceptsPriceTarget(asset.category) && (
@@ -1112,8 +1163,8 @@ export default function Carteira() {
                         <ChangeBadge changePercent={asset.changePercent} />
                       </div>
                       {asset.priceAsOf && (
-                        <div className={`text-xs ${asset.treasuryBondType ? "text-muted-foreground" : "text-amber-700 dark:text-amber-500"}`}>
-                          {priceMoment(asset)}
+                        <div className={`text-xs ${priceMoment(asset).desatualizado ? "text-amber-700 dark:text-amber-500" : "text-muted-foreground"}`}>
+                          {priceMoment(asset).texto}
                         </div>
                       )}
                       {acceptsPriceTarget(asset.category) && (
