@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "wouter";
 import {
   useListAssets,
@@ -248,6 +248,37 @@ export default function Carteira() {
   const { data: assets, isLoading } = useListAssets({ query: { queryKey: getListAssetsQueryKey() } });
   const { data: analyses } = useListAssetAnalyses({ query: { queryKey: getListAssetAnalysesQueryKey() } });
   
+  // Categorias PRESENTES na carteira, na ordem em que aparecem — não a lista fixa de
+  // CATEGORY_LABELS. Mesmo critério da tela de Oportunidades: oferecer um filtro que
+  // sempre daria lista vazia é ruído, e aqui seria pior, porque sugeriria que existe
+  // uma classe de ativo esquecida quando ela só não foi cadastrada.
+  const categoriasPresentes = useMemo(() => {
+    const vistas: string[] = [];
+    for (const asset of assets ?? []) {
+      if (!vistas.includes(asset.category)) vistas.push(asset.category);
+    }
+    return vistas;
+  }, [assets]);
+
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+
+  // O filtro some junto com a categoria que o originou — vender o último FII com o
+  // filtro em FIIs deixaria a tela num estado vazio sem explicação.
+  useEffect(() => {
+    if (categoryFilter && !categoriasPresentes.includes(categoryFilter)) setCategoryFilter(null);
+  }, [categoryFilter, categoriasPresentes]);
+
+  const visibleAssets = categoryFilter
+    ? (assets ?? []).filter((a) => a.category === categoryFilter)
+    : (assets ?? []);
+
+  // Subtotal da fatia filtrada. O filtro NÃO mexe nos totais do topo da tela de
+  // propósito: patrimônio que encolhe ao clicar num botão de visualização é o tipo de
+  // número que assusta sem motivo. Em vez disso o recorte se declara aqui, e de quebra
+  // responde "quanto eu tenho em FII?", que é o que costuma motivar o filtro.
+  const totalCarteira = (assets ?? []).reduce((soma, a) => soma + (a.totalValue ?? 0), 0);
+  const totalFiltrado = visibleAssets.reduce((soma, a) => soma + (a.totalValue ?? 0), 0);
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -943,6 +974,43 @@ export default function Carteira() {
         </Dialog>
       </div>
 
+      {/* Some com uma categoria só: filtrar entre uma opção não é filtro, é ruído.
+          "Todas" não entra na contagem — ela não é uma categoria, é a ausência de filtro. */}
+      {categoriasPresentes.length > 1 && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={categoryFilter === null ? "default" : "outline"}
+              onClick={() => setCategoryFilter(null)}
+            >
+              Todas
+            </Button>
+            {categoriasPresentes.map((categoria) => (
+              <Button
+                key={categoria}
+                type="button"
+                size="sm"
+                variant={categoryFilter === categoria ? "default" : "outline"}
+                onClick={() => setCategoryFilter(categoria)}
+              >
+                {categoryLabel(categoria)}
+              </Button>
+            ))}
+          </div>
+          {categoryFilter && (
+            <p className="text-sm text-muted-foreground">
+              {visibleAssets.length} {visibleAssets.length === 1 ? "ativo" : "ativos"} ·{" "}
+              <span className="font-mono">{formatCurrency(totalFiltrado)}</span>
+              {/* formatPercent e não toFixed: o ponto decimal do en-US colide com o
+                  separador de milhar pt-BR usado no resto da tela. */}
+              {totalCarteira > 0 && ` · ${formatPercent((totalFiltrado / totalCarteira) * 100)} da carteira`}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Desktop: tabela — cabe as 9 colunas sem rolagem horizontal */}
       <Card className="hidden md:block">
         <CardContent className="p-0">
@@ -974,7 +1042,7 @@ export default function Carteira() {
                   </TableCell>
                 </TableRow>
               ) : (
-                assets?.map((asset) => {
+                visibleAssets.map((asset) => {
                   const analysis = analyses?.find(a => a.ticker === asset.ticker);
                   const isProfit = asset.profitLoss && asset.profitLoss >= 0;
 
@@ -1071,7 +1139,7 @@ export default function Carteira() {
         ) : assets?.length === 0 ? (
           <Card><CardContent className="py-8 text-center text-muted-foreground"><EmptyPortfolioMessage /></CardContent></Card>
         ) : (
-          assets?.map((asset) => {
+          visibleAssets.map((asset) => {
             const analysis = analyses?.find(a => a.ticker === asset.ticker);
             const isProfit = asset.profitLoss && asset.profitLoss >= 0;
 
