@@ -1901,6 +1901,41 @@ export const AllocationPlanItemSuggestionsStatus = {
   tesouro_indisponivel: 'tesouro_indisponivel',
 } as const;
 
+export interface AllocationReinforcement {
+  ticker: string;
+  /** Quantas cotas/ações comprar desta posição. */
+  units: number;
+  amount: number;
+  /** Quantas faltavam para o número mágico ANTES desta compra. */
+  unitsRemainingBefore: number;
+  /** Esta compra fecha o número mágico — a posição passa a comprar sozinha uma cota por período com os próprios proventos. */
+  closesMagicNumber: boolean;
+}
+
+/**
+ * "nao_atende" = a régua do Radar foi aplicada e o ativo ficou abaixo do corte. "sem_dados" = a régua NÃO chegou a ser aplicada; não é reprovação do ativo, e fundir os dois o reprovaria por uma falha do provedor. "sem_numero_magico" = não pagou provento real nos últimos 12 meses, então o conceito não se aplica (a maioria das ações de crescimento). "ja_atingido" = já se autossustenta. "no_teto" = qualquer cota a mais empurra a posição ao teto de concentração do perfil.
+ * Nenhum deles é ordem de venda. Todos dizem apenas "não coloque dinheiro novo aqui agora", que é afirmação diferente de "tire o que está aqui".
+ */
+export type SkippedHoldingReason = typeof SkippedHoldingReason[keyof typeof SkippedHoldingReason];
+
+
+export const SkippedHoldingReason = {
+  nao_atende: 'nao_atende',
+  sem_dados: 'sem_dados',
+  sem_numero_magico: 'sem_numero_magico',
+  ja_atingido: 'ja_atingido',
+  no_teto: 'no_teto',
+} as const;
+
+export interface SkippedHolding {
+  ticker: string;
+  /**
+     * "nao_atende" = a régua do Radar foi aplicada e o ativo ficou abaixo do corte. "sem_dados" = a régua NÃO chegou a ser aplicada; não é reprovação do ativo, e fundir os dois o reprovaria por uma falha do provedor. "sem_numero_magico" = não pagou provento real nos últimos 12 meses, então o conceito não se aplica (a maioria das ações de crescimento). "ja_atingido" = já se autossustenta. "no_teto" = qualquer cota a mais empurra a posição ao teto de concentração do perfil.
+     * Nenhum deles é ordem de venda. Todos dizem apenas "não coloque dinheiro novo aqui agora", que é afirmação diferente de "tire o que está aqui".
+     */
+  reason: SkippedHoldingReason;
+}
+
 export interface AllocationPlanItem {
   category: string;
   amount: number;
@@ -1912,6 +1947,15 @@ export interface AllocationPlanItem {
   suggestions: AllocationPlanSuggestion[];
   /** Títulos do Tesouro Direto sugeridos para a fatia de renda fixa. Lista separada de `suggestions` de propósito: título público não tem ticker nem score do Radar, e encaixá-lo naquele formato exigiria inventar os dois. */
   treasurySuggestions?: TreasurySuggestion[];
+  /**
+     * Posições que a pessoa JÁ TEM nesta classe e que o aporte reforça, na ordem de quem está mais perto do número mágico. Diferente de `suggestions`, isto é uma PARTIÇÃO e soma de verdade: cada quantidade sai de três limites medidos — o que falta para o número mágico, o que cabe sob o teto de concentração do perfil, e o que o dinheiro compra.
+     * Vazia para renda fixa e fundos, que ficam fora desta regra: título público não tem número mágico nem teto na mesma acepção, e a sugestão dele já vem do questionário.
+     */
+  reinforcements?: AllocationReinforcement[];
+  /** O que sobra da fatia depois dos reforços, e a base contra a qual cada candidato de `suggestions` é dimensionado. Igual a `amount` quando não houve reforço nenhum. */
+  leftoverAmount?: number;
+  /** Posições da classe que ficaram fora da fila de reforço, com o motivo. Os motivos não são intercambiáveis, e a tela precisa dizer qual foi. */
+  skippedHoldings?: SkippedHolding[];
 }
 
 export type AllocationPlanSource = typeof AllocationPlanSource[keyof typeof AllocationPlanSource];

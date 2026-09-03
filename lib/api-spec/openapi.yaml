@@ -3335,6 +3335,74 @@ components:
             score do Radar, e encaixá-lo naquele formato exigiria inventar os dois.
           items:
             $ref: "#/components/schemas/TreasurySuggestion"
+        reinforcements:
+          type: array
+          description: >-
+            Posições que a pessoa JÁ TEM nesta classe e que o aporte reforça, na ordem
+            de quem está mais perto do número mágico. Diferente de `suggestions`, isto é
+            uma PARTIÇÃO e soma de verdade: cada quantidade sai de três limites medidos
+            — o que falta para o número mágico, o que cabe sob o teto de concentração do
+            perfil, e o que o dinheiro compra.
+
+            Vazia para renda fixa e fundos, que ficam fora desta regra: título público
+            não tem número mágico nem teto na mesma acepção, e a sugestão dele já vem do
+            questionário.
+          items:
+            $ref: "#/components/schemas/AllocationReinforcement"
+        leftoverAmount:
+          type: number
+          description: >-
+            O que sobra da fatia depois dos reforços, e a base contra a qual cada
+            candidato de `suggestions` é dimensionado. Igual a `amount` quando não houve
+            reforço nenhum.
+        skippedHoldings:
+          type: array
+          description: >-
+            Posições da classe que ficaram fora da fila de reforço, com o motivo. Os
+            motivos não são intercambiáveis, e a tela precisa dizer qual foi.
+          items:
+            $ref: "#/components/schemas/SkippedHolding"
+
+    AllocationReinforcement:
+      type: object
+      required: [ticker, units, amount, unitsRemainingBefore, closesMagicNumber]
+      properties:
+        ticker:
+          type: string
+        units:
+          type: integer
+          description: Quantas cotas/ações comprar desta posição.
+        amount:
+          type: number
+        unitsRemainingBefore:
+          type: integer
+          description: Quantas faltavam para o número mágico ANTES desta compra.
+        closesMagicNumber:
+          type: boolean
+          description: >-
+            Esta compra fecha o número mágico — a posição passa a comprar sozinha uma
+            cota por período com os próprios proventos.
+
+    SkippedHolding:
+      type: object
+      required: [ticker, reason]
+      properties:
+        ticker:
+          type: string
+        reason:
+          type: string
+          enum: [nao_atende, sem_dados, sem_numero_magico, ja_atingido, no_teto]
+          description: >-
+            "nao_atende" = a régua do Radar foi aplicada e o ativo ficou abaixo do corte.
+            "sem_dados" = a régua NÃO chegou a ser aplicada; não é reprovação do ativo, e
+            fundir os dois o reprovaria por uma falha do provedor. "sem_numero_magico" =
+            não pagou provento real nos últimos 12 meses, então o conceito não se aplica
+            (a maioria das ações de crescimento). "ja_atingido" = já se autossustenta.
+            "no_teto" = qualquer cota a mais empurra a posição ao teto de concentração do
+            perfil.
+
+            Nenhum deles é ordem de venda. Todos dizem apenas "não coloque dinheiro novo
+            aqui agora", que é afirmação diferente de "tire o que está aqui".
 
     AllocationPlan:
       type: object

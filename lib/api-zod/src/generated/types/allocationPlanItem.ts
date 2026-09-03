@@ -7,6 +7,8 @@
  */
 import type { AllocationPlanItemSuggestionsStatus } from './allocationPlanItemSuggestionsStatus';
 import type { AllocationPlanSuggestion } from './allocationPlanSuggestion';
+import type { AllocationReinforcement } from './allocationReinforcement';
+import type { SkippedHolding } from './skippedHolding';
 import type { TreasurySuggestion } from './treasurySuggestion';
 
 export interface AllocationPlanItem {
@@ -20,4 +22,13 @@ export interface AllocationPlanItem {
   suggestions: AllocationPlanSuggestion[];
   /** Títulos do Tesouro Direto sugeridos para a fatia de renda fixa. Lista separada de `suggestions` de propósito: título público não tem ticker nem score do Radar, e encaixá-lo naquele formato exigiria inventar os dois. */
   treasurySuggestions?: TreasurySuggestion[];
+  /**
+     * Posições que a pessoa JÁ TEM nesta classe e que o aporte reforça, na ordem de quem está mais perto do número mágico. Diferente de `suggestions`, isto é uma PARTIÇÃO e soma de verdade: cada quantidade sai de três limites medidos — o que falta para o número mágico, o que cabe sob o teto de concentração do perfil, e o que o dinheiro compra.
+     * Vazia para renda fixa e fundos, que ficam fora desta regra: título público não tem número mágico nem teto na mesma acepção, e a sugestão dele já vem do questionário.
+     */
+  reinforcements?: AllocationReinforcement[];
+  /** O que sobra da fatia depois dos reforços, e a base contra a qual cada candidato de `suggestions` é dimensionado. Igual a `amount` quando não houve reforço nenhum. */
+  leftoverAmount?: number;
+  /** Posições da classe que ficaram fora da fila de reforço, com o motivo. Os motivos não são intercambiáveis, e a tela precisa dizer qual foi. */
+  skippedHoldings?: SkippedHolding[];
 }
