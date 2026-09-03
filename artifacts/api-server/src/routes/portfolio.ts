@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable, salesTable, dividendDismissalsTable } from "@workspace/db";
 import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries, getSavingsIncomeLast12Months } from "../lib/market-data";
+import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries, getSavingsIncomeLast12Months, getFiiProfiles } from "../lib/market-data";
 import { computeCompositionRisk, type RiskPosition } from "../lib/portfolio-risk-metrics";
 import { computeAssetCorrelations } from "../lib/correlation-engine";
 import { computeMarketContext } from "../lib/market-context-engine";
@@ -12,7 +12,7 @@ import { getNewsFor, resolveSearchTerm } from "../lib/news";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
 import { computeDailyTwr } from "../lib/time-weighted-return";
 import { getCdiDailyReturns, syncAndGetDailyIndexCloses } from "../lib/benchmark-data";
-import { evalVolatility, evalDividendYield, evalRevenueGrowth } from "../lib/analysis-engine";
+import { evalVolatility, evalDividendYield, evalRevenueGrowth, analyzeFundamentals, analyzeFii, screenForPurchase } from "../lib/analysis-engine";
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { computeIncomeGoalProgress } from "../lib/income-goal-engine";
@@ -23,9 +23,12 @@ import {
   computeAllocation,
   planContribution,
   type AllocationCategory,
+  fillSliceWithHoldings,
   type ContributionSlice,
+  type HoldingForFill,
   type PolicySource,
   type PolicyTargets,
+  type SliceFill,
 } from "../lib/allocation-engine";
 import { rankOpportunitiesFor, orderByRiskProfile, type RankedOpportunity } from "../lib/opportunity-ranking";
 import { suggestTreasuryBonds, type TreasurySuggestion } from "../lib/treasury-engine";
@@ -1102,6 +1105,90 @@ async function pricesForCandidates(...maps: Map<string, RankedOpportunity[]>[]) 
 }
 
 /**
+ * As posições da carteira já triadas, prontas para a fila de reforço, agrupadas por
+ * classe — mais o patrimônio total e o teto de concentração do perfil.
+ *
+ * ## A triagem é `screenForPurchase`, e não o status
+ *
+ * "O ativo faz sentido para receber dinheiro novo?" é exatamente o que essa função
+ * responde, e o docstring dela explica por que o status COMPRAR/MANTER/VENDER não serve
+ * aqui: aquele status depende de quanto o ativo já pesa na carteira, e peso é o que o
+ * teto de concentração já trata, separado. Por isso a análise roda com
+ * `positionPercent = 0` — mesma escolha de opportunities-engine.ts pelo mesmo motivo.
+ *
+ * `nao_atende` e `sem_dados` viajam separados até a tela. Fundir os dois reprovaria o
+ * ativo por uma falha do provedor.
+ */
+async function screenedHoldingsFor(userId: number): Promise<{
+  byCategory: Map<string, HoldingForFill[]>;
+  totalPatrimony: number;
+  ceilingPercent: number;
+}> {
+  const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, userId));
+  const byCategory = new Map<string, HoldingForFill[]>();
+  if (assets.length === 0) return { byCategory, totalPatrimony: 0, ceilingPercent: 0 };
+
+  const quoted = assets.filter((a) => QUOTED_CATEGORIES.has(a.category));
+  const fiiTickers = quoted.filter((a) => a.category === "fiis").map((a) => a.ticker);
+  const [prices, fundamentalsByTicker, dividendEventsByTicker, fiiProfileByTicker, macro, [profile]] =
+    await Promise.all([
+      getPricesFor(assets),
+      getFundamentals(quoted.map((a) => a.ticker)),
+      getDividendEvents(quoted.map((a) => ({ ticker: a.ticker, category: a.category }))),
+      getFiiProfiles(fiiTickers),
+      getMacroSnapshot(),
+      db.select().from(investorProfilesTable).where(eq(investorProfilesTable.userId, userId)),
+    ]);
+
+  // Mesma base do alerta de concentração no resto do app: preço real quando existe,
+  // custo médio como piso quando o provedor falha para um ativo específico.
+  let totalPatrimony = 0;
+  for (const a of assets) {
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? parseFloat(a.averagePrice);
+    totalPatrimony += parseFloat(a.quantity) * price;
+  }
+
+  const now = Date.now();
+  for (const a of quoted) {
+    const price = prices.get(a.ticker.toUpperCase())?.price ?? null;
+    const fundamentals = fundamentalsByTicker.get(a.ticker.toUpperCase()) ?? null;
+    const events = dividendEventsByTicker.get(a.ticker.toUpperCase()) ?? [];
+    const dps12m = sumLast12Months(events, now);
+
+    // Sem preço não há número mágico nem razão de concentração — a posição fica fora com
+    // "sem_dados", que é o motivo certo: nada foi avaliado.
+    const analysis = price != null && (a.category === "fiis" || fundamentals)
+      ? a.category === "fiis"
+        ? analyzeFii({
+            profile: fiiProfileByTicker.get(a.ticker) ?? null,
+            dividendEvents: events,
+            price,
+            selicPercent: macro.selic,
+          }, 0, undefined, now)
+        : analyzeFundamentals(fundamentals!, dps12m)
+      : null;
+
+    const holding: HoldingForFill = {
+      ticker: a.ticker,
+      price: price ?? 0,
+      currentUnits: parseFloat(a.quantity),
+      avgMonthlyDividendPerUnit: dps12m != null && dps12m > 0 ? dps12m / 12 : null,
+      screening: analysis ? screenForPurchase(analysis).outcome : "sem_dados",
+    };
+
+    const lista = byCategory.get(a.category) ?? [];
+    lista.push(holding);
+    byCategory.set(a.category, lista);
+  }
+
+  return {
+    byCategory,
+    totalPatrimony,
+    ceilingPercent: concentrationLimitsFor(profile?.classification ?? null).high,
+  };
+}
+
+/**
  * O item de resposta de cada fatia: valor, candidatos com quantidade, e por que a lista
  * está vazia quando está.
  *
@@ -1116,18 +1203,31 @@ function buildSliceItems(
   candidates: Map<string, RankedOpportunity[]>,
   prices: Map<string, { price: number } | undefined>,
   treasurySuggestions: TreasurySuggestion[],
-  { attachTreasury = true }: { attachTreasury?: boolean } = {},
+  {
+    attachTreasury = true,
+    fills = new Map<string, SliceFill>(),
+  }: { attachTreasury?: boolean; fills?: Map<string, SliceFill> } = {},
 ) {
   return slices.map((slice) => {
+    const fill = fills.get(slice.category) ?? null;
+
+    // O que sobra depois do reforço é o que um ticker novo teria para receber. Sem
+    // reforço nenhum, é a fatia inteira — o comportamento que existia antes disto.
+    const paraTickerNovo = fill ? fill.leftover : slice.amount;
+
     const suggestions = (candidates.get(slice.category) ?? []).map((item) => ({
       ticker: item.ticker,
       name: item.name,
       score: item.score,
       reason: item.reason,
-      // A fatia INTEIRA contra cada candidato, e não dividida entre eles: o app tem
+      // A sobra INTEIRA contra cada candidato, e não dividida entre eles: o app tem
       // alvo por classe, não por ticker, então qualquer rateio interno seria invenção.
       // Cada linha é uma alternativa — a tela precisa dizer isso, ou somam as três.
-      sizing: sizeWholeUnits(slice.amount, prices.get(item.ticker.toUpperCase())?.price ?? null),
+      //
+      // O reforço não cai nessa regra, e a diferença é o ponto: lá a quantidade sai de
+      // três limites medidos (o que falta para o número mágico, o teto de concentração,
+      // o dinheiro), então ele É uma partição e soma de verdade.
+      sizing: sizeWholeUnits(paraTickerNovo, prices.get(item.ticker.toUpperCase())?.price ?? null),
     }));
 
     const hasTreasury = slice.category === "renda_fixa" && treasurySuggestions.length > 0;
@@ -1154,6 +1254,9 @@ function buildSliceItems(
       suggestionsStatus,
       suggestions,
       treasurySuggestions: bondsForSlice,
+      reinforcements: fill?.reinforcements ?? [],
+      leftoverAmount: paraTickerNovo,
+      skippedHoldings: fill?.skipped ?? [],
     };
   });
 }
@@ -1204,9 +1307,25 @@ router.get("/portfolio/allocation/plan", requireAuth, async (req, res): Promise<
       })
     : [];
 
+  // Reforçar antes de espalhar: cada fatia de classe cotada é preenchida primeiro pelas
+  // posições que a pessoa já tem, na ordem de quem está mais perto do número mágico e
+  // até onde o teto de concentração deixa. Só o que sobra vira ticker novo.
+  //
+  // Renda fixa e fundos ficam de fora: título público não tem número mágico nem teto na
+  // mesma acepção, e a sugestão dele já vem do questionário (treasury-engine.ts).
+  const { byCategory, totalPatrimony, ceilingPercent } = await screenedHoldingsFor(req.session.userId!);
+  const fills = new Map<string, SliceFill>();
+  for (const slice of slices) {
+    if (!QUOTED_CATEGORIES.has(slice.category)) continue;
+    fills.set(
+      slice.category,
+      fillSliceWithHoldings(slice.amount, byCategory.get(slice.category) ?? [], totalPatrimony, ceilingPercent),
+    );
+  }
+
   const candidates = candidatesBySlice(slices, ranking.items);
   const suggestedPrices = await pricesForCandidates(candidates);
-  const items = buildSliceItems(slices, candidates, suggestedPrices, treasurySuggestions);
+  const items = buildSliceItems(slices, candidates, suggestedPrices, treasurySuggestions, { fills });
 
   res.json({
     amount,

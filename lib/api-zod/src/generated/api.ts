@@ -787,7 +787,19 @@ export const GetAllocationPlanResponse = zod.object({
   "investedAmount": zod.number(),
   "leftover": zod.number().describe('O que sobra da fatia. Sem isso a soma não fecha na tela.')
 }).describe('Quanto comprar, em quantidade, se a fatia inteira da classe for para este ativo. Nunca arredonda para cima: sugerir quantidade que custa mais que a fatia seria mandar gastar dinheiro que o usuário não disse que tem.'),zod.null()]).optional().describe('Fração do título que a fatia de renda fixa compra, em múltiplos de 0,01.')
-})).optional().describe('Títulos do Tesouro Direto sugeridos para a fatia de renda fixa. Lista separada de `suggestions` de propósito: título público não tem ticker nem score do Radar, e encaixá-lo naquele formato exigiria inventar os dois.')
+})).optional().describe('Títulos do Tesouro Direto sugeridos para a fatia de renda fixa. Lista separada de `suggestions` de propósito: título público não tem ticker nem score do Radar, e encaixá-lo naquele formato exigiria inventar os dois.'),
+  "reinforcements": zod.array(zod.object({
+  "ticker": zod.string(),
+  "units": zod.number().describe('Quantas cotas\/ações comprar desta posição.'),
+  "amount": zod.number(),
+  "unitsRemainingBefore": zod.number().describe('Quantas faltavam para o número mágico ANTES desta compra.'),
+  "closesMagicNumber": zod.boolean().describe('Esta compra fecha o número mágico — a posição passa a comprar sozinha uma cota por período com os próprios proventos.')
+})).optional().describe('Posições que a pessoa JÁ TEM nesta classe e que o aporte reforça, na ordem de quem está mais perto do número mágico. Diferente de `suggestions`, isto é uma PARTIÇÃO e soma de verdade: cada quantidade sai de três limites medidos — o que falta para o número mágico, o que cabe sob o teto de concentração do perfil, e o que o dinheiro compra.\nVazia para renda fixa e fundos, que ficam fora desta regra: título público não tem número mágico nem teto na mesma acepção, e a sugestão dele já vem do questionário.'),
+  "leftoverAmount": zod.number().optional().describe('O que sobra da fatia depois dos reforços, e a base contra a qual cada candidato de `suggestions` é dimensionado. Igual a `amount` quando não houve reforço nenhum.'),
+  "skippedHoldings": zod.array(zod.object({
+  "ticker": zod.string(),
+  "reason": zod.enum(['nao_atende', 'sem_dados', 'sem_numero_magico', 'ja_atingido', 'no_teto']).describe('\"nao_atende\" = a régua do Radar foi aplicada e o ativo ficou abaixo do corte. \"sem_dados\" = a régua NÃO chegou a ser aplicada; não é reprovação do ativo, e fundir os dois o reprovaria por uma falha do provedor. \"sem_numero_magico\" = não pagou provento real nos últimos 12 meses, então o conceito não se aplica (a maioria das ações de crescimento). \"ja_atingido\" = já se autossustenta. \"no_teto\" = qualquer cota a mais empurra a posição ao teto de concentração do perfil.\nNenhum deles é ordem de venda. Todos dizem apenas \"não coloque dinheiro novo aqui agora\", que é afirmação diferente de \"tire o que está aqui\".')
+})).optional().describe('Posições da classe que ficaram fora da fila de reforço, com o motivo. Os motivos não são intercambiáveis, e a tela precisa dizer qual foi.')
 })),
   "deviationBefore": zod.number().optional().describe('Soma dos desvios absolutos (pp) antes do aporte.'),
   "deviationAfter": zod.number().optional().describe('Soma dos desvios absolutos (pp) depois do aporte sugerido.')

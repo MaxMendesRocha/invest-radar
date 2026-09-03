@@ -19,12 +19,31 @@ import {
   CATEGORY_LABEL,
   SUGGESTION_NOTE,
   SizingLine,
+  pluralizeUnit,
   decimal,
   integer,
   maturityYear,
   sizedCount,
   unitLabelFor,
 } from "@/components/allocation-shared";
+
+/**
+ * Por que uma posição da carteira não entrou na fila de reforço.
+ *
+ * Nenhuma destas frases é ordem de venda, e a redação carrega isso: todas dizem "não
+ * coloque dinheiro novo aqui agora", que é afirmação diferente de "tire o que está aqui".
+ *
+ * `nao_atende` e `sem_dados` são separados pelo mesmo motivo que os separa no motor —
+ * um é veredito sobre o ativo, o outro é a régua que não pôde ser aplicada. Fundir os
+ * dois reprovaria o ativo por uma falha do provedor.
+ */
+const SKIP_REASON: Record<string, string> = {
+  nao_atende: "não atingiu o corte de score do Radar nesta varredura.",
+  sem_dados: "não foi possível avaliar — faltou dado do provedor, não é reprovação.",
+  sem_numero_magico: "não pagou provento nos últimos 12 meses, então não tem número mágico.",
+  ja_atingido: "já atingiu o número mágico — se sustenta sozinha.",
+  no_teto: "já está no teto de concentração do seu perfil.",
+};
 
 const SOURCE_LABEL: Record<string, string> = {
   personalizado: "Alvos definidos por você.",
@@ -176,8 +195,45 @@ function ContributionPlan() {
                   <span className="font-medium">{CATEGORY_LABEL[item.category] ?? item.category}</span>
                   <span className="font-mono font-bold">{formatCurrency(item.amount)}</span>
                 </div>
+                {/* Reforço do que já se tem, antes de qualquer ticker novo. Estas linhas
+                    SOMAM: cada quantidade sai do que falta para o número mágico, do teto
+                    de concentração e do dinheiro — três limites medidos. Os candidatos
+                    logo abaixo são o oposto, e o texto precisa deixar isso explícito ou
+                    o leitor soma as duas listas. */}
+                {(item.reinforcements?.length ?? 0) > 0 && (
+                  <div className="space-y-2">
+                    {item.reinforcements!.map((r) => (
+                      <div key={r.ticker}>
+                        <div className="text-sm flex flex-wrap items-baseline gap-x-2">
+                          <span className="font-mono font-medium">{r.ticker}</span>
+                          <span className="text-xs text-muted-foreground">reforço</span>
+                          <span className="ml-auto font-mono">{formatCurrency(r.amount)}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground text-pretty">
+                          {integer.format(r.units)} {pluralizeUnit(unitLabelFor(item.category), r.units)}
+                          {/* Quando fecha, `units` É `unitsRemainingBefore` — a compra nunca
+                              passa do que falta. Repetir o número aí seria dizer duas vezes
+                              a mesma coisa ("8 cotas, que pedia 8"). */}
+                          {r.closesMagicNumber
+                            ? " — fecha o número mágico."
+                            : ` das ${integer.format(r.unitsRemainingBefore)} que faltam para o número mágico.`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {item.suggestions.length > 0 && (
                   <div className="space-y-2">
+                    {/* Só aparece quando houve reforço: sem ele a sobra É a fatia, e a
+                        frase estaria explicando uma divisão que não aconteceu. */}
+                    {(item.reinforcements?.length ?? 0) > 0 && item.leftoverAmount != null && (
+                      <p className="text-xs text-muted-foreground text-pretty">
+                        Sobram {formatCurrency(item.leftoverAmount)} para um ativo novo. As opções
+                        abaixo são alternativas entre si, cada uma dimensionada com esse valor
+                        inteiro — não somam.
+                      </p>
+                    )}
                     {item.suggestions.map((s) => (
                       <div key={s.ticker}>
                         <div className="text-sm flex gap-2">
@@ -190,6 +246,25 @@ function ContributionPlan() {
                       </div>
                     ))}
                   </div>
+                )}
+
+                {/* Por que uma posição sua não recebeu nada. Cada motivo é uma frase
+                    diferente porque eles afirmam coisas diferentes — e nenhum deles é
+                    ordem de venda. */}
+                {(item.skippedHoldings?.length ?? 0) > 0 && (
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="cursor-pointer">
+                      {item.skippedHoldings!.length}{" "}
+                      {item.skippedHoldings!.length === 1 ? "posição sua ficou" : "posições suas ficaram"} de fora
+                    </summary>
+                    <ul className="mt-1.5 space-y-1">
+                      {item.skippedHoldings!.map((h) => (
+                        <li key={h.ticker} className="text-pretty">
+                          <span className="font-mono">{h.ticker}</span> — {SKIP_REASON[h.reason] ?? h.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
 
                 {item.treasurySuggestions && item.treasurySuggestions.length > 0 && (

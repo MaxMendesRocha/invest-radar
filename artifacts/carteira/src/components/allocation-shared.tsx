@@ -55,6 +55,16 @@ export function sizedCount(item: { suggestions: { sizing?: Sizing | null }[]; tr
 }
 
 /**
+ * "ação" pluraliza para "ações", não "açãos" — a regra do `s` no fim só vale para as
+ * outras duas. Exportado porque o card de aporte precisa da mesma flexão nas linhas de
+ * reforço, e uma segunda cópia seria a que erraria.
+ */
+export function pluralizeUnit(unitLabel: "ação" | "cota" | "título", units: number): string {
+  if (units === 1) return unitLabel;
+  return unitLabel === "ação" ? "ações" : `${unitLabel}s`;
+}
+
+/**
  * A linha que converte reais em quantidade — o passo que faltava entre "R$ 206,86 em
  * FIIs" e a ordem de compra na corretora.
  *
@@ -62,7 +72,6 @@ export function sizedCount(item: { suggestions: { sizing?: Sizing | null }[]; tr
  * Esconder esse caso deixaria o usuário procurando a informação que o app tem.
  */
 export function SizingLine({ sizing, unitLabel }: { sizing: Sizing; unitLabel: "ação" | "cota" | "título" }) {
-  const plural = unitLabel === "ação" ? "ações" : `${unitLabel}s`;
   const isFractional = unitLabel === "título";
 
   if (sizing.units === 0) {
@@ -75,7 +84,7 @@ export function SizingLine({ sizing, unitLabel }: { sizing: Sizing; unitLabel: "
   }
 
   const quantity = isFractional ? fraction.format(sizing.units) : integer.format(sizing.units);
-  const noun = sizing.units === 1 ? unitLabel : plural;
+  const noun = pluralizeUnit(unitLabel, sizing.units);
 
   return (
     <p className="text-xs text-muted-foreground">

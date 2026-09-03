@@ -463,6 +463,45 @@ alvo do app é por classe, não por ticker, então dividir entre os três seria 
 que não existe. Quando a fatia não paga uma unidade, o app diz isso em vez de omitir a linha —
 é informação que ele tem.
 
+### Reforçar antes de espalhar
+
+O plano decidia *quanto* vai para cada classe olhando a carteira real, mas escolhia *quais* ativos
+sem ela: os candidatos vinham da varredura, que não sabe o que a pessoa tem. A tela dizia "coloque
+R$ 600 em FIIs porque você está abaixo do alvo" e nomeava FIIs que ela não possui. Com aporte
+pequeno e ticker novo todo mês, o resultado são dezenas de posições minúsculas, nenhuma fechando o
+número mágico — e `unitsRemaining` mede exatamente essa distância.
+
+Agora cada fatia de classe cotada é preenchida primeiro pelas **posições já detidas**, na ordem de
+quem está mais perto de fechar o número mágico. Cada perna é
+`min(o que falta para a meta, o que cabe sob o teto de concentração, o que o dinheiro compra)` —
+`fillSliceWithHoldings` em `allocation-engine.ts`, reusando `computeMagicNumber` e
+`planSafePurchaseTowardMagicNumber` sem alterá-los.
+
+**Não existe um "70% reforço, 30% novo" em lugar nenhum.** O teto de concentração decide sozinho
+quando parar de reforçar, e é o mesmo teto que dispara os alertas de concentração no resto do app —
+então as duas telas não podem discordar sobre o que é seguro. Ticker novo entra com o que sobrar.
+
+Isso cria duas listas com semânticas opostas na mesma tela, e o texto precisa separá-las: **o
+reforço é partição e soma**; os candidatos continuam sendo **alternativas** entre si, agora
+dimensionadas contra a sobra em vez da fatia inteira.
+
+A triagem de quem entra na fila é `screenForPurchase`, e não o status COMPRAR/MANTER/VENDER —
+aquele depende de quanto o ativo já pesa na carteira, e peso é o que o teto já trata em separado.
+Por isso a análise roda com `positionPercent = 0`, mesma escolha de `opportunities-engine.ts`.
+`nao_atende` e `sem_dados` viajam separados até a tela: fundir os dois reprovaria o ativo por uma
+falha do provedor.
+
+Nenhum motivo de exclusão é ordem de venda. Todos dizem "não coloque dinheiro novo aqui agora",
+que é afirmação diferente de "tire o que está aqui" — e o gatilho legítimo da segunda são as regras
+de deterioração, que ainda não existem.
+
+Ficam de fora da regra, de propósito: **renda fixa e fundos** (título público não tem número mágico
+nem teto na mesma acepção, e a sugestão dele já vem do questionário) e **ativo sem provento real**,
+onde `computeMagicNumber` devolve `null` — a maioria das ações de crescimento. Inventar uma meta
+substituta para elas fabricaria justamente o alvo que ordena a fila inteira.
+
+Conferência: `harness/aporte-reforco-check.mts`, 16 casos.
+
 ---
 
 ## Perfil declarado contra perfil revelado

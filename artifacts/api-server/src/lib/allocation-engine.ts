@@ -1,4 +1,5 @@
 import type { ProfileClassification } from "./investor-profile-engine";
+import { computeMagicNumber, planSafePurchaseTowardMagicNumber } from "./magic-number-engine";
 
 /**
  * Alocação-alvo por classe de ativo, desvio da carteira real em relação a ela, e
@@ -214,4 +215,148 @@ export function planContribution(
   if (residual !== 0 && slices.length > 0) slices[0].amount = round2(slices[0].amount + residual);
 
   return slices;
+}
+
+// ─── Preenchimento da fatia: reforçar antes de espalhar ──────────────────────
+
+/** Por que uma posição detida não entrou na fila de reforço. */
+export type SkipReason =
+  | "nao_atende"          // a régua do Radar foi aplicada e o ativo ficou abaixo do corte
+  | "sem_dados"           // a régua NÃO chegou a ser aplicada — não é reprovação do ativo
+  | "sem_numero_magico"   // não paga provento real: o conceito não se aplica
+  | "ja_atingido"         // já se autossustenta; reforçar não aproxima de nada
+  | "no_teto";            // qualquer cota a mais empurra a posição ao teto de concentração
+
+export interface HoldingForFill {
+  ticker: string;
+  /** Cotação real. Sem ela não há número mágico nem razão de concentração. */
+  price: number;
+  currentUnits: number;
+  /** Provento real por cota, R$/mês. Null quando não pagou nada nos últimos 12 meses. */
+  avgMonthlyDividendPerUnit: number | null;
+  /** Saída de screenForPurchase para esta posição. */
+  screening: "atende" | "nao_atende" | "sem_dados";
+}
+
+export interface ReinforcementLeg {
+  ticker: string;
+  units: number;
+  amount: number;
+  /** Quantas faltavam para o número mágico ANTES desta compra. */
+  unitsRemainingBefore: number;
+  /** Esta compra fecha o número mágico. */
+  closesMagicNumber: boolean;
+}
+
+export interface SliceFill {
+  reinforcements: ReinforcementLeg[];
+  /** O que sobrou da fatia. Vai para ticker novo, como alternativas. */
+  leftover: number;
+  skipped: { ticker: string; reason: SkipReason }[];
+}
+
+/**
+ * Preenche a fatia de uma classe reforçando as posições que a pessoa já tem, antes de
+ * abrir ticker novo.
+ *
+ * ## Por que reforçar primeiro
+ *
+ * `planContribution` já decide QUANTO vai para cada classe olhando a carteira real. Quem
+ * escolhia QUAIS ativos era só o ranking da varredura, que não sabe o que a pessoa tem —
+ * então a tela dizia "coloque R$ 600 em FIIs porque você está abaixo do alvo" e nomeava
+ * FIIs que ela não possui. Aporte pequeno com ticker novo todo mês produz dezenas de
+ * posições minúsculas, nenhuma fechando o número mágico, e `unitsRemaining` mede
+ * exatamente essa distância.
+ *
+ * ## Nenhum rateio inventado
+ *
+ * O docstring de `buildSliceItems` (routes/portfolio.ts) recusa dividir a fatia entre
+ * candidatos, porque o app tem alvo por CLASSE e não por ticker — qualquer repartição
+ * seria invenção. Isso continua valendo para ticker novo, e é por isso que a sobra sai
+ * daqui como um número só: lá fora ela vira alternativas, não parcelas.
+ *
+ * O reforço é diferente, e a diferença é a razão de esta função existir: as quantidades
+ * NÃO são arbitradas. Cada perna é `min(o que falta para o número mágico, o que cabe sob
+ * o teto de concentração, o que o dinheiro compra)` — três limites medidos. Não há aqui
+ * um "70% reforço, 30% novo" escolhido por alguém.
+ *
+ * ## A ordem é distância da meta, não desempenho
+ *
+ * A fila vai de quem está mais perto de fechar o número mágico para quem está mais
+ * longe: terminar o que está quase pronto é o que faz a renda passar a se reinvestir
+ * sozinha. Ordenar por quem subiu ou caiu mais seria momentum, e o app não faz isso.
+ *
+ * ## O teto usa o patrimônio de agora, mais o que já foi alocado
+ *
+ * Não o patrimônio projetado com o aporte inteiro. Comprar uma perna aumenta o total e
+ * abre espaço real para a seguinte, então o total corre junto com a fila; mas assumir de
+ * saída o aporte completo suporia dinheiro que a pessoa ainda não moveu — e se ela
+ * executar só parte do plano, a posição estouraria o teto que este cálculo existe para
+ * respeitar. O erro fica do lado de comprar de menos, que é o lado certo de um teto.
+ */
+export function fillSliceWithHoldings(
+  sliceAmount: number,
+  holdings: HoldingForFill[],
+  totalPatrimony: number,
+  concentrationCeilingPercent: number,
+): SliceFill {
+  const skipped: { ticker: string; reason: SkipReason }[] = [];
+  const fila: { holding: HoldingForFill; unitsRemaining: number }[] = [];
+
+  for (const holding of holdings) {
+    if (holding.screening !== "atende") {
+      skipped.push({ ticker: holding.ticker, reason: holding.screening });
+      continue;
+    }
+    // Sem provento real não há número mágico, e inventar uma meta substituta seria
+    // fabricar o alvo que a fila inteira usa para se ordenar.
+    const magic = holding.avgMonthlyDividendPerUnit != null
+      ? computeMagicNumber(holding.price, holding.avgMonthlyDividendPerUnit, holding.currentUnits)
+      : null;
+    if (!magic) {
+      skipped.push({ ticker: holding.ticker, reason: "sem_numero_magico" });
+      continue;
+    }
+    if (magic.unitsRemaining === 0) {
+      skipped.push({ ticker: holding.ticker, reason: "ja_atingido" });
+      continue;
+    }
+    fila.push({ holding, unitsRemaining: magic.unitsRemaining });
+  }
+
+  // Mais perto de fechar primeiro. Empate pelo ticker, para a ordem ser estável entre
+  // duas chamadas iguais — plano que muda de ordem sozinho parece plano que mudou de
+  // ideia.
+  fila.sort((a, b) => a.unitsRemaining - b.unitsRemaining || a.holding.ticker.localeCompare(b.holding.ticker));
+
+  const reinforcements: ReinforcementLeg[] = [];
+  let restante = sliceAmount;
+  let patrimonioCorrente = totalPatrimony;
+
+  for (const { holding } of fila) {
+    const magic = computeMagicNumber(holding.price, holding.avgMonthlyDividendPerUnit!, holding.currentUnits)!;
+    const safe = planSafePurchaseTowardMagicNumber(magic, patrimonioCorrente, concentrationCeilingPercent);
+
+    if (!safe || safe.safeUnitsToAddNow === 0) {
+      skipped.push({ ticker: holding.ticker, reason: "no_teto" });
+      continue;
+    }
+
+    const cabemNoDinheiro = Math.floor(restante / holding.price);
+    const units = Math.min(safe.safeUnitsToAddNow, cabemNoDinheiro);
+    if (units <= 0) continue; // dinheiro acabou; não é caso de "no_teto"
+
+    const amount = round2(units * holding.price);
+    reinforcements.push({
+      ticker: holding.ticker,
+      units,
+      amount,
+      unitsRemainingBefore: magic.unitsRemaining,
+      closesMagicNumber: units >= magic.unitsRemaining,
+    });
+    restante = round2(restante - amount);
+    patrimonioCorrente += amount;
+  }
+
+  return { reinforcements, leftover: Math.max(0, round2(restante)), skipped };
 }
