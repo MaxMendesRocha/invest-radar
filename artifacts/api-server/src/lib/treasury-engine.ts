@@ -60,6 +60,15 @@ export interface TreasurySuggestion {
   unitPrice: number;
   minimumInvestment: number;
   reason: string;
+  /**
+   * Prazo médio de retorno em anos — o que governa a sensibilidade do preço a juro, e o
+   * que o motor usa para casar com o horizonte declarado.
+   *
+   * Null nos títulos de fluxo único, onde ele seria idêntico ao vencimento: repetir o
+   * mesmo número com outro nome não informa nada e sugeriria que são coisas distintas.
+   * Sai preenchido só nos de cupom semestral, que é onde os dois divergem.
+   */
+  averageTermYears: number | null;
 }
 
 /**
@@ -114,6 +123,85 @@ export function liquidityNoteFor(indexer: TreasuryIndexer): string {
 
 function yearsUntil(maturityDate: string, now: Date): number {
   return (new Date(`${maturityDate}T00:00:00Z`).getTime() - now.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Cupom anual de cada família com juros semestrais.
+ *
+ * Não é parâmetro escolhido por nós: são as taxas que o próprio Tesouro fixa na emissão
+ * — 10% a.a. na NTN-F (Prefixado com Juros Semestrais) e 6% a.a. na NTN-B (IPCA+ com
+ * Juros Semestrais) — e não mudam de título para título dentro da família. O arquivo de
+ * dados abertos não publica o cupom, só taxa e preço, por isso ele vive aqui.
+ */
+const COUPON_RATE: Record<string, number> = {
+  "Tesouro Prefixado com Juros Semestrais": 0.1,
+  "Tesouro IPCA+ com Juros Semestrais": 0.06,
+};
+
+/**
+ * Prazo médio de retorno (duration de Macaulay), em anos.
+ *
+ * ## Por que não basta o vencimento
+ *
+ * Num título de fluxo único o dinheiro volta todo no fim, e prazo é a mesma coisa que
+ * PMR. Com cupom semestral parte volta a cada seis meses, e o prazo passa a superestimar
+ * quanto tempo o dinheiro fica exposto. Medido com o cupom real, a 7% de taxa:
+ *
+ *   IPCA+ JS de  5 anos → PMR 4,4    (0,6 de diferença)
+ *   IPCA+ JS de 10 anos → PMR 7,6    (2,4)
+ *   IPCA+ JS de 14 anos → PMR 9,5    (4,5)
+ *   IPCA+ JS de 19 anos → PMR 11,2   (7,8)
+ *
+ * É o PMR, e não o vencimento, que governa a sensibilidade do preço a juro — ou seja, o
+ * que a pessoa sente se precisar vender antes. Casar o horizonte declarado contra o
+ * vencimento entregava a quem pediu 10 anos um título que se comporta como de 7,6.
+ *
+ * ## Cupom e taxa estão sempre na mesma moeda
+ *
+ * No IPCA+ os dois são reais (cupom de 6% real, `buyRate` é o juro real); no Prefixado
+ * os dois são nominais. Então descontar um pelo outro é coerente sem nenhuma conversão —
+ * e o PMR sai em anos nos dois casos.
+ *
+ * ## O que esta conta aproxima, declarado
+ *
+ * Os cupons são tratados como igualmente espaçados a partir do vencimento, e não nas
+ * datas fixas que o Tesouro publica (15/02 e 15/08 na NTN-B, 01/01 e 01/07 na NTN-F). O
+ * erro é o do primeiro período quebrado, sempre menor que um semestre, contra uma
+ * diferença de anos que a conta existe para corrigir. Também usa ano civil em vez dos
+ * 252 dias úteis da convenção brasileira, pelo mesmo motivo: a ordem de grandeza do
+ * ajuste não depende disso.
+ *
+ * `annualRate` vem em PONTOS PERCENTUAIS, como está na tabela (7.5 e não 0.075).
+ */
+export function averageTermYears(
+  bondType: string,
+  maturityDate: string,
+  annualRate: number,
+  now: Date = new Date(),
+): number {
+  const anos = yearsUntil(maturityDate, now);
+  const cupomAnual = COUPON_RATE[bondType];
+
+  // Fluxo único: o PMR É o prazo. Sem cupom não há o que antecipar.
+  if (cupomAnual == null || anos <= 0) return anos;
+  // Taxa impossível de descontar — devolve o prazo em vez de um número inventado.
+  if (!(annualRate > -100)) return anos;
+
+  const periodos = Math.max(1, Math.round(anos * 2));
+  const c = Math.pow(1 + cupomAnual, 0.5) - 1;
+  const y = Math.pow(1 + annualRate / 100, 0.5) - 1;
+
+  let valorPresente = 0;
+  let ponderado = 0;
+  for (let t = 1; t <= periodos; t++) {
+    const fluxo = t === periodos ? c + 1 : c;
+    const vp = fluxo / Math.pow(1 + y, t);
+    valorPresente += vp;
+    ponderado += t * vp;
+  }
+  if (valorPresente <= 0) return anos;
+
+  return ponderado / valorPresente / 2;
 }
 
 /**
@@ -182,8 +270,15 @@ export function suggestTreasuryBonds(
     // Selic não tem "casar prazo": não há marcação a mercado no resgate, então o
     // vencimento é quase indiferente e o mais curto é o de menor oscilação de preço.
     const target = indexer === "selic" ? 0 : (profile.horizonYears ?? 0);
+
+    // Casa contra o PMR, não contra o vencimento. Num título de fluxo único os dois são
+    // o mesmo número e nada muda; com cupom semestral o vencimento superestima o tempo
+    // de exposição em anos — e é justamente esse o título que o app passa a preferir
+    // quando o objetivo declarado é renda, logo acima.
+    const termo = (entry: typeof pool[number]) =>
+      averageTermYears(entry.bond.bondType, entry.bond.maturityDate, parseFloat(entry.bond.buyRate), now);
     const chosen = pool.reduce((best, entry) =>
-      Math.abs(yearsUntil(entry.bond.maturityDate, now) - target) < Math.abs(yearsUntil(best.bond.maturityDate, now) - target) ? entry : best,
+      Math.abs(termo(entry) - target) < Math.abs(termo(best) - target) ? entry : best,
     );
 
     suggestions.push({
@@ -194,6 +289,9 @@ export function suggestTreasuryBonds(
       unitPrice: parseFloat(chosen.bond.buyUnitPrice),
       minimumInvestment: minimumInvestmentFor(parseFloat(chosen.bond.buyUnitPrice)),
       reason: reasonFor(indexer, profile, suggestions.length === 0),
+      averageTermYears: chosen.meta.paysCoupon
+        ? Math.round(termo(chosen) * 10) / 10
+        : null,
     });
   }
 

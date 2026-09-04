@@ -281,6 +281,7 @@ function ContributionPlan() {
                         {t.sizing && <div className="mt-0.5"><SizingLine sizing={t.sizing} unitLabel="título" /></div>}
                         <p className="text-xs text-muted-foreground mt-0.5">
                           A partir de {formatCurrency(t.minimumInvestment)} · taxa de {rateVintage(t.baseDate)}
+                          {t.averageTermYears != null && ` · PMR ${decimal.format(t.averageTermYears)} anos`}
                         </p>
                       </div>
                     ))}
