@@ -781,6 +781,7 @@ export const GetAllocationPlanResponse = zod.object({
   "unitPrice": zod.number().describe('Preço do título inteiro.'),
   "minimumInvestment": zod.number().describe('Compra mínima — 1% do título, com piso de R$ 30 do Tesouro Direto.'),
   "reason": zod.string(),
+  "averageTermYears": zod.number().nullish().describe('Prazo médio de retorno (duration de Macaulay), em anos — o que governa a sensibilidade do preço a juro, e o critério com que o motor casa o título contra o horizonte declarado.\nNull nos títulos de fluxo único, onde seria idêntico ao vencimento: repetir o mesmo número com outro nome sugeriria que são coisas distintas. Sai preenchido só nos de cupom semestral, que é onde os dois divergem — um IPCA+ com Juros Semestrais de 14 anos tem PMR de 9,5.'),
   "sizing": zod.union([zod.object({
   "unitPrice": zod.number().describe('Cotação usada na conta, para o usuário conferir.'),
   "units": zod.number().describe('Unidades inteiras em bolsa (mercado fracionário negocia a partir de 1); múltiplos de 0,01 título no Tesouro Direto. Zero é resposta válida — a fatia não alcança uma unidade, ou não atinge o piso de R$ 30 do Tesouro.'),
@@ -832,6 +833,7 @@ export const GetStarterPortfoliosResponse = zod.object({
   "unitPrice": zod.number().describe('Preço do título inteiro.'),
   "minimumInvestment": zod.number().describe('Compra mínima — 1% do título, com piso de R$ 30 do Tesouro Direto.'),
   "reason": zod.string(),
+  "averageTermYears": zod.number().nullish().describe('Prazo médio de retorno (duration de Macaulay), em anos — o que governa a sensibilidade do preço a juro, e o critério com que o motor casa o título contra o horizonte declarado.\nNull nos títulos de fluxo único, onde seria idêntico ao vencimento: repetir o mesmo número com outro nome sugeriria que são coisas distintas. Sai preenchido só nos de cupom semestral, que é onde os dois divergem — um IPCA+ com Juros Semestrais de 14 anos tem PMR de 9,5.'),
   "sizing": zod.union([zod.object({
   "unitPrice": zod.number().describe('Cotação usada na conta, para o usuário conferir.'),
   "units": zod.number().describe('Unidades inteiras em bolsa (mercado fracionário negocia a partir de 1); múltiplos de 0,01 título no Tesouro Direto. Zero é resposta válida — a fatia não alcança uma unidade, ou não atinge o piso de R$ 30 do Tesouro.'),

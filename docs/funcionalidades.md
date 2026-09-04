@@ -669,6 +669,43 @@ oficial.
 - **Sugestão por objetivo.** Quem precisa de liquidez ou não tem reserva de emergência recebe
   Tesouro Selic, porque é o único cujo resgate antecipado não sofre marcação a mercado.
 
+### O horizonte casa contra o PMR, não contra o vencimento
+
+Num título de fluxo único o dinheiro volta todo no fim, e prazo é o mesmo que **prazo médio de
+retorno**. Com cupom semestral parte volta a cada seis meses, e o vencimento passa a superestimar
+quanto tempo o dinheiro fica exposto. Medido com o cupom real da NTN-B (6% a.a.), a 7% de taxa:
+
+| Vencimento em | PMR | Diferença |
+|---|---|---|
+| 5 anos | 4,4 | 0,6 |
+| 10 anos | 7,6 | **2,4** |
+| 14 anos | 9,5 | **4,5** |
+| 19 anos | 11,2 | **7,8** |
+
+É o PMR que governa a sensibilidade do preço a juro — o que a pessoa sente se precisar vender antes.
+Casar pelo vencimento entregava a quem pediu 10 anos um título que se comporta como de 7,6. E a
+imprecisão batia justamente onde o app oferece cupom: `objective === "renda"` faz o motor **preferir**
+os títulos com juros semestrais.
+
+`averageTermYears` (`treasury-engine.ts`) faz a conta com o cupom que o próprio Tesouro fixa na
+emissão — 10% a.a. na NTN-F, 6% na NTN-B, valores que o arquivo de dados abertos não publica. Cupom
+e taxa estão sempre na mesma moeda (reais no IPCA+, nominais no Prefixado), então descontar um pelo
+outro é coerente sem conversão. Duas aproximações declaradas: cupons igualmente espaçados a partir do
+vencimento em vez das datas fixas publicadas, e ano civil em vez dos 252 dias úteis — as duas erram
+por menos de um semestre, contra uma correção de anos.
+
+O **filtro de elegibilidade continua no vencimento**: ele responde se o título existe por tempo
+suficiente, que é pergunta de liquidez e não de sensibilidade.
+
+**A monotonicidade não é universal, e isso foi medido.** Em título de desconto profundo (taxa bem
+acima do cupom) a duration sobe, atinge um pico e volta a cair rumo ao limite de perpetuidade — a
+segunda versão do harness assumiu o contrário e quebrou em 4 casos. O que vale é a faixa em que cada
+família de fato negocia: NTN-B com juro real de 2% a 10% até 19 anos, e NTN-F com juro nominal de 8%
+a 20% até 9 anos — nas duas, monotônico em todas as combinações. O pico só aparece a partir de 12% de
+juro **real**, com vencimento de 28 anos, além do papel mais longo em oferta.
+
+Conferência: `harness/pmr-tesouro-check.mts`, 18 casos.
+
 ### Parecer de Título Público — a mesma série histórica, respondendo outra pergunta
 
 Parecer de Ativo (`GET /analysis/treasury-opinion`) aceita título do Tesouro Direto, não só ticker

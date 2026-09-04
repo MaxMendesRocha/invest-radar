@@ -19,6 +19,12 @@ export interface TreasurySuggestion {
   /** Compra mínima — 1% do título, com piso de R$ 30 do Tesouro Direto. */
   minimumInvestment: number;
   reason: string;
+  /**
+     * Prazo médio de retorno (duration de Macaulay), em anos — o que governa a sensibilidade do preço a juro, e o critério com que o motor casa o título contra o horizonte declarado.
+     * Null nos títulos de fluxo único, onde seria idêntico ao vencimento: repetir o mesmo número com outro nome sugeriria que são coisas distintas. Sai preenchido só nos de cupom semestral, que é onde os dois divergem — um IPCA+ com Juros Semestrais de 14 anos tem PMR de 9,5.
+     * @nullable
+     */
+  averageTermYears?: number | null;
   /** Fração do título que a fatia de renda fixa compra, em múltiplos de 0,01. */
   sizing?: PurchaseSizing | null;
 }

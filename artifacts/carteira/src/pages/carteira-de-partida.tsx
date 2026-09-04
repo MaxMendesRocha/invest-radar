@@ -180,6 +180,7 @@ function TreasuryBlock({ treasury, hasProfile }: { treasury: StarterPortfolios["
               {index === 0 && <p className="text-xs text-muted-foreground text-pretty mt-0.5">{t.reason}</p>}
               <p className="text-xs text-muted-foreground mt-0.5">
                 A partir de {formatCurrency(t.minimumInvestment)} · taxa de {rateVintage(t.baseDate)}
+                {t.averageTermYears != null && ` · PMR ${decimal.format(t.averageTermYears)} anos`}
               </p>
             </div>
           ))
