@@ -518,7 +518,9 @@ para responder uma pergunta binária, e ninguém recalibra seis números.
 
 Ela é gravada só quando muda (`allocation_settings`, uma linha por usuário). Enquanto ninguém
 editou, vale o padrão do motor — escrever o mesmo 5 no banco transformaria "não escolhi" em
-"escolhi 5", que são estados diferentes no dia em que o padrão mudar.
+"escolhi 5", que são estados diferentes no dia em que o padrão mudar. A *linha* é opcional; a
+*tabela* não: `docs/sql/allocation-settings.sql` roda antes do deploy, porque a rota faz SELECT
+nela em toda chamada.
 
 **O veredito fica na Visão Geral, não em Saúde do Portfólio.** O detalhe — barras, alvos, plano de
 aporte — continua em Saúde. Mas um aviso que só aparece na tela que a pessoa visita quando já

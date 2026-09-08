@@ -1,8 +1,12 @@
 -- allocation_settings: a banda de tolerância do rebalanceamento.
 --
--- Rodar UMA vez no Supabase, ANTES ou DEPOIS do deploy — tanto faz. É aditivo e sem
--- risco: nenhuma tabela existente muda, e o código trata ausência de linha como "nunca
--- configurou", caindo no padrão declarado de 5 p.p. em allocation-engine.ts.
+-- Rodar UMA vez no Supabase, **antes do deploy**. É aditivo e sem risco — nenhuma tabela
+-- existente muda —, mas a ordem importa: `allocationOverview` faz SELECT nesta tabela em
+-- toda chamada de GET /portfolio/allocation, então subir o código antes derrubaria Saúde
+-- do Portfólio e o veredito da Visão Geral com erro de relação inexistente.
+--
+-- O que é opcional é a LINHA, não a tabela: ausência de linha significa "nunca
+-- configurou" e cai no padrão declarado de 5 p.p. em allocation-engine.ts.
 --
 -- ## O que a banda resolve
 --
