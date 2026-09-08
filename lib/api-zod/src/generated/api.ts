@@ -708,7 +708,14 @@ export const GetAllocationResponse = zod.object({
   "currentValue": zod.number(),
   "deviationPp": zod.number().describe('Positivo = classe abaixo do alvo; negativo = acima.'),
   "deviationValue": zod.number().describe('Quanto falta (positivo) ou sobra (negativo) em reais para bater o alvo hoje.')
-}))
+})),
+  "bandPp": zod.number().describe('Banda de tolerância em pontos percentuais: quanto a carteira pode se afastar do alvo antes de valer a pena mexer. É configuração do usuário; enquanto ele não define a dele, vale o padrão declarado de 5 p.p.\nEla existe porque o alvo sozinho não decide nada — uma classe a 52% contra alvo de 50% está fora do alvo pela aritmética e dentro do ruído pela prática.'),
+  "balanced": zod.boolean().describe('Nenhuma classe fora da banda. É a resposta \"não faça nada\", que é a mais frequente e a que o app não sabia dar. Também true em carteira vazia, onde não existe desvio percentual sobre base zero.'),
+  "outOfBand": zod.array(zod.string()).describe('Classes fora da banda, da maior distância do alvo para a menor.'),
+  "worstCategory": zod.string().nullable().describe('A classe mais ABAIXO do alvo entre as que estão fora da banda — a única que ganha plano. Corrigir a pior costuma trazer as outras junto, e um valor por classe somaria aportes que se anulam entre si. Null quando a carteira está dentro da banda ou quando só há classes acima do alvo, que aporte não corrige.'),
+  "amountToFix": zod.number().nullable().describe('Aporte que devolve `worstCategory` ao alvo exato. NÃO é o déficit contra o total de hoje: o próprio aporte aumenta o total, e o alvo é uma fração dele — numa carteira de R$ 70.140 com FIIs em R$ 31.500 e alvo de 50%, são R$ 7.140 e não R$ 3.570.'),
+  "monthlyPace": zod.number().nullable().describe('Ritmo real de aporte, medido nos lançamentos dos últimos 6 meses — não perguntado. Exclui os lançamentos de saldo inicial do backfill, que representam a carteira inteira num dia só. Null com menos de dois lançamentos reais na janela, caso em que a tela não fala em prazo.'),
+  "contributionsToFix": zod.number().nullable().describe('Quantos aportes, no ritmo medido, até `amountToFix`. Arredondado para cima — meio aporte não devolve a carteira ao alvo.')
 })
 
 
@@ -737,7 +744,48 @@ export const UpsertAllocationResponse = zod.object({
   "currentValue": zod.number(),
   "deviationPp": zod.number().describe('Positivo = classe abaixo do alvo; negativo = acima.'),
   "deviationValue": zod.number().describe('Quanto falta (positivo) ou sobra (negativo) em reais para bater o alvo hoje.')
-}))
+})),
+  "bandPp": zod.number().describe('Banda de tolerância em pontos percentuais: quanto a carteira pode se afastar do alvo antes de valer a pena mexer. É configuração do usuário; enquanto ele não define a dele, vale o padrão declarado de 5 p.p.\nEla existe porque o alvo sozinho não decide nada — uma classe a 52% contra alvo de 50% está fora do alvo pela aritmética e dentro do ruído pela prática.'),
+  "balanced": zod.boolean().describe('Nenhuma classe fora da banda. É a resposta \"não faça nada\", que é a mais frequente e a que o app não sabia dar. Também true em carteira vazia, onde não existe desvio percentual sobre base zero.'),
+  "outOfBand": zod.array(zod.string()).describe('Classes fora da banda, da maior distância do alvo para a menor.'),
+  "worstCategory": zod.string().nullable().describe('A classe mais ABAIXO do alvo entre as que estão fora da banda — a única que ganha plano. Corrigir a pior costuma trazer as outras junto, e um valor por classe somaria aportes que se anulam entre si. Null quando a carteira está dentro da banda ou quando só há classes acima do alvo, que aporte não corrige.'),
+  "amountToFix": zod.number().nullable().describe('Aporte que devolve `worstCategory` ao alvo exato. NÃO é o déficit contra o total de hoje: o próprio aporte aumenta o total, e o alvo é uma fração dele — numa carteira de R$ 70.140 com FIIs em R$ 31.500 e alvo de 50%, são R$ 7.140 e não R$ 3.570.'),
+  "monthlyPace": zod.number().nullable().describe('Ritmo real de aporte, medido nos lançamentos dos últimos 6 meses — não perguntado. Exclui os lançamentos de saldo inicial do backfill, que representam a carteira inteira num dia só. Null com menos de dois lançamentos reais na janela, caso em que a tela não fala em prazo.'),
+  "contributionsToFix": zod.number().nullable().describe('Quantos aportes, no ritmo medido, até `amountToFix`. Arredondado para cima — meio aporte não devolve a carteira ao alvo.')
+})
+
+
+/**
+ * Separado do PUT dos alvos de propósito: os alvos precisam somar 100% e são reescritos em bloco, a banda é um número independente. Juntar os dois obrigaria a reenviar a política inteira para afrouxar a banda em um ponto.
+ * @summary Define a banda de tolerância do rebalanceamento
+ */
+export const upsertAllocationBandBodyBandPpMin = 0;
+export const upsertAllocationBandBodyBandPpMax = 50;
+
+
+
+export const UpsertAllocationBandBody = zod.object({
+  "bandPp": zod.number().min(upsertAllocationBandBodyBandPpMin).max(upsertAllocationBandBodyBandPpMax).describe('Banda em pontos percentuais. Zero é permitido e significa \"me avise a qualquer desvio\" — é escolha legítima, ainda que ruidosa. O teto de 50 existe porque acima disso a banda deixaria de recusar qualquer carteira concebível.')
+})
+
+export const UpsertAllocationBandResponse = zod.object({
+  "source": zod.enum(['personalizado', 'perfil', 'generico']).describe('De onde vem a política em uso. \"personalizado\" = salva pelo usuário; \"perfil\" = padrão derivado do perfil de investidor; \"generico\" = padrão usado por falta de perfil preenchido, não calculado a partir das respostas.'),
+  "totalPatrimony": zod.number(),
+  "items": zod.array(zod.object({
+  "category": zod.string(),
+  "targetPercent": zod.number(),
+  "currentPercent": zod.number(),
+  "currentValue": zod.number(),
+  "deviationPp": zod.number().describe('Positivo = classe abaixo do alvo; negativo = acima.'),
+  "deviationValue": zod.number().describe('Quanto falta (positivo) ou sobra (negativo) em reais para bater o alvo hoje.')
+})),
+  "bandPp": zod.number().describe('Banda de tolerância em pontos percentuais: quanto a carteira pode se afastar do alvo antes de valer a pena mexer. É configuração do usuário; enquanto ele não define a dele, vale o padrão declarado de 5 p.p.\nEla existe porque o alvo sozinho não decide nada — uma classe a 52% contra alvo de 50% está fora do alvo pela aritmética e dentro do ruído pela prática.'),
+  "balanced": zod.boolean().describe('Nenhuma classe fora da banda. É a resposta \"não faça nada\", que é a mais frequente e a que o app não sabia dar. Também true em carteira vazia, onde não existe desvio percentual sobre base zero.'),
+  "outOfBand": zod.array(zod.string()).describe('Classes fora da banda, da maior distância do alvo para a menor.'),
+  "worstCategory": zod.string().nullable().describe('A classe mais ABAIXO do alvo entre as que estão fora da banda — a única que ganha plano. Corrigir a pior costuma trazer as outras junto, e um valor por classe somaria aportes que se anulam entre si. Null quando a carteira está dentro da banda ou quando só há classes acima do alvo, que aporte não corrige.'),
+  "amountToFix": zod.number().nullable().describe('Aporte que devolve `worstCategory` ao alvo exato. NÃO é o déficit contra o total de hoje: o próprio aporte aumenta o total, e o alvo é uma fração dele — numa carteira de R$ 70.140 com FIIs em R$ 31.500 e alvo de 50%, são R$ 7.140 e não R$ 3.570.'),
+  "monthlyPace": zod.number().nullable().describe('Ritmo real de aporte, medido nos lançamentos dos últimos 6 meses — não perguntado. Exclui os lançamentos de saldo inicial do backfill, que representam a carteira inteira num dia só. Null com menos de dois lançamentos reais na janela, caso em que a tela não fala em prazo.'),
+  "contributionsToFix": zod.number().nullable().describe('Quantos aportes, no ritmo medido, até `amountToFix`. Arredondado para cima — meio aporte não devolve a carteira ao alvo.')
 })
 
 

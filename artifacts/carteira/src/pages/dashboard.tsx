@@ -24,6 +24,7 @@ import { ArrowUpRight, Coins, Compass, Scale, Sparkles, TrendingUp, type LucideI
 import { categoryLabel } from "@/lib/categories";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { RebalanceVerdict } from "@/components/rebalance-verdict";
 
 /**
  * Eixo de valor em reais. O formatador anterior era `R$${(val/1000).toFixed(0)}k`, que
@@ -290,6 +291,10 @@ export default function Dashboard() {
           </p>
         </KpiCard>
       </div>
+
+      {/* A pergunta "preciso mexer na carteira?" respondida antes de o usuário ir procurar
+          a resposta em Saúde do Portfólio. Uma linha, com o número do aporte que resolve. */}
+      <RebalanceVerdict />
 
       {/* Logo abaixo dos KPIs de propósito: quando tudo está vermelho, "sou eu ou é o
           mercado?" é a primeira pergunta, e ela vinha sem resposta em lugar nenhum. */}

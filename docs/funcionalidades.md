@@ -502,6 +502,53 @@ substituta para elas fabricaria justamente o alvo que ordena a fila inteira.
 
 Conferência: `harness/aporte-reforco-check.mts`, 16 casos.
 
+### Banda de tolerância: quando vale a pena mexer
+
+O alvo sozinho não decide nada. Uma classe a 52% contra alvo de 50% está fora do alvo pela
+aritmética e dentro do ruído pela prática, e o app tratava esse caso igual a uma classe 8 p.p.
+fora — empurrava a conclusão para o leitor justamente na decisão que ele não tem como tomar sem
+uma regra escrita. Faltava o corte.
+
+A **banda** é esse corte: quanto uma classe pode se afastar do alvo antes de valer a pena agir.
+O padrão é 5 p.p. (`DEFAULT_BAND_PP`), e o usuário edita a dele no mesmo formulário dos alvos —
+a pergunta é uma só, *quanto eu quero em cada classe e a partir de qual distância isso me
+incomoda*, e a segunda metade não significa nada sem a primeira. A banda é **uma só, global**,
+não uma por classe: banda por classe multiplica por seis o que a pessoa precisa manter calibrado
+para responder uma pergunta binária, e ninguém recalibra seis números.
+
+Ela é gravada só quando muda (`allocation_settings`, uma linha por usuário). Enquanto ninguém
+editou, vale o padrão do motor — escrever o mesmo 5 no banco transformaria "não escolhi" em
+"escolhi 5", que são estados diferentes no dia em que o padrão mudar.
+
+**O veredito fica na Visão Geral, não em Saúde do Portfólio.** O detalhe — barras, alvos, plano de
+aporte — continua em Saúde. Mas um aviso que só aparece na tela que a pessoa visita quando já
+decidiu rebalancear não avisa nada, ele confirma. Em uma linha: *Nada a fazer este mês*, ou
+*Fora da banda de 5 p.p.: Ações e FIIs*, com o número que resolve.
+
+**O número que resolve não é o déficit.** Devolver uma classe ao alvo custa
+`(alvo% × total − atual) / (1 − alvo%)`, porque o próprio aporte aumenta o total e o alvo é uma
+fração dele. Numa carteira de R$ 70.140 com FIIs em R$ 31.500 e alvo de 50%, são R$ 7.140 — o
+dobro dos R$ 3.570 que a leitura ingênua do déficit sugere. Só a classe mais **abaixo** do alvo
+ganha esse número: corrigir a pior costuma trazer as outras junto, e um valor por classe somaria
+aportes que se anulam entre si.
+
+**Quantos meses isso leva é medido, não perguntado.** O ritmo sai dos lançamentos dos últimos 6
+meses (`contribution-pace.ts`), excluindo os de saldo inicial do backfill — eles representam a
+carteira inteira num dia só, e somá-los faria o app concluir que qualquer desvio se corrige no
+mês seguinte. O denominador é a janela inteira, não os meses com aporte: quem aportou duas vezes
+em seis meses não tem o ritmo de quem aporta todo mês. Com menos de dois lançamentos reais na
+janela, a tela não fala em prazo.
+
+Quando as classes fora da banda estão todas **acima** do alvo, não há aporte que corrija, e o app
+não manda vender: a venda realiza IR e corretagem para consertar um desvio que a entrada de
+dinheiro novo dilui sozinha. Carteira vazia não recebe veredito — não existe desvio percentual
+sobre base zero, e quem acabou de se cadastrar leria "renda fixa 60 p.p. abaixo do alvo" antes de
+ter um centavo.
+
+Conferência: `harness/banda-rebalanceamento-check.mts`, 23 casos, ancorados numa carteira de
+referência externa (60 mil em 50/30/20, um ano depois) cujos percentuais e aporte foram conferidos
+contra a fonte antes de virarem caso.
+
 ---
 
 ## Perfil declarado contra perfil revelado
@@ -975,7 +1022,7 @@ sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela int
 
 | Tela | A pergunta | O que mostra |
 |---|---|---|
-| **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, **carteira contra o mercado e quem puxou o resultado**, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks, oscilação da composição atual |
+| **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, **preciso mexer na carteira este mês?** (veredito de banda), **carteira contra o mercado e quem puxou o resultado**, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks, oscilação da composição atual |
 | **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático, poupança com saldo projetado pelo rendimento real do BCB, e a data da compra, opcional em qualquer classe, editável depois |
 | **Carteira de Partida** | Não tenho nada ainda — por onde começo? | As três carteiras-alvo (Conservador/Moderado/Arrojado) lado a lado, com candidatos por classe e o título do Tesouro; opcionalmente convertidas em reais a partir de um valor de partida |
 | **Importar Nota** | Já invisto — como trago o que tenho sem digitar tudo? | Nota de corretagem e extrato de custódia em PDF conciliados numa tela de conferência; grava só o que você marcar, e só compra |
@@ -985,7 +1032,7 @@ sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela int
 | **Oportunidades** | O que existe lá fora? | Universo de ~180 tickers varrido semanalmente, reordenado pelo nível de risco compatível com o perfil |
 | **Dividendos** | Quanto recebo, e caminho para a meta? | Total acumulado, yield on cost, histórico de 12 meses, proventos anunciados, progresso da meta, número mágico por ativo com plano seguro de concentração |
 | **Operações Encerradas** | Quanto ganhei, e quanto devo? | Vendas com resultado realizado e consolidação mensal de IR com compensação de prejuízo |
-| **Saúde do Portfólio** | A estrutura está boa? | Score em cinco pilares — diversificação 25%, concentração 25%, risco 20%, dividendos 15%, crescimento 15% — mais diagnóstico da IA |
+| **Saúde do Portfólio** | A estrutura está boa? | Score em cinco pilares — diversificação 25%, concentração 25%, risco 20%, dividendos 15%, crescimento 15% — mais diagnóstico da IA, alocação-alvo com banda de tolerância e plano de aporte |
 | **Configurações** | Quem sou eu como investidor? | Questionário de perfil, leitura do perfil revelado, política de alocação |
 
 ---

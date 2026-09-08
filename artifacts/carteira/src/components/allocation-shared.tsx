@@ -41,6 +41,12 @@ export const decimal = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1
 export const integer = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
 /** Fração de título do Tesouro: "0,03". Duas casas, que é a granularidade da compra. */
 export const fraction = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/**
+ * Casa decimal só quando existe: a banda sai "5", não "5,0", e uma banda de 2,5 continua
+ * saindo "2,5". É número que o usuário digitou — "5,0 p.p." devolveria a ele uma precisão
+ * que ele não escreveu.
+ */
+export const decimalOptional = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 
 export type Sizing = { unitPrice: number; units: number; investedAmount: number; leftover: number };
 

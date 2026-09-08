@@ -1747,6 +1747,44 @@ export interface AllocationOverview {
   source: AllocationOverviewSource;
   totalPatrimony: number;
   items: AllocationItem[];
+  /**
+     * Banda de tolerância em pontos percentuais: quanto a carteira pode se afastar do alvo antes de valer a pena mexer. É configuração do usuário; enquanto ele não define a dele, vale o padrão declarado de 5 p.p.
+     * Ela existe porque o alvo sozinho não decide nada — uma classe a 52% contra alvo de 50% está fora do alvo pela aritmética e dentro do ruído pela prática.
+     */
+  bandPp: number;
+  /** Nenhuma classe fora da banda. É a resposta "não faça nada", que é a mais frequente e a que o app não sabia dar. Também true em carteira vazia, onde não existe desvio percentual sobre base zero. */
+  balanced: boolean;
+  /** Classes fora da banda, da maior distância do alvo para a menor. */
+  outOfBand: string[];
+  /**
+     * A classe mais ABAIXO do alvo entre as que estão fora da banda — a única que ganha plano. Corrigir a pior costuma trazer as outras junto, e um valor por classe somaria aportes que se anulam entre si. Null quando a carteira está dentro da banda ou quando só há classes acima do alvo, que aporte não corrige.
+     * @nullable
+     */
+  worstCategory: string | null;
+  /**
+     * Aporte que devolve `worstCategory` ao alvo exato. NÃO é o déficit contra o total de hoje: o próprio aporte aumenta o total, e o alvo é uma fração dele — numa carteira de R$ 70.140 com FIIs em R$ 31.500 e alvo de 50%, são R$ 7.140 e não R$ 3.570.
+     * @nullable
+     */
+  amountToFix: number | null;
+  /**
+     * Ritmo real de aporte, medido nos lançamentos dos últimos 6 meses — não perguntado. Exclui os lançamentos de saldo inicial do backfill, que representam a carteira inteira num dia só. Null com menos de dois lançamentos reais na janela, caso em que a tela não fala em prazo.
+     * @nullable
+     */
+  monthlyPace: number | null;
+  /**
+     * Quantos aportes, no ritmo medido, até `amountToFix`. Arredondado para cima — meio aporte não devolve a carteira ao alvo.
+     * @nullable
+     */
+  contributionsToFix: number | null;
+}
+
+export interface AllocationBandInput {
+  /**
+     * Banda em pontos percentuais. Zero é permitido e significa "me avise a qualquer desvio" — é escolha legítima, ainda que ruidosa. O teto de 50 existe porque acima disso a banda deixaria de recusar qualquer carteira concebível.
+     * @minimum 0
+     * @maximum 50
+     */
+  bandPp: number;
 }
 
 /**

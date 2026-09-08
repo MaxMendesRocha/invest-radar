@@ -360,3 +360,82 @@ export function fillSliceWithHoldings(
 
   return { reinforcements, leftover: Math.max(0, round2(restante)), skipped };
 }
+
+// ─── A banda: quando o desvio vira decisão ───────────────────────────────────
+
+/**
+ * Banda padrão, em pontos percentuais.
+ *
+ * Cinco é a convenção de mercado mais citada para banda de classe, e é o que o app usa
+ * enquanto o usuário não define a dele. **Não é medição** — é ponto de partida
+ * declarado, no mesmo espírito de VARIABLE_SPLIT acima: quem quiser outra, edita.
+ *
+ * O valor importa menos do que existir um. Antes disto o app tratava como "no alvo"
+ * apenas desvio abaixo de 0,05 p.p., o que na prática é zero: uma classe a 52,1% contra
+ * alvo de 50% aparecia como fora do alvo e gerava sugestão de aporte. Toda oscilação
+ * virava chamado para ação, e chamado que aparece sempre deixa de ser lido.
+ */
+export const DEFAULT_BAND_PP = 5;
+
+export interface BandVerdict {
+  bandPp: number;
+  /** Classes cujo desvio absoluto passou da banda, da maior distância para a menor. */
+  outOfBand: CategoryAllocation[];
+  /**
+   * `true` quando nada está fora da banda — a resposta "não faça nada", que é a mais
+   * frequente e a que o app não sabia dar.
+   */
+  balanced: boolean;
+  /**
+   * `null` numa carteira sem patrimônio: não existe desvio percentual sobre base zero, e
+   * `computeAllocation` já devolve 0% para tudo nesse caso. Sem isto, quem acabou de se
+   * cadastrar veria "renda fixa 60 p.p. abaixo do alvo" antes de ter um centavo.
+   */
+  total: number | null;
+}
+
+/**
+ * Quais classes justificam mexer na carteira, e quais são ruído.
+ *
+ * O desvio já era calculado; o que faltava era o corte. Sem ele o app respondia "está a
+ * 2,1 p.p. do alvo" e deixava para o leitor decidir se isso importa — que é justamente a
+ * decisão que ele não tem como tomar sem uma regra escrita.
+ */
+export function evaluateBand(
+  allocation: { total: number; items: CategoryAllocation[] },
+  bandPp: number = DEFAULT_BAND_PP,
+): BandVerdict {
+  if (!(allocation.total > 0)) {
+    return { bandPp, outOfBand: [], balanced: true, total: null };
+  }
+
+  const outOfBand = allocation.items
+    .filter((item) => Math.abs(item.deviationPp) > bandPp)
+    .sort((a, b) => Math.abs(b.deviationPp) - Math.abs(a.deviationPp));
+
+  return { bandPp, outOfBand, balanced: outOfBand.length === 0, total: allocation.total };
+}
+
+/**
+ * Aporte que devolve UMA classe ao alvo exato.
+ *
+ * A conta não é o déficit contra o total de hoje: o próprio aporte aumenta o total, e o
+ * alvo é uma fração dele. Resolvendo `atual + A = alvo% × (total + A)`:
+ *
+ *     A = (alvo% × total − atual) / (1 − alvo%)
+ *
+ * Numa carteira de R$ 70.140 com FIIs em R$ 31.500 e alvo de 50%, dá R$ 7.140 — e não os
+ * R$ 3.570 que a leitura ingênua do déficit sugeriria. É a mesma matemática que
+ * `planContribution` já resolve para todas as classes de uma vez; aqui ela sai isolada
+ * porque a tela precisa dizer o número de UMA classe.
+ *
+ * `null` quando o alvo é 100% (não há aporte finito que resolva) ou quando a classe já
+ * está no alvo ou acima — aportar nela afastaria em vez de aproximar.
+ */
+export function contributionToReachTarget(item: CategoryAllocation, total: number): number | null {
+  const alvo = item.targetPercent / 100;
+  if (!(total > 0) || alvo >= 1) return null;
+
+  const necessario = (alvo * total - item.currentValue) / (1 - alvo);
+  return necessario > 0 ? round2(necessario) : null;
+}

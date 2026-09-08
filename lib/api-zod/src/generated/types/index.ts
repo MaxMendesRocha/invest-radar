@@ -9,6 +9,7 @@
 export * from './alert';
 export * from './alertSeverity';
 export * from './alertType';
+export * from './allocationBandInput';
 export * from './allocationInput';
 export * from './allocationItem';
 export * from './allocationOverview';
