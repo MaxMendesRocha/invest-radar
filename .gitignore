@@ -47,3 +47,9 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Ferramentas locais de harness. `run-harness.local.mjs` empacota um .mts com esbuild e o
+# executa; `harness-bundle.local.mjs` é a saída descartável desse empacotamento. São
+# andaimes de conferência, recriados quando preciso — versioná-los faria o repositório
+# carregar um bundle gerado que envelhece sozinho a cada mudança no código que ele empacota.
+*.local.mjs
