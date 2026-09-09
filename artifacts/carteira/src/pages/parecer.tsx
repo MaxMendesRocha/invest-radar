@@ -14,7 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Check, AlertTriangle, Newspaper, Sparkles, TrendingUp, Coins, LineChart, CalendarClock } from "lucide-react";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatDate } from "@/lib/utils";
 import { NewsHeadlineItem } from "@/components/news-headline-item";
 import { TreasuryOpinionCard } from "@/components/treasury-opinion-card";
 import { PriceZoneRuler } from "@/components/price-zone-verdict";
@@ -155,7 +155,6 @@ function NextDividendNote({ dividendFrequency, nextDividend, nextEntitledDividen
     );
   }
 
-  const fmtDate = (d: string) => new Date(d).toLocaleDateString("pt-BR");
 
   if (nextDividend.entitledIfBoughtToday === true) {
     return (
@@ -163,7 +162,7 @@ function NextDividendNote({ dividendFrequency, nextDividend, nextEntitledDividen
         <Check className="w-3.5 h-3.5 shrink-0 text-green-600 dark:text-green-500 mt-0.5" />
         <span className="text-pretty">
           Comprando hoje, você recebe o próximo provento: {nextDividend.label} de{" "}
-          <span className="font-mono font-medium">{formatCurrency(nextDividend.rate)}</span> em {fmtDate(nextDividend.paymentDate)}.
+          <span className="font-mono font-medium">{formatCurrency(nextDividend.rate)}</span> em {formatDate(nextDividend.paymentDate)}.
         </span>
       </div>
     );
@@ -174,14 +173,14 @@ function NextDividendNote({ dividendFrequency, nextDividend, nextEntitledDividen
       <div className="flex flex-wrap items-start gap-2 text-xs px-3 py-2 rounded-md border border-amber-600/30 bg-amber-600/5">
         <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-700 dark:text-amber-500 mt-0.5" />
         <span className="text-pretty">
-          O provento de <span className="font-mono">{formatCurrency(nextDividend.rate)}</span> em {fmtDate(nextDividend.paymentDate)} já
-          passou da data-com{nextDividend.exDate ? ` (${fmtDate(nextDividend.exDate)})` : ""} — comprando hoje, você não recebe esse.{" "}
+          O provento de <span className="font-mono">{formatCurrency(nextDividend.rate)}</span> em {formatDate(nextDividend.paymentDate)} já
+          passou da data-com{nextDividend.exDate ? ` (${formatDate(nextDividend.exDate)})` : ""} — comprando hoje, você não recebe esse.{" "}
           {nextEntitledDividend ? (
             <>
               O próximo que você pegaria é o de{" "}
               <span className="font-mono font-medium">{formatCurrency(nextEntitledDividend.rate)}</span> em{" "}
-              {fmtDate(nextEntitledDividend.paymentDate)}
-              {nextEntitledDividend.exDate ? ` (comprando até ${fmtDate(nextEntitledDividend.exDate)})` : ""}.
+              {formatDate(nextEntitledDividend.paymentDate)}
+              {nextEntitledDividend.exDate ? ` (comprando até ${formatDate(nextEntitledDividend.exDate)})` : ""}.
             </>
           ) : (
             "Não há outro anunciado ainda."
@@ -197,7 +196,7 @@ function NextDividendNote({ dividendFrequency, nextDividend, nextEntitledDividen
     <div className="flex flex-wrap items-start gap-2 text-xs px-3 py-2 rounded-md border bg-muted/40 border-border/50">
       <CalendarClock className="w-3.5 h-3.5 shrink-0 text-muted-foreground mt-0.5" />
       <span className="text-muted-foreground text-pretty">
-        Provento de {formatCurrency(nextDividend.rate)} anunciado para {fmtDate(nextDividend.paymentDate)}, mas o
+        Provento de {formatCurrency(nextDividend.rate)} anunciado para {formatDate(nextDividend.paymentDate)}, mas o
         provedor não informou a data-com — não dá para garantir se uma compra hoje dá direito a ele.
       </span>
     </div>

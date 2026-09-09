@@ -14,7 +14,7 @@ import {
   type MarketContext,
   useGetPortfolioDividendsProjection
 } from "@workspace/api-client-react";
-import { formatCurrency, formatPercent, formatShortDateTime } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatShortDateTime, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -476,7 +476,7 @@ export default function Dashboard() {
                         // porque a janela pode cruzar o ano.
                         const iso = payload?.[0]?.payload?.date;
                         return typeof iso === "string"
-                          ? new Date(`${iso}T00:00:00`).toLocaleDateString("pt-BR")
+                          ? formatDate(iso)
                           : String(_label);
                       }}
                       contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '6px' }}

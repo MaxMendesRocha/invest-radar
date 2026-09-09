@@ -1,5 +1,5 @@
 import { useListSales, getListSalesQueryKey, useGetMonthlySalesTax, getGetMonthlySalesTaxQueryKey } from "@workspace/api-client-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -182,7 +182,7 @@ export default function Vendas() {
                         <TableCell className="text-right font-mono">{sale.quantity}</TableCell>
                         <TableCell className="text-right font-mono">{formatCurrency(sale.averagePrice)}</TableCell>
                         <TableCell className="text-right font-mono">{formatCurrency(sale.salePrice)}</TableCell>
-                        <TableCell className="text-xs">{new Date(sale.saleDate).toLocaleDateString("pt-BR", { timeZone: "UTC" })}</TableCell>
+                        <TableCell className="text-xs">{formatDate(sale.saleDate)}</TableCell>
                         <TableCell className={`text-right font-mono font-medium ${isProfit ? "text-green-600 dark:text-green-500" : "text-destructive"}`}>
                           {isProfit ? "+" : "-"}{formatCurrency(Math.abs(sale.grossGain))}
                         </TableCell>
@@ -231,7 +231,7 @@ export default function Vendas() {
                         </div>
                         <div>
                           <div className="text-xs text-muted-foreground">Data</div>
-                          <div>{new Date(sale.saleDate).toLocaleDateString("pt-BR", { timeZone: "UTC" })}</div>
+                          <div>{formatDate(sale.saleDate)}</div>
                         </div>
                         <div>
                           <div className="text-xs text-muted-foreground">Compra x Venda</div>

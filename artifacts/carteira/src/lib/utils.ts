@@ -31,6 +31,33 @@ export function formatShortDate(iso: string): string {
   return month && day ? `${day}/${month}` : iso
 }
 
+/**
+ * "2026-09-08" -> "08/09/2026". Data de CALENDÁRIO, e por isso nunca passa pelo fuso do
+ * navegador.
+ *
+ * `new Date("2026-09-08").toLocaleDateString("pt-BR")` devolve **07/09/2026** no Brasil, e
+ * essa é a origem do bug que motivou esta função: a string sem hora é interpretada como
+ * meia-noite UTC, que em UTC−3 ainda é o dia anterior. O mesmo vale para o
+ * "2026-09-08T00:00:00.000Z" que os provedores mandam — meia-noite UTC volta um dia igual.
+ *
+ * Uma data de pagamento, de compra ou de venda não tem hora: ela é o mesmo dia em Manaus,
+ * em Fernando de Noronha e no servidor. Converter fuso num dado que não tem instante só
+ * pode errar, nunca acertar — então a parte da data é lida como TEXTO e exibida como está,
+ * ignorando qualquer hora que venha junto. É a leitura certa para o que os provedores
+ * mandam (data pura ou meia-noite UTC) e para o que o Postgres devolve de uma coluna
+ * `date`. Não use isto para carimbo de tempo real, como `createdAt`: ali a hora importa e
+ * o fuso do leitor é justamente o que se quer — esse caso é do `formatShortDateTime`.
+ */
+export function formatDate(iso: string): string {
+  const [datePart] = iso.split("T")
+  const [year, month, day] = datePart.split("-")
+  if (year && month && day) return `${day}/${month}/${year}`
+
+  // Não é ISO — devolve o que der, em vez de "Invalid Date".
+  const parsed = new Date(iso)
+  return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleDateString("pt-BR", { timeZone: "UTC" })
+}
+
 // Minúsculo: entra no meio de uma frase ("de sexta, 28/08"), não como rótulo isolado.
 const DIA_DA_SEMANA = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"]
 
