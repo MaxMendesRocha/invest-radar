@@ -499,17 +499,27 @@ export default function Dashboard() {
                 — e é o VALOR que explica por que este gráfico não bate com o card
                 Resultado: um mede a partir do que a carteira valia aqui, o outro a
                 partir do que ela custou. Sem esta linha, reconciliar os dois exige
-                refazer a conta à mão. */}
+                refazer a conta à mão.
+
+                O valor-base precisa vir com a ressalva de que ele NÃO é o tamanho da
+                carteira. Numa carteira em acumulação os dois números divergem por ordens
+                de grandeza — base de R$ 100 embaixo de um patrimônio de R$ 1.325 —, e sem
+                a ressalva a única leitura disponível é a de que o gráfico está medindo a
+                carteira errada, ou desatualizado. A causa real é o TWR neutralizando
+                aporte, que é o motivo de as três séries serem comparáveis. */}
             {benchmarks && benchmarks.points.length >= 2 && benchmarks.baseLabel && (
               <p className="mt-3 border-t pt-3 text-xs text-muted-foreground text-pretty">
                 Todas as séries partem de 0% em <strong className="font-medium text-foreground">{benchmarks.baseLabel}</strong>
                 {benchmarks.baseValue != null && (
                   <>
                     , quando a carteira valia{" "}
-                    <strong className="font-mono font-medium text-foreground">{formatCurrency(benchmarks.baseValue)}</strong>
+                    <strong className="font-mono font-medium text-foreground">{formatCurrency(benchmarks.baseValue)}</strong>{" "}
+                    — é o ponto de partida da medição, não o tamanho da carteira
                   </>
                 )}
-                . O card Resultado mede a partir do custo, não daqui — por isso os dois percentuais diferem.
+                . O gráfico mede rentabilidade por real investido: aporte entra na carteira mas não
+                conta como desempenho, senão depositar dinheiro pareceria lucro. O card Resultado mede
+                a partir do custo, não daqui — por isso os dois percentuais diferem.
               </p>
             )}
           </CardContent>
