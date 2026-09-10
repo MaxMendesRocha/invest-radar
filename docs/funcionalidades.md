@@ -1446,6 +1446,38 @@ contradizem e recurso de outro usuário. Cada caso declara o que espera, então 
 não um relatório para interpretar depois. Só roda contra localhost — ele escreve e apaga de
 propósito.
 
+**`harness/formas-de-carteira-check.mts`** — a varredura por **forma**, não por valor. Todo o resto
+do harness ancora em números escolhidos: a carteira do vídeo, um caso do Tesouro, uma carteira real
+medida. Isso trava o cálculo, mas não responde a pergunta de quem abre o portal hoje — quem
+desenvolveu tem seis ativos, FIIs e Tesouro, histórico curto e perfil preenchido; um cadastro novo
+tem zero de tudo isso.
+
+Treze formas plausíveis (vazia, um ativo só, só renda fixa, só ações, ETFs/BDRs/fundos, alvo de
+100% numa classe, alvos somando 60%, alvos zerados, centavos, oito dígitos, exatamente no alvo, só
+saldo inicial, e a do desenvolvedor) atravessam os motores que alimentam Visão Geral e Saúde do
+Portfólio, contra seis tamanhos de aporte. Mais cinco históricos de TWR, incluindo os que um usuário
+de hoje tem: nenhum snapshot, um, dois, cadeia rompida no meio. **412 verificações.**
+
+O que se afirma são propriedades, nunca um número — um número dependeria da forma e seria um caso
+escolhido a dedo outra vez. A mais valiosa é a mais boba: **nenhum campo pode sair NaN ou Infinity**,
+com o caminho até o campo no relatório de falha. É exatamente o que muda entre carteiras — divisão
+por patrimônio zero, por alvo 100%, por saldo anterior nulo — e o que a tela exibiria como "R$ NaN"
+sem nada ter lançado exceção.
+
+Duas invariantes minhas caíram na primeira execução, as duas por eu ter suposto o que o motor
+deveria fazer em vez de ler o que ele faz:
+
+- **"Aporte não vai para classe acima do alvo"** é falso, e tem que ser. A régua é o total
+  *projetado*: ações sozinhas em R$ 500 estão a 100% da carteira, mas com aporte de R$ 250 mil o
+  alvo delas passa a valer R$ 50.100. Não aportar nelas afastaria a carteira do alvo.
+- **"Aporte sempre aproxima do alvo"** também é falso, por causa do piso de fatia. Numa carteira
+  exatamente em 60/20/12/8, um aporte de R$ 500 daria R$ 40 aos ETFs contra piso de R$ 50: a fatia
+  cai fora e é redistribuída, e o desvio total sai de 0 para **0,76 p.p.** Com R$ 1.000 a fatia passa
+  do piso e o desvio volta a zero. É o piso funcionando — sugerir R$ 40 onde o mínimo é R$ 50 seria
+  contradizer a própria regra. O que o harness trava é o **limite** do estrago (abaixo de 1 p.p.) e
+  a consequência que importa: **um aporte nunca tira a carteira da banda**, ou a Visão Geral mandaria
+  rebalancear por causa do aporte que ela mesma sugeriu.
+
 **`harness/invariantes-check.mts`** — propriedades que a base inteira precisa satisfazer *sempre*,
 independente da sequência de operações que levou até ali. Uma trava de entrada só protege a porta em
 que foi colocada, e a porta esquecida foi justamente a antiga; uma invariante não tem porta, ela
