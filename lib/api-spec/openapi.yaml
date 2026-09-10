@@ -666,6 +666,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /portfolio/allocation/band:
+    put:
+      operationId: upsertAllocationBand
+      tags: [portfolio]
+      summary: Define a banda de tolerância do rebalanceamento
+      description: >-
+        Separado do PUT dos alvos de propósito: os alvos precisam somar 100% e são
+        reescritos em bloco, a banda é um número independente. Juntar os dois obrigaria a
+        reenviar a política inteira para afrouxar a banda em um ponto.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AllocationBandInput"
+      responses:
+        "200":
+          description: Banda salva, com o veredito recalculado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllocationOverview"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /portfolio/allocation/plan:
     get:
       operationId: getAllocationPlan
@@ -2150,6 +2179,37 @@ components:
           type: ["string", "null"]
         baseValue:
           type: ["number", "null"]
+        # O aporte que domina o resultado, quando existe um.
+        #
+        # O TWR posiciona o fluxo no início do subperíodo, então o fator daquele elo é
+        # `valor_final / (valor_anterior + fluxo)`. Um aporte muito maior que o saldo
+        # anterior domina esse denominador, e a partir daí o percentual acumulado diz
+        # mais sobre o tratamento de um lançamento do que sobre os ativos escolhidos.
+        # Frequente em carteira nova: quem aporta R$ 700 sobre um saldo de R$ 100 tem
+        # um elo em que o fluxo é 87% da base.
+        #
+        # Null quando nenhum fluxo da janela passa do limiar — o caso normal de quem já
+        # tem patrimônio grande em relação ao aporte mensal. Só considera fluxo DENTRO
+        # da janela exibida: aporte anterior à base não participa do número mostrado.
+        dominantFlow:
+          type: ["object", "null"]
+          required: [date, share, timesPriorBalance]
+          properties:
+            date:
+              type: string
+              description: Dia do subperíodo em que o aporte entrou.
+            share:
+              type: number
+              description: >-
+                Fração do denominador que veio do aporte (0 a 1). É também o fator de
+                amplificação: um erro relativo de 1% no lançamento desloca o retorno
+                acumulado em `share` p.p.
+            timesPriorBalance:
+              type: ["number", "null"]
+              description: >-
+                Quantas vezes o saldo anterior o aporte representou — o número que a
+                frase usa. Null quando não havia saldo anterior, caso em que a razão
+                seria infinita e `share` já diz o necessário.
 
     # Responde "sou eu ou é o mercado?". A atribuição é por CONTRIBUIÇÃO (peso ×
     # movimento) e não por variação: medido, o ativo que mais caiu (KLBN3, -4,53%)
@@ -3086,7 +3146,22 @@ components:
 
     AllocationOverview:
       type: object
-      required: [source, totalPatrimony, items]
+      # Os campos da banda são obrigatórios porque a rota sempre os calcula: os anuláveis
+      # chegam com `null` explícito, nunca ausentes. Deixá-los opcionais faria a tela ter
+      # que adivinhar um padrão de banda no cliente — duas fontes para o mesmo número.
+      required:
+        [
+          source,
+          totalPatrimony,
+          items,
+          bandPp,
+          balanced,
+          outOfBand,
+          worstCategory,
+          amountToFix,
+          monthlyPace,
+          contributionsToFix,
+        ]
       properties:
         source:
           type: string
@@ -3101,6 +3176,65 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AllocationItem"
+        bandPp:
+          type: number
+          description: >-
+            Banda de tolerância em pontos percentuais: quanto a carteira pode se afastar
+            do alvo antes de valer a pena mexer. É configuração do usuário; enquanto ele
+            não define a dele, vale o padrão declarado de 5 p.p.
+
+            Ela existe porque o alvo sozinho não decide nada — uma classe a 52% contra
+            alvo de 50% está fora do alvo pela aritmética e dentro do ruído pela prática.
+        balanced:
+          type: boolean
+          description: >-
+            Nenhuma classe fora da banda. É a resposta "não faça nada", que é a mais
+            frequente e a que o app não sabia dar. Também true em carteira vazia, onde não
+            existe desvio percentual sobre base zero.
+        outOfBand:
+          type: array
+          description: Classes fora da banda, da maior distância do alvo para a menor.
+          items:
+            type: string
+        worstCategory:
+          type: ["string", "null"]
+          description: >-
+            A classe mais ABAIXO do alvo entre as que estão fora da banda — a única que
+            ganha plano. Corrigir a pior costuma trazer as outras junto, e um valor por
+            classe somaria aportes que se anulam entre si. Null quando a carteira está
+            dentro da banda ou quando só há classes acima do alvo, que aporte não corrige.
+        amountToFix:
+          type: ["number", "null"]
+          description: >-
+            Aporte que devolve `worstCategory` ao alvo exato. NÃO é o déficit contra o
+            total de hoje: o próprio aporte aumenta o total, e o alvo é uma fração dele —
+            numa carteira de R$ 70.140 com FIIs em R$ 31.500 e alvo de 50%, são R$ 7.140 e
+            não R$ 3.570.
+        monthlyPace:
+          type: ["number", "null"]
+          description: >-
+            Ritmo real de aporte, medido nos lançamentos dos últimos 6 meses — não
+            perguntado. Exclui os lançamentos de saldo inicial do backfill, que
+            representam a carteira inteira num dia só. Null com menos de dois lançamentos
+            reais na janela, caso em que a tela não fala em prazo.
+        contributionsToFix:
+          type: ["integer", "null"]
+          description: >-
+            Quantos aportes, no ritmo medido, até `amountToFix`. Arredondado para cima —
+            meio aporte não devolve a carteira ao alvo.
+
+    AllocationBandInput:
+      type: object
+      required: [bandPp]
+      properties:
+        bandPp:
+          type: number
+          minimum: 0
+          maximum: 50
+          description: >-
+            Banda em pontos percentuais. Zero é permitido e significa "me avise a qualquer
+            desvio" — é escolha legítima, ainda que ruidosa. O teto de 50 existe porque
+            acima disso a banda deixaria de recusar qualquer carteira concebível.
 
     PurchaseSizing:
       type: object

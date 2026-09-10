@@ -9,6 +9,7 @@
 export * from './alert';
 export * from './alertSeverity';
 export * from './alertType';
+export * from './allocationBandInput';
 export * from './allocationInput';
 export * from './allocationItem';
 export * from './allocationOverview';
@@ -43,6 +44,7 @@ export * from './assetUpdate';
 export * from './assetUpdateCategory';
 export * from './authResponse';
 export * from './benchmarkComparison';
+export * from './benchmarkComparisonDominantFlow';
 export * from './benchmarkComparisonGranularity';
 export * from './benchmarkPoint';
 export * from './brokerImportConfirmation';

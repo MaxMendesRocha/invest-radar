@@ -14,7 +14,7 @@ import {
   type MarketContext,
   useGetPortfolioDividendsProjection
 } from "@workspace/api-client-react";
-import { formatCurrency, formatPercent, formatShortDateTime } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatShortDateTime, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -24,6 +24,7 @@ import { ArrowUpRight, Coins, Compass, Scale, Sparkles, TrendingUp, type LucideI
 import { categoryLabel } from "@/lib/categories";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { RebalanceVerdict } from "@/components/rebalance-verdict";
 
 /**
  * Eixo de valor em reais. O formatador anterior era `R$${(val/1000).toFixed(0)}k`, que
@@ -91,6 +92,14 @@ function KpiCard({
 }
 
 const EMPTY_VALUE = "—";
+
+// pt-BR e sem `toFixed`: `toFixed` emite ponto decimal em en-US, que colide com o ponto
+// de milhar que o resto da tela usa. Já mordeu antes, no filtro da Carteira.
+const oneDecimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+const twoDecimals = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** 0,872 -> "87%". Fração de 0 a 1, arredondada — casa decimal aqui não muda decisão. */
+const percentOf = (fraction: number) =>
+  `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(fraction * 100)}%`;
 
 export default function Dashboard() {
   const { data: summary, isLoading: isLoadingSummary } = useGetPortfolioSummary({
@@ -291,6 +300,10 @@ export default function Dashboard() {
         </KpiCard>
       </div>
 
+      {/* A pergunta "preciso mexer na carteira?" respondida antes de o usuário ir procurar
+          a resposta em Saúde do Portfólio. Uma linha, com o número do aporte que resolve. */}
+      <RebalanceVerdict />
+
       {/* Logo abaixo dos KPIs de propósito: quando tudo está vermelho, "sou eu ou é o
           mercado?" é a primeira pergunta, e ela vinha sem resposta em lugar nenhum. */}
       {marketContext?.available && marketContext.context && (
@@ -471,7 +484,7 @@ export default function Dashboard() {
                         // porque a janela pode cruzar o ano.
                         const iso = payload?.[0]?.payload?.date;
                         return typeof iso === "string"
-                          ? new Date(`${iso}T00:00:00`).toLocaleDateString("pt-BR")
+                          ? formatDate(iso)
                           : String(_label);
                       }}
                       contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '6px' }}
@@ -494,17 +507,47 @@ export default function Dashboard() {
                 — e é o VALOR que explica por que este gráfico não bate com o card
                 Resultado: um mede a partir do que a carteira valia aqui, o outro a
                 partir do que ela custou. Sem esta linha, reconciliar os dois exige
-                refazer a conta à mão. */}
+                refazer a conta à mão.
+
+                O valor-base precisa vir com a ressalva de que ele NÃO é o tamanho da
+                carteira. Numa carteira em acumulação os dois números divergem por ordens
+                de grandeza — base de R$ 100 embaixo de um patrimônio de R$ 1.325 —, e sem
+                a ressalva a única leitura disponível é a de que o gráfico está medindo a
+                carteira errada, ou desatualizado. A causa real é o TWR neutralizando
+                aporte, que é o motivo de as três séries serem comparáveis. */}
             {benchmarks && benchmarks.points.length >= 2 && benchmarks.baseLabel && (
               <p className="mt-3 border-t pt-3 text-xs text-muted-foreground text-pretty">
                 Todas as séries partem de 0% em <strong className="font-medium text-foreground">{benchmarks.baseLabel}</strong>
                 {benchmarks.baseValue != null && (
                   <>
                     , quando a carteira valia{" "}
-                    <strong className="font-mono font-medium text-foreground">{formatCurrency(benchmarks.baseValue)}</strong>
+                    <strong className="font-mono font-medium text-foreground">{formatCurrency(benchmarks.baseValue)}</strong>{" "}
+                    — é o ponto de partida da medição, não o tamanho da carteira
                   </>
                 )}
-                . O card Resultado mede a partir do custo, não daqui — por isso os dois percentuais diferem.
+                . O gráfico mede rentabilidade por real investido: aporte entra na carteira mas não
+                conta como desempenho, senão depositar dinheiro pareceria lucro. O card Resultado mede
+                a partir do custo, não daqui — por isso os dois percentuais diferem.
+              </p>
+            )}
+
+            {/* A margem do número, quando ela é grande o bastante para mudar a leitura.
+                O TWR posiciona o fluxo no início do subperíodo, então um aporte muito
+                maior que o saldo anterior domina o denominador daquele elo — e o
+                percentual acumulado passa a depender de como UM lançamento foi tratado.
+                Some sozinha quando os aportes voltam a ser pequenos diante da carteira,
+                que é o estado normal depois dos primeiros meses. */}
+            {benchmarks?.dominantFlow && (
+              <p className="mt-2 text-xs text-amber-700 text-pretty dark:text-amber-500">
+                Um aporte de{" "}
+                <strong className="font-medium">{formatDate(benchmarks.dominantFlow.date)}</strong>
+                {benchmarks.dominantFlow.timesPriorBalance != null && (
+                  <> foi {oneDecimal.format(benchmarks.dominantFlow.timesPriorBalance)}× o saldo daquele dia e</>
+                )}{" "}
+                responde por {percentOf(benchmarks.dominantFlow.share)} da base do período em que entrou.
+                Enquanto isso durar, este percentual depende bastante de um lançamento só — um desvio de
+                1% no valor ou no dia dele desloca o resultado em cerca de{" "}
+                {twoDecimals.format(benchmarks.dominantFlow.share)} p.p.
               </p>
             )}
           </CardContent>

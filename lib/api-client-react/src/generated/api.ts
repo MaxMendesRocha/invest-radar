@@ -21,6 +21,7 @@ import type {
 
 import type {
   Alert,
+  AllocationBandInput,
   AllocationInput,
   AllocationOverview,
   AllocationPlan,
@@ -2221,6 +2222,78 @@ export const useUpsertAllocation = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getUpsertAllocationMutationOptions(options));
+    }
+
+export const getUpsertAllocationBandUrl = () => {
+
+
+
+
+  return `/api/portfolio/allocation/band`
+}
+
+/**
+ * Separado do PUT dos alvos de propósito: os alvos precisam somar 100% e são reescritos em bloco, a banda é um número independente. Juntar os dois obrigaria a reenviar a política inteira para afrouxar a banda em um ponto.
+ * @summary Define a banda de tolerância do rebalanceamento
+ */
+export const upsertAllocationBand = async (allocationBandInput: AllocationBandInput, options?: RequestInit): Promise<AllocationOverview> => {
+
+  return customFetch<AllocationOverview>(getUpsertAllocationBandUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(allocationBandInput)
+  }
+);}
+
+
+
+
+
+export const getUpsertAllocationBandMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertAllocationBand>>, TError,{data: BodyType<AllocationBandInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertAllocationBand>>, TError,{data: BodyType<AllocationBandInput>}, TContext> => {
+
+const mutationKey = ['upsertAllocationBand'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertAllocationBand>>, {data: BodyType<AllocationBandInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertAllocationBand(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertAllocationBandMutationResult = NonNullable<Awaited<ReturnType<typeof upsertAllocationBand>>>
+    export type UpsertAllocationBandMutationBody = BodyType<AllocationBandInput>
+    export type UpsertAllocationBandMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Define a banda de tolerância do rebalanceamento
+ */
+export const useUpsertAllocationBand = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertAllocationBand>>, TError,{data: BodyType<AllocationBandInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertAllocationBand>>,
+        TError,
+        {data: BodyType<AllocationBandInput>},
+        TContext
+      > => {
+      return useMutation(getUpsertAllocationBandMutationOptions(options));
     }
 
 export const getGetAllocationPlanUrl = (params: GetAllocationPlanParams,) => {

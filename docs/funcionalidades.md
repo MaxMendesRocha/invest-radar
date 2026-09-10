@@ -502,6 +502,55 @@ substituta para elas fabricaria justamente o alvo que ordena a fila inteira.
 
 Conferência: `harness/aporte-reforco-check.mts`, 16 casos.
 
+### Banda de tolerância: quando vale a pena mexer
+
+O alvo sozinho não decide nada. Uma classe a 52% contra alvo de 50% está fora do alvo pela
+aritmética e dentro do ruído pela prática, e o app tratava esse caso igual a uma classe 8 p.p.
+fora — empurrava a conclusão para o leitor justamente na decisão que ele não tem como tomar sem
+uma regra escrita. Faltava o corte.
+
+A **banda** é esse corte: quanto uma classe pode se afastar do alvo antes de valer a pena agir.
+O padrão é 5 p.p. (`DEFAULT_BAND_PP`), e o usuário edita a dele no mesmo formulário dos alvos —
+a pergunta é uma só, *quanto eu quero em cada classe e a partir de qual distância isso me
+incomoda*, e a segunda metade não significa nada sem a primeira. A banda é **uma só, global**,
+não uma por classe: banda por classe multiplica por seis o que a pessoa precisa manter calibrado
+para responder uma pergunta binária, e ninguém recalibra seis números.
+
+Ela é gravada só quando muda (`allocation_settings`, uma linha por usuário). Enquanto ninguém
+editou, vale o padrão do motor — escrever o mesmo 5 no banco transformaria "não escolhi" em
+"escolhi 5", que são estados diferentes no dia em que o padrão mudar. A *linha* é opcional; a
+*tabela* não: `docs/sql/allocation-settings.sql` roda antes do deploy, porque a rota faz SELECT
+nela em toda chamada.
+
+**O veredito fica na Visão Geral, não em Saúde do Portfólio.** O detalhe — barras, alvos, plano de
+aporte — continua em Saúde. Mas um aviso que só aparece na tela que a pessoa visita quando já
+decidiu rebalancear não avisa nada, ele confirma. Em uma linha: *Nada a fazer este mês*, ou
+*Fora da banda de 5 p.p.: Ações e FIIs*, com o número que resolve.
+
+**O número que resolve não é o déficit.** Devolver uma classe ao alvo custa
+`(alvo% × total − atual) / (1 − alvo%)`, porque o próprio aporte aumenta o total e o alvo é uma
+fração dele. Numa carteira de R$ 70.140 com FIIs em R$ 31.500 e alvo de 50%, são R$ 7.140 — o
+dobro dos R$ 3.570 que a leitura ingênua do déficit sugere. Só a classe mais **abaixo** do alvo
+ganha esse número: corrigir a pior costuma trazer as outras junto, e um valor por classe somaria
+aportes que se anulam entre si.
+
+**Quantos meses isso leva é medido, não perguntado.** O ritmo sai dos lançamentos dos últimos 6
+meses (`contribution-pace.ts`), excluindo os de saldo inicial do backfill — eles representam a
+carteira inteira num dia só, e somá-los faria o app concluir que qualquer desvio se corrige no
+mês seguinte. O denominador é a janela inteira, não os meses com aporte: quem aportou duas vezes
+em seis meses não tem o ritmo de quem aporta todo mês. Com menos de dois lançamentos reais na
+janela, a tela não fala em prazo.
+
+Quando as classes fora da banda estão todas **acima** do alvo, não há aporte que corrija, e o app
+não manda vender: a venda realiza IR e corretagem para consertar um desvio que a entrada de
+dinheiro novo dilui sozinha. Carteira vazia não recebe veredito — não existe desvio percentual
+sobre base zero, e quem acabou de se cadastrar leria "renda fixa 60 p.p. abaixo do alvo" antes de
+ter um centavo.
+
+Conferência: `harness/banda-rebalanceamento-check.mts`, 23 casos, ancorados numa carteira de
+referência externa (60 mil em 50/30/20, um ano depois) cujos percentuais e aporte foram conferidos
+contra a fonte antes de virarem caso.
+
 ---
 
 ## Perfil declarado contra perfil revelado
@@ -975,7 +1024,7 @@ sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela int
 
 | Tela | A pergunta | O que mostra |
 |---|---|---|
-| **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, **carteira contra o mercado e quem puxou o resultado**, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks, oscilação da composição atual |
+| **Dashboard** | Como estou, no geral? | Patrimônio, resultado sobre o custo, **preciso mexer na carteira este mês?** (veredito de banda), **carteira contra o mercado e quem puxou o resultado**, dividendos acumulados, yield da carteira, evolução patrimonial, alocação por categoria, comparativo contra benchmarks, oscilação da composição atual |
 | **Minha Carteira** | O que eu tenho? | Posições com preço atual, resultado, status de cada ativo, e o cadastro — incluindo Tesouro Direto com preenchimento automático, poupança com saldo projetado pelo rendimento real do BCB, e a data da compra, opcional em qualquer classe, editável depois |
 | **Carteira de Partida** | Não tenho nada ainda — por onde começo? | As três carteiras-alvo (Conservador/Moderado/Arrojado) lado a lado, com candidatos por classe e o título do Tesouro; opcionalmente convertidas em reais a partir de um valor de partida |
 | **Importar Nota** | Já invisto — como trago o que tenho sem digitar tudo? | Nota de corretagem e extrato de custódia em PDF conciliados numa tela de conferência; grava só o que você marcar, e só compra |
@@ -985,7 +1034,7 @@ sempre na próxima geração (`POST /analysis/generate` sobrescreve a tabela int
 | **Oportunidades** | O que existe lá fora? | Universo de ~180 tickers varrido semanalmente, reordenado pelo nível de risco compatível com o perfil |
 | **Dividendos** | Quanto recebo, e caminho para a meta? | Total acumulado, yield on cost, histórico de 12 meses, proventos anunciados, progresso da meta, número mágico por ativo com plano seguro de concentração |
 | **Operações Encerradas** | Quanto ganhei, e quanto devo? | Vendas com resultado realizado e consolidação mensal de IR com compensação de prejuízo |
-| **Saúde do Portfólio** | A estrutura está boa? | Score em cinco pilares — diversificação 25%, concentração 25%, risco 20%, dividendos 15%, crescimento 15% — mais diagnóstico da IA |
+| **Saúde do Portfólio** | A estrutura está boa? | Score em cinco pilares — diversificação 25%, concentração 25%, risco 20%, dividendos 15%, crescimento 15% — mais diagnóstico da IA, alocação-alvo com banda de tolerância e plano de aporte |
 | **Configurações** | Quem sou eu como investidor? | Questionário de perfil, leitura do perfil revelado, política de alocação |
 
 ---
@@ -1281,6 +1330,29 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   a compra). Os dois cards ficam na mesma tela, e por isso não repetem a palavra
   "rentabilidade": um diz *Resultado*, o outro rotula a série como *Carteira (no período)*
   — dois números diferentes com o mesmo nome liam como contradição.
+
+  **Quando o resultado depende de um aporte só.** O TWR posiciona o fluxo no início do
+  subperíodo, então o fator daquele elo é `valor_final / (valor_anterior + fluxo)`. Num
+  aporte muito maior que o saldo anterior, o fluxo domina o denominador — e a fração
+  `fluxo/abertura` é exatamente o quanto um erro relativo no lançamento se transfere para o
+  retorno acumulado. Numa carteira real medida aqui, um aporte de R$ 686,54 sobre um saldo
+  de R$ 101,50 respondeu por **87% da base** daquele elo: errar 1% no valor ou no dia dele
+  desloca o total em 0,87 p.p. — mais que o próprio percentual exibido na janela.
+
+  Isso é frequente em carteira nova e some sozinho conforme os aportes ficam pequenos
+  diante do patrimônio. Por isso o app não corrige nada, só **declara**: acima de 50% de
+  domínio (`FLOW_DOMINANCE_THRESHOLD`), a nota do comparativo nomeia o dia e o peso. O
+  limiar não é menor porque um aviso que aparece em todo aporte de quem está começando
+  deixa de ser lido.
+
+  O diagnóstico sai da **mesma travessia** que calcula o TWR (`computeDailyTwr` recebe um
+  coletor opcional de elos) — uma segunda função que refizesse o encadeamento seria uma
+  segunda cópia dele, que é o que `computeTwr` existe para evitar. Elos anteriores a uma
+  quebra de cadeia são descartados junto com ela: pertencem a uma carteira que já não é
+  comparável. Só entram elos dentro da janela exibida, ou a nota apontaria para um dia fora
+  do desenho. Conferência: `harness/twr-fluxo-dominante-check.mts`, 11 casos — o último
+  perturba o lançamento em 1% e mede o deslocamento do TWR inteiro, para que a frase da
+  tela seja verificada e não apenas derivada no papel.
 - **Oscilação é medida sobre a composição de hoje, não sobre o histórico.** O card de
   oscilação aplica as quantidades atuais a um ano de fechamentos reais e calcula o
   desvio-padrão dos retornos diários anualizado (× √252), ao lado do IBOV medido nos
@@ -1458,7 +1530,8 @@ para decidir nada.
   aporte, não a hora, então ponderar pelo tempo dentro do período (Dietz modificado) não é
   possível. Com o snapshot diário por job, o subperíodo é de 24h e o erro dessa aproximação
   fica pequeno; nos dias anteriores ao job, em que só havia medição quando o app era aberto,
-  os subperíodos longos ainda carregam erro maior.
+  os subperíodos longos ainda carregam erro maior. **A tela agora declara esse limite quando
+  ele morde**: ver "Quando o resultado depende de um aporte só", abaixo.
 - **O TWR ainda deriva o fluxo da variação de custo, e por isso editar a posição conta como
   aporte.** Corrigir um preço médio errado é, para ele, indistinguível de dinheiro entrando.
   Os lançamentos (seção "Lançamentos", acima) já guardam o fluxo real e destravam a correção

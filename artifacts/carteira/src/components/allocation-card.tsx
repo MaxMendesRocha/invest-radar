@@ -4,6 +4,7 @@ import {
   useGetAllocation,
   getGetAllocationQueryKey,
   useUpsertAllocation,
+  useUpsertAllocationBand,
   useGetAllocationPlan,
   getGetAllocationPlanQueryKey,
   type AllocationItem,
@@ -21,6 +22,7 @@ import {
   SizingLine,
   pluralizeUnit,
   decimal,
+  decimalOptional,
   integer,
   maturityYear,
   sizedCount,
@@ -93,22 +95,43 @@ function AllocationBar({ item }: { item: AllocationItem }) {
   );
 }
 
-function PolicyEditor({ items, onDone }: { items: AllocationItem[]; onDone: () => void }) {
+/**
+ * Alvos e banda no mesmo formulário, e no mesmo botão.
+ *
+ * São dois endpoints — a banda é configuração do usuário, os alvos são política de
+ * carteira —, mas separá-los na tela obrigaria a pessoa a entender essa fronteira interna
+ * para responder uma pergunta só: *quanto eu quero em cada classe, e a partir de qual
+ * distância isso me incomoda*. A segunda metade não significa nada sem a primeira.
+ *
+ * A banda só é gravada quando muda: enquanto ninguém a editou, o app usa o padrão
+ * declarado no motor, e escrever o mesmo 5 no banco transformaria "não escolhi" em
+ * "escolhi 5" — que são estados diferentes no dia em que o padrão mudar.
+ */
+function PolicyEditor({ items, bandPp, onDone }: { items: AllocationItem[]; bandPp: number; onDone: () => void }) {
   const [targets, setTargets] = useState<Record<string, string>>(
     Object.fromEntries(items.map((i) => [i.category, String(Math.round(i.targetPercent * 100) / 100)])),
   );
+  const [band, setBand] = useState(String(bandPp));
   const queryClient = useQueryClient();
   const upsert = useUpsertAllocation();
+  const upsertBand = useUpsertAllocationBand();
   const { toast } = useToast();
 
   const total = Object.values(targets).reduce((sum, v) => sum + (Number(v) || 0), 0);
   const balanced = Math.abs(total - 100) <= 0.01;
+
+  const bandValue = Number(band);
+  const bandValid = band.trim() !== "" && Number.isFinite(bandValue) && bandValue >= 0 && bandValue <= 50;
+  const bandChanged = bandValid && Math.abs(bandValue - bandPp) > 0.001;
+
+  const saving = upsert.isPending || upsertBand.isPending;
 
   const handleSave = async () => {
     try {
       await upsert.mutateAsync({
         data: { targets: Object.entries(targets).map(([category, value]) => ({ category: category as never, targetPercent: Number(value) || 0 })) },
       });
+      if (bandChanged) await upsertBand.mutateAsync({ data: { bandPp: bandValue } });
       queryClient.invalidateQueries({ queryKey: getGetAllocationQueryKey() });
       toast({ title: "Alocação-alvo salva." });
       onDone();
@@ -139,9 +162,31 @@ function PolicyEditor({ items, onDone }: { items: AllocationItem[]; onDone: () =
       <div className={`text-sm font-mono ${balanced ? "text-muted-foreground" : "text-destructive"}`}>
         Soma: {new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(total)}%{balanced ? "" : " — precisa somar 100%"}
       </div>
+
+      <div className="border-t border-border/60 pt-4 space-y-1">
+        <Label htmlFor="band-pp" className="text-xs">Banda de tolerância (p.p.)</Label>
+        <Input
+          id="band-pp"
+          type="number"
+          min={0}
+          max={50}
+          step="0.5"
+          value={band}
+          onChange={(e) => setBand(e.target.value)}
+          className="font-mono w-28"
+        />
+        <p className="text-xs text-muted-foreground text-pretty">
+          Quanto uma classe pode se afastar do alvo antes de o app avisar. Abaixo disso o desvio é
+          ruído: corrigir custaria mais em corretagem e imposto do que o acerto vale.
+          {!bandValid && <span className="text-destructive"> Informe um valor entre 0 e 50.</span>}
+        </p>
+      </div>
+
       <div className="flex gap-2">
-        <Button onClick={handleSave} disabled={!balanced || upsert.isPending}>
-          {upsert.isPending ? "Salvando..." : "Salvar alvos"}
+        <Button onClick={handleSave} disabled={!balanced || !bandValid || saving}>
+          {/* "Salvar", não "Salvar alvos": o botão agora grava também a banda, e o rótulo
+              antigo faria a pessoa procurar um segundo botão que não existe. */}
+          {saving ? "Salvando..." : "Salvar"}
         </Button>
         <Button variant="ghost" onClick={onDone}>Cancelar</Button>
       </div>
@@ -344,12 +389,24 @@ export function AllocationCard() {
         </CardHeader>
         <CardContent className="space-y-4">
           {editing ? (
-            <PolicyEditor items={allocation.items} onDone={() => setEditing(false)} />
+            <PolicyEditor items={allocation.items} bandPp={allocation.bandPp} onDone={() => setEditing(false)} />
           ) : (
-            allocation.items
-              // Classe com alvo zero e nada investido não diz nada — só ocuparia espaço.
-              .filter((item) => item.targetPercent > 0 || item.currentValue > 0)
-              .map((item) => <AllocationBar key={item.category} item={item} />)
+            <>
+              {allocation.items
+                // Classe com alvo zero e nada investido não diz nada — só ocuparia espaço.
+                .filter((item) => item.targetPercent > 0 || item.currentValue > 0)
+                .map((item) => <AllocationBar key={item.category} item={item} />)}
+              {/* A banda vive fora do editor porque ela explica as próprias barras: sem
+                  ela, "2,1pp abaixo do alvo" e "8,4pp abaixo" chegam com o mesmo peso e
+                  cada leitor inventa o próprio corte. */}
+              <p className="text-xs text-muted-foreground text-pretty border-t border-border/60 pt-3">
+                Banda de tolerância: <span className="font-mono">{decimalOptional.format(allocation.bandPp)}</span> p.p.
+                — desvio menor que isso não pede ação.
+                {allocation.balanced
+                  ? " Nenhuma classe passou dela."
+                  : ` Fora da banda: ${allocation.outOfBand.map((c) => CATEGORY_LABEL[c] ?? c).join(", ")}.`}
+              </p>
+            </>
           )}
         </CardContent>
       </Card>

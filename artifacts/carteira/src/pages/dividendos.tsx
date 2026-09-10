@@ -13,7 +13,7 @@ import {
   getGetPortfolioSummaryQueryKey
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -219,7 +219,10 @@ export default function Dividendos() {
           ticker: item.ticker,
           amount: item.suggestedAmount,
           type: "dividendo",
-          date: new Date(item.paymentDate).toISOString(),
+          // O contrato é `format: date`. Mandar a data crua evita a ida e volta por
+          // `new Date(...).toISOString()`, que só acertava porque duas leituras UTC se
+          // cancelavam — e deixava de acertar no dia em que uma das pontas virasse local.
+          date: item.paymentDate.slice(0, 10),
         },
       });
       await Promise.all([
@@ -262,7 +265,10 @@ export default function Dividendos() {
         ticker,
         amount: Number(amount),
         type: type as any,
-        date: new Date(date).toISOString(),
+        // `<input type="date">` já entrega "AAAA-MM-DD", que é exatamente o `format: date`
+        // que a rota espera. Converter para Date no meio do caminho só cria oportunidade
+        // de deslocar o dia.
+        date,
       }
     }, {
       onSuccess: () => {
@@ -287,19 +293,29 @@ export default function Dividendos() {
     }
   };
 
-  // Process data for chart
+  /**
+   * Soma por mês de pagamento, para as barras dos 12 meses.
+   *
+   * O mês sai da STRING, não de `new Date(tx.date).getMonth()`. Aquela versão juntava dois
+   * erros: `new Date("2026-09-01")` é meia-noite UTC, e `getFullYear`/`getMonth` leem no
+   * fuso do navegador — em UTC−3 a data virava 31/08 21h, e o provento ia para a barra de
+   * AGOSTO. Todo pagamento de dia 1º caía no mês anterior, e o de 1º de janeiro, no ano
+   * anterior. Doze dias por ano no balde errado, sempre os mesmos.
+   *
+   * "2026-09-08".slice(0, 7) é o mês, sem conversão nenhuma — e é a mesma chave que
+   * `formatProjectionMonth` e o `tickFormatter` do eixo já esperam.
+   */
   const monthlyData = useMemo(() => {
     if (!transactions) return [];
-    
-    const grouped = transactions.reduce((acc: any, tx) => {
-      const d = new Date(tx.date);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+    const grouped = transactions.reduce<Record<string, { month: string; amount: number }>>((acc, tx) => {
+      const key = tx.date.slice(0, 7);
       if (!acc[key]) acc[key] = { month: key, amount: 0 };
       acc[key].amount += tx.amount;
       return acc;
     }, {});
 
-    return Object.values(grouped).sort((a: any, b: any) => a.month.localeCompare(b.month)).slice(-12);
+    return Object.values(grouped).sort((a, b) => a.month.localeCompare(b.month)).slice(-12);
   }, [transactions]);
 
   return (
@@ -560,7 +576,7 @@ export default function Dividendos() {
                             <div key={key} className="flex flex-wrap items-center justify-between gap-2 py-1 text-sm">
                               <span className="flex min-w-0 flex-wrap items-center gap-2">
                                 <span className="text-muted-foreground">
-                                  {new Date(d.paymentDate).toLocaleDateString("pt-BR")}
+                                  {formatDate(d.paymentDate)}
                                 </span>
                                 <span className="text-xs text-muted-foreground">{d.label}</span>
                                 {/* A data-com é o que decide o direito ao provento — quem
@@ -568,7 +584,7 @@ export default function Dividendos() {
                                     casos marcados, e é o dado que faltava antes. */}
                                 {d.exDate && (
                                   <span className="text-[11px] text-muted-foreground">
-                                    data-com {new Date(d.exDate).toLocaleDateString("pt-BR")}
+                                    data-com {formatDate(d.exDate)}
                                   </span>
                                 )}
                               </span>
@@ -653,7 +669,7 @@ export default function Dividendos() {
                     <span className="font-bold shrink-0">{d.ticker}</span>
                     <span className="text-muted-foreground shrink-0">{d.label}</span>
                     <span className="text-muted-foreground shrink-0">
-                      {new Date(d.paymentDate).toLocaleDateString("pt-BR")}
+                      {formatDate(d.paymentDate)}
                     </span>
                     <Badge variant={d.confirmed ? "default" : "outline"} className="shrink-0">
                       {d.confirmed ? "Confirmado" : "Previsto"}
@@ -783,7 +799,7 @@ export default function Dividendos() {
                   ) : (
                     transactions?.map((tx) => (
                       <TableRow key={tx.id}>
-                        <TableCell className="text-xs">{new Date(tx.date).toLocaleDateString('pt-BR')}</TableCell>
+                        <TableCell className="text-xs">{formatDate(tx.date)}</TableCell>
                         <TableCell className="font-bold">{tx.ticker}</TableCell>
                         <TableCell className="text-right font-mono text-primary">{formatCurrency(tx.amount)}</TableCell>
                         <TableCell>

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable, salesTable, dividendDismissalsTable } from "@workspace/db";
+import { db, assetsTable, transactionsTable, investorProfilesTable, incomeGoalsTable, allocationPoliciesTable, allocationSettingsTable, assetPurchasesTable, salesTable, dividendDismissalsTable } from "@workspace/db";
 import { eq, sum, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { getPricesFor, getFundamentals, sectorFor, QUOTED_CATEGORIES, getDividendEvents, sumLast12Months, getTechnicalSeries, getSavingsIncomeLast12Months, getFiiProfiles } from "../lib/market-data";
@@ -10,13 +10,13 @@ import { fetchIndexSeries, isMaisRetornoConfigured } from "../lib/mais-retorno";
 import { synthesizeMarketNarrative } from "../lib/market-context-ai";
 import { getNewsFor, resolveSearchTerm } from "../lib/news";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
-import { computeDailyTwr } from "../lib/time-weighted-return";
+import { computeDailyTwr, type TwrPeriod } from "../lib/time-weighted-return";
 import { getCdiDailyReturns, syncAndGetDailyIndexCloses } from "../lib/benchmark-data";
 import { evalVolatility, evalDividendYield, evalRevenueGrowth, analyzeFundamentals, analyzeFii, screenForPurchase } from "../lib/analysis-engine";
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
 import { getMacroSnapshot } from "../lib/macro-data";
 import { computeIncomeGoalProgress } from "../lib/income-goal-engine";
-import { UpsertIncomeGoalBody, UpsertAllocationBody, GetAllocationPlanQueryParams, GetStarterPortfoliosQueryParams, GetTreasuryPriceOnDateQueryParams, DismissPendingDividendBody } from "@workspace/api-zod";
+import { UpsertIncomeGoalBody, UpsertAllocationBody, UpsertAllocationBandBody, GetAllocationPlanQueryParams, GetStarterPortfoliosQueryParams, GetTreasuryPriceOnDateQueryParams, DismissPendingDividendBody } from "@workspace/api-zod";
 import {
   ALLOCATION_CATEGORIES,
   defaultPolicyFor,
@@ -24,6 +24,9 @@ import {
   planContribution,
   type AllocationCategory,
   fillSliceWithHoldings,
+  evaluateBand,
+  contributionToReachTarget,
+  DEFAULT_BAND_PP,
   type ContributionSlice,
   type HoldingForFill,
   type PolicySource,
@@ -31,6 +34,7 @@ import {
   type SliceFill,
 } from "../lib/allocation-engine";
 import { rankOpportunitiesFor, orderByRiskProfile, type RankedOpportunity } from "../lib/opportunity-ranking";
+import { computeContributionPace, contributionsUntil } from "../lib/contribution-pace";
 import { suggestTreasuryBonds, type TreasurySuggestion } from "../lib/treasury-engine";
 import { sizeWholeUnits, sizeTreasuryFraction } from "../lib/purchase-sizing";
 import { classifyEntitlement, type EntitlementCertainty, type EntitlementUncertaintyKind } from "../lib/dividend-entitlement";
@@ -626,6 +630,16 @@ router.get("/portfolio/dividends/projection", requireAuth, async (req, res): Pro
   });
 });
 
+/**
+ * A partir de quanto um aporte "domina" o subperíodo e a ressalva aparece.
+ *
+ * Meio a meio é o corte: com o fluxo respondendo por metade do denominador, um erro de 1%
+ * no lançamento já move o retorno acumulado em 0,5 p.p., que é da ordem do próprio número
+ * exibido numa janela curta. Abaixo disso a ressalva apareceria em quase todo aporte de
+ * quem está começando e viraria ruído — aviso que aparece sempre deixa de ser lido.
+ */
+const FLOW_DOMINANCE_THRESHOLD = 0.5;
+
 router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
   const prices = await getPricesFor(assets);
@@ -649,12 +663,14 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   // rentabilidade e aparecer como desempenho pior que o dos índices ao lado. O TWR
   // neutraliza o fluxo, que é justamente o que torna as três séries comparáveis.
   // Detalhes e limites do método em time-weighted-return.ts.
+  const twrPeriods: TwrPeriod[] = [];
   const twrByDate = computeDailyTwr(
     snapshots,
     sales,
     assets.length > 0 && totalCost > 0
       ? { date: todayInAppTimezone(), value: totalValue, cost: totalCost }
       : null,
+    twrPeriods,
   );
 
   // Nada aqui é preenchido quando falta dado. Antes, mês sem fechamento de índice
@@ -725,6 +741,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
       ifixTotal: null,
       baseLabel: null,
       baseValue: null,
+      dominantFlow: null,
     });
     return;
   }
@@ -771,6 +788,28 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     return null;
   };
 
+  // O aporte que mais pesa no resultado — quando pesa demais.
+  //
+  // O TWR posiciona o fluxo no início do subperíodo, então o fator daquele elo é
+  // `valor_final / (valor_anterior + fluxo)`. Um aporte muito maior que o saldo anterior
+  // domina esse denominador, e a fração `fluxo/abertura` é exatamente o quanto um erro
+  // relativo no lançamento se transfere para o retorno acumulado: com ela em 0,87, errar
+  // 1% no valor ou no dia daquele aporte move o total em 0,87 p.p.
+  //
+  // Só entram elos DENTRO da janela exibida: fluxo anterior à base não participa do
+  // percentual que o gráfico mostra, e citá-lo apontaria para um dia fora do desenho.
+  const dominantFlow = twrPeriods
+    .filter((p) => p.date >= baseDate && p.netFlow > 0 && p.opening > 0)
+    .map((p) => ({
+      date: p.date,
+      share: p.netFlow / p.opening,
+      // Quantas vezes o saldo anterior. Null quando não havia saldo: "infinitas vezes
+      // zero" não é grandeza, e a fração acima já diz o que precisa ser dito.
+      timesPriorBalance: p.priorValue > 0 ? p.netFlow / p.priorValue : null,
+    }))
+    .sort((a, b) => b.share - a.share)
+    .find((p) => p.share >= FLOW_DOMINANCE_THRESHOLD) ?? null;
+
   const spanDays = Math.round(
     (new Date(`${windowDates[windowDates.length - 1]}T00:00:00Z`).getTime()
       - new Date(`${baseDate}T00:00:00Z`).getTime()) / (24 * 60 * 60 * 1000),
@@ -795,6 +834,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     // contra o custo — só se resolve refazendo a conta à mão.
     baseLabel: labelOf(baseDate),
     baseValue: baseTwr.value,
+    dominantFlow,
   });
 });
 
@@ -1000,9 +1040,48 @@ async function policyFor(userId: number): Promise<{ targets: PolicyTargets; sour
 }
 
 async function allocationOverview(userId: number) {
-  const [{ targets, source }, valueByCategory] = await Promise.all([policyFor(userId), valueByCategoryFor(userId)]);
-  const { total, items } = computeAllocation(valueByCategory, targets);
-  return { source, totalPatrimony: total, items };
+  const [{ targets, source }, valueByCategory, [settings], purchases] = await Promise.all([
+    policyFor(userId),
+    valueByCategoryFor(userId),
+    db.select().from(allocationSettingsTable).where(eq(allocationSettingsTable.userId, userId)),
+    db.select().from(assetPurchasesTable).where(eq(assetPurchasesTable.userId, userId)),
+  ]);
+  const allocation = computeAllocation(valueByCategory, targets);
+
+  // Ausência de linha é "nunca configurou", não banda zero — banda zero faria toda
+  // oscilação virar chamado para ação, que é o oposto do que ela serve.
+  const bandPp = settings ? parseFloat(settings.bandPp) : DEFAULT_BAND_PP;
+  const band = evaluateBand(allocation, bandPp);
+
+  // Ritmo medido do registro de lançamentos, não perguntado — e o aporte que devolve a
+  // classe mais distante ao alvo. Juntos, respondem "quantos aportes até voltar", que é
+  // o que decide se dá para corrigir só comprando.
+  const pace = computeContributionPace(
+    purchases.map((p) => ({
+      tradeDate: p.tradeDate,
+      quantity: parseFloat(p.quantity),
+      unitPrice: parseFloat(p.unitPrice),
+      isInitialBalance: p.isInitialBalance,
+    })),
+  );
+
+  // Só a classe mais distante ganha plano: corrigir a pior costuma trazer as outras
+  // junto, e listar um valor por classe somaria aportes que se anulam entre si.
+  const pior = band.outOfBand.find((item) => item.deviationPp > 0) ?? null;
+  const amountToFix = pior && band.total != null ? contributionToReachTarget(pior, band.total) : null;
+
+  return {
+    source,
+    totalPatrimony: allocation.total,
+    items: allocation.items,
+    bandPp,
+    balanced: band.balanced,
+    outOfBand: band.outOfBand.map((i) => i.category),
+    worstCategory: pior?.category ?? null,
+    amountToFix,
+    monthlyPace: pace?.monthlyAverage ?? null,
+    contributionsToFix: contributionsUntil(amountToFix ?? 0, pace),
+  };
 }
 
 // Alimenta o seletor de título no cadastro de ativo. Lista vazia significa que a
@@ -1067,6 +1146,35 @@ router.put("/portfolio/allocation", requireAuth, async (req, res): Promise<void>
       })),
     );
   });
+
+  res.json(await allocationOverview(req.session.userId!));
+});
+
+/**
+ * A banda de tolerância, separada do PUT dos alvos de propósito.
+ *
+ * Os alvos precisam somar 100% e são reescritos em bloco; a banda é um número
+ * independente, que a pessoa ajusta sem mexer na política. Juntar os dois obrigaria a
+ * reenviar a política inteira para afrouxar a banda em um ponto, e um erro de validação
+ * num dos dois derrubaria o outro.
+ */
+router.put("/portfolio/allocation/band", requireAuth, async (req, res): Promise<void> => {
+  const parsed = UpsertAllocationBandBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  await db.insert(allocationSettingsTable)
+    .values({ userId: req.session.userId!, bandPp: String(parsed.data.bandPp) })
+    .onConflictDoUpdate({
+      target: allocationSettingsTable.userId,
+      // `updatedAt` explícito: o `$onUpdate` do schema só dispara em `.update()`, e o
+      // `set` de um upsert não passa por ele. Sem esta linha a coluna guardaria para
+      // sempre a hora do primeiro INSERT — uma coluna que afirma quando a banda mudou e
+      // responde outra coisa é pior que coluna nenhuma.
+      set: { bandPp: String(parsed.data.bandPp), updatedAt: new Date() },
+    });
 
   res.json(await allocationOverview(req.session.userId!));
 });

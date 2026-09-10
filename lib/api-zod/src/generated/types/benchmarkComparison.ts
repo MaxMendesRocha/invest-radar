@@ -5,6 +5,7 @@
  * Gestão de Carteira de Investimentos API
  * OpenAPI spec version: 0.1.0
  */
+import type { BenchmarkComparisonDominantFlow } from './benchmarkComparisonDominantFlow';
 import type { BenchmarkComparisonGranularity } from './benchmarkComparisonGranularity';
 import type { BenchmarkPoint } from './benchmarkPoint';
 
@@ -28,4 +29,6 @@ export interface BenchmarkComparison {
   baseLabel: string | null;
   /** @nullable */
   baseValue: number | null;
+  /** @nullable */
+  dominantFlow?: BenchmarkComparisonDominantFlow;
 }

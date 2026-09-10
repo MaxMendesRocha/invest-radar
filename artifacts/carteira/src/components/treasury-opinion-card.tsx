@@ -2,11 +2,10 @@ import type { TreasuryOpinion } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Info, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 const PT_BR_2 = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct = (v: number | null) => (v != null ? `${PT_BR_2.format(v)}%` : "?");
-const fmtDate = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString("pt-BR");
 
 const TREND_ICON = { alta: TrendingUp, queda: TrendingDown, estavel: Minus } as const;
 
@@ -31,14 +30,14 @@ export function TreasuryOpinionCard({ opinion }: { opinion: TreasuryOpinion }) {
             <div className="min-w-0">
               <h3 className="text-xl font-bold font-mono">{opinion.label}</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Título público federal · vencimento {fmtDate(opinion.maturityDate)}
+                Título público federal · vencimento {formatDate(opinion.maturityDate)}
               </p>
             </div>
           </div>
 
           <div className="text-right shrink-0">
             <div className="text-2xl font-bold font-mono">{formatCurrency(opinion.buyUnitPrice)}</div>
-            <div className="text-xs text-muted-foreground">PU de compra · base {fmtDate(opinion.baseDate)}</div>
+            <div className="text-xs text-muted-foreground">PU de compra · base {formatDate(opinion.baseDate)}</div>
           </div>
         </div>
 
