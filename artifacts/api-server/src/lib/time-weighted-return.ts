@@ -142,8 +142,38 @@ export function computeDailyTwr(
   snapshots: PortfolioSnapshot[],
   sales: Sale[],
   live: PortfolioPoint | null,
+  periods?: TwrPeriod[],
 ): Map<string, MonthlyTwr> {
-  return computeTwr(snapshots, sales, live, (date) => date);
+  return computeTwr(snapshots, sales, live, (date) => date, periods);
+}
+
+/**
+ * Um elo da cadeia, com o fluxo que entrou nele — a matéria-prima para saber quanto o
+ * resultado depende de um lançamento só.
+ *
+ * O TWR posiciona o fluxo no INÍCIO do subperíodo (ver "Limites", acima), então o fator é
+ * `valor_final / (valor_anterior + fluxo)`. Quando o aporte é muito maior que o saldo
+ * anterior, ele domina esse denominador, e o fator do período passa a dizer mais sobre o
+ * tratamento do lançamento do que sobre o desempenho dos ativos.
+ *
+ * A sensibilidade sai direto daí: derivando `ln(fator)` em relação ao fluxo, um erro
+ * relativo `e` no lançamento desloca o fator em `−e × (fluxo / abertura)`. Ou seja, a
+ * própria fração `fluxo/abertura` É o fator de amplificação — com ela em 87%, errar 1% no
+ * valor ou no dia daquele aporte move o retorno acumulado em 0,87 p.p.
+ *
+ * Isto é diagnóstico, não correção: nada aqui muda o número calculado. Serve para a tela
+ * poder apresentar o resultado com a margem que ele tem, em vez de com a precisão que ele
+ * aparenta.
+ */
+export interface TwrPeriod {
+  /** Dia em que o subperíodo termina — a data efetivamente medida. */
+  date: string;
+  /** Fluxo líquido atribuído ao início do subperíodo (aporte positivo, resgate negativo). */
+  netFlow: number;
+  /** `valor_anterior + fluxo` — o denominador do fator. */
+  opening: number;
+  /** Patrimônio medido no fim do subperíodo anterior, antes do fluxo. */
+  priorValue: number;
 }
 
 /**
@@ -156,6 +186,12 @@ function computeTwr(
   sales: Sale[],
   live: PortfolioPoint | null,
   keyOf: (date: string) => string,
+  // Coletor opcional dos elos. Sai daqui, e não de uma função própria, porque uma segunda
+  // travessia da série seria uma segunda cópia do encadeamento — exatamente o que o
+  // comentário desta função existe para evitar. Quando a cadeia se rompe, os elos
+  // coletados até ali são descartados junto: eles pertencem a uma carteira que deixou de
+  // ser comparável com a de agora.
+  periods?: TwrPeriod[],
 ): Map<string, MonthlyTwr> {
   const series = buildSeries(snapshots, live);
   const flows = toSaleFlows(sales);
@@ -172,6 +208,7 @@ function computeTwr(
       byMonth = new Map();
       running = 1;
       previous = null;
+      periods?.splice(0);
       // As vendas até aqui já não interessam — a cadeia recomeça adiante.
       while (flowIdx < flows.length && flows[flowIdx].date <= point.date) flowIdx++;
       continue;
@@ -204,11 +241,13 @@ function computeTwr(
       // vez de produzir um fator que pareceria medido.
       byMonth = new Map();
       running = 1;
+      periods?.splice(0);
       byMonth.set(keyOf(point.date), { factor: running, value: point.value });
       previous = point;
       continue;
     }
 
+    periods?.push({ date: point.date, netFlow, opening, priorValue: previous.value });
     running *= point.value / opening;
     // Sobrescreve a chave a cada medição: no mensal sobra o fechamento do mês; no
     // diário há no máximo uma medição por dia, então a sobrescrita é inócua.

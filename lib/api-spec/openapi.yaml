@@ -2179,6 +2179,37 @@ components:
           type: ["string", "null"]
         baseValue:
           type: ["number", "null"]
+        # O aporte que domina o resultado, quando existe um.
+        #
+        # O TWR posiciona o fluxo no início do subperíodo, então o fator daquele elo é
+        # `valor_final / (valor_anterior + fluxo)`. Um aporte muito maior que o saldo
+        # anterior domina esse denominador, e a partir daí o percentual acumulado diz
+        # mais sobre o tratamento de um lançamento do que sobre os ativos escolhidos.
+        # Frequente em carteira nova: quem aporta R$ 700 sobre um saldo de R$ 100 tem
+        # um elo em que o fluxo é 87% da base.
+        #
+        # Null quando nenhum fluxo da janela passa do limiar — o caso normal de quem já
+        # tem patrimônio grande em relação ao aporte mensal. Só considera fluxo DENTRO
+        # da janela exibida: aporte anterior à base não participa do número mostrado.
+        dominantFlow:
+          type: ["object", "null"]
+          required: [date, share, timesPriorBalance]
+          properties:
+            date:
+              type: string
+              description: Dia do subperíodo em que o aporte entrou.
+            share:
+              type: number
+              description: >-
+                Fração do denominador que veio do aporte (0 a 1). É também o fator de
+                amplificação: um erro relativo de 1% no lançamento desloca o retorno
+                acumulado em `share` p.p.
+            timesPriorBalance:
+              type: ["number", "null"]
+              description: >-
+                Quantas vezes o saldo anterior o aporte representou — o número que a
+                frase usa. Null quando não havia saldo anterior, caso em que a razão
+                seria infinita e `share` já diz o necessário.
 
     # Responde "sou eu ou é o mercado?". A atribuição é por CONTRIBUIÇÃO (peso ×
     # movimento) e não por variação: medido, o ativo que mais caiu (KLBN3, -4,53%)

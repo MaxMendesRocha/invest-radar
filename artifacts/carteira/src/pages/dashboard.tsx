@@ -93,6 +93,14 @@ function KpiCard({
 
 const EMPTY_VALUE = "—";
 
+// pt-BR e sem `toFixed`: `toFixed` emite ponto decimal em en-US, que colide com o ponto
+// de milhar que o resto da tela usa. Já mordeu antes, no filtro da Carteira.
+const oneDecimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+const twoDecimals = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** 0,872 -> "87%". Fração de 0 a 1, arredondada — casa decimal aqui não muda decisão. */
+const percentOf = (fraction: number) =>
+  `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(fraction * 100)}%`;
+
 export default function Dashboard() {
   const { data: summary, isLoading: isLoadingSummary } = useGetPortfolioSummary({
     query: { queryKey: getGetPortfolioSummaryQueryKey() }
@@ -520,6 +528,26 @@ export default function Dashboard() {
                 . O gráfico mede rentabilidade por real investido: aporte entra na carteira mas não
                 conta como desempenho, senão depositar dinheiro pareceria lucro. O card Resultado mede
                 a partir do custo, não daqui — por isso os dois percentuais diferem.
+              </p>
+            )}
+
+            {/* A margem do número, quando ela é grande o bastante para mudar a leitura.
+                O TWR posiciona o fluxo no início do subperíodo, então um aporte muito
+                maior que o saldo anterior domina o denominador daquele elo — e o
+                percentual acumulado passa a depender de como UM lançamento foi tratado.
+                Some sozinha quando os aportes voltam a ser pequenos diante da carteira,
+                que é o estado normal depois dos primeiros meses. */}
+            {benchmarks?.dominantFlow && (
+              <p className="mt-2 text-xs text-amber-700 text-pretty dark:text-amber-500">
+                Um aporte de{" "}
+                <strong className="font-medium">{formatDate(benchmarks.dominantFlow.date)}</strong>
+                {benchmarks.dominantFlow.timesPriorBalance != null && (
+                  <> foi {oneDecimal.format(benchmarks.dominantFlow.timesPriorBalance)}× o saldo daquele dia e</>
+                )}{" "}
+                responde por {percentOf(benchmarks.dominantFlow.share)} da base do período em que entrou.
+                Enquanto isso durar, este percentual depende bastante de um lançamento só — um desvio de
+                1% no valor ou no dia dele desloca o resultado em cerca de{" "}
+                {twoDecimals.format(benchmarks.dominantFlow.share)} p.p.
               </p>
             )}
           </CardContent>

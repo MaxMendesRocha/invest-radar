@@ -881,6 +881,21 @@ export const BenchmarkComparisonGranularity = {
   diario: 'diario',
 } as const;
 
+/**
+ * @nullable
+ */
+export type BenchmarkComparisonDominantFlow = {
+  /** Dia do subperíodo em que o aporte entrou. */
+  date: string;
+  /** Fração do denominador que veio do aporte (0 a 1). É também o fator de amplificação: um erro relativo de 1% no lançamento desloca o retorno acumulado em `share` p.p. */
+  share: number;
+  /**
+     * Quantas vezes o saldo anterior o aporte representou — o número que a frase usa. Null quando não havia saldo anterior, caso em que a razão seria infinita e `share` já diz o necessário.
+     * @nullable
+     */
+  timesPriorBalance: number | null;
+} | null;
+
 export interface BenchmarkComparison {
   points: BenchmarkPoint[];
   /** Resolução dos pontos. Era mensal até o comparativo passar a usar a série diária que já existia no banco — com janela curta, o gráfico mensal tinha dois pontos e virava uma reta sem percurso. */
@@ -901,6 +916,8 @@ export interface BenchmarkComparison {
   baseLabel: string | null;
   /** @nullable */
   baseValue: number | null;
+  /** @nullable */
+  dominantFlow?: BenchmarkComparisonDominantFlow;
 }
 
 export interface MarketContextWindow {

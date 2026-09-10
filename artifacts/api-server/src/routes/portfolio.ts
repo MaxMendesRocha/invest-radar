@@ -10,7 +10,7 @@ import { fetchIndexSeries, isMaisRetornoConfigured } from "../lib/mais-retorno";
 import { synthesizeMarketNarrative } from "../lib/market-context-ai";
 import { getNewsFor, resolveSearchTerm } from "../lib/news";
 import { recordSnapshot, getSnapshotsForUser, findSnapshotForMonth } from "../lib/portfolio-history";
-import { computeDailyTwr } from "../lib/time-weighted-return";
+import { computeDailyTwr, type TwrPeriod } from "../lib/time-weighted-return";
 import { getCdiDailyReturns, syncAndGetDailyIndexCloses } from "../lib/benchmark-data";
 import { evalVolatility, evalDividendYield, evalRevenueGrowth, analyzeFundamentals, analyzeFii, screenForPurchase } from "../lib/analysis-engine";
 import { synthesizePortfolioDiagnosis } from "../lib/portfolio-ai";
@@ -630,6 +630,16 @@ router.get("/portfolio/dividends/projection", requireAuth, async (req, res): Pro
   });
 });
 
+/**
+ * A partir de quanto um aporte "domina" o subperíodo e a ressalva aparece.
+ *
+ * Meio a meio é o corte: com o fluxo respondendo por metade do denominador, um erro de 1%
+ * no lançamento já move o retorno acumulado em 0,5 p.p., que é da ordem do próprio número
+ * exibido numa janela curta. Abaixo disso a ressalva apareceria em quase todo aporte de
+ * quem está começando e viraria ruído — aviso que aparece sempre deixa de ser lido.
+ */
+const FLOW_DOMINANCE_THRESHOLD = 0.5;
+
 router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void> => {
   const assets = await db.select().from(assetsTable).where(eq(assetsTable.userId, req.session.userId!));
   const prices = await getPricesFor(assets);
@@ -653,12 +663,14 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
   // rentabilidade e aparecer como desempenho pior que o dos índices ao lado. O TWR
   // neutraliza o fluxo, que é justamente o que torna as três séries comparáveis.
   // Detalhes e limites do método em time-weighted-return.ts.
+  const twrPeriods: TwrPeriod[] = [];
   const twrByDate = computeDailyTwr(
     snapshots,
     sales,
     assets.length > 0 && totalCost > 0
       ? { date: todayInAppTimezone(), value: totalValue, cost: totalCost }
       : null,
+    twrPeriods,
   );
 
   // Nada aqui é preenchido quando falta dado. Antes, mês sem fechamento de índice
@@ -729,6 +741,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
       ifixTotal: null,
       baseLabel: null,
       baseValue: null,
+      dominantFlow: null,
     });
     return;
   }
@@ -775,6 +788,28 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     return null;
   };
 
+  // O aporte que mais pesa no resultado — quando pesa demais.
+  //
+  // O TWR posiciona o fluxo no início do subperíodo, então o fator daquele elo é
+  // `valor_final / (valor_anterior + fluxo)`. Um aporte muito maior que o saldo anterior
+  // domina esse denominador, e a fração `fluxo/abertura` é exatamente o quanto um erro
+  // relativo no lançamento se transfere para o retorno acumulado: com ela em 0,87, errar
+  // 1% no valor ou no dia daquele aporte move o total em 0,87 p.p.
+  //
+  // Só entram elos DENTRO da janela exibida: fluxo anterior à base não participa do
+  // percentual que o gráfico mostra, e citá-lo apontaria para um dia fora do desenho.
+  const dominantFlow = twrPeriods
+    .filter((p) => p.date >= baseDate && p.netFlow > 0 && p.opening > 0)
+    .map((p) => ({
+      date: p.date,
+      share: p.netFlow / p.opening,
+      // Quantas vezes o saldo anterior. Null quando não havia saldo: "infinitas vezes
+      // zero" não é grandeza, e a fração acima já diz o que precisa ser dito.
+      timesPriorBalance: p.priorValue > 0 ? p.netFlow / p.priorValue : null,
+    }))
+    .sort((a, b) => b.share - a.share)
+    .find((p) => p.share >= FLOW_DOMINANCE_THRESHOLD) ?? null;
+
   const spanDays = Math.round(
     (new Date(`${windowDates[windowDates.length - 1]}T00:00:00Z`).getTime()
       - new Date(`${baseDate}T00:00:00Z`).getTime()) / (24 * 60 * 60 * 1000),
@@ -799,6 +834,7 @@ router.get("/portfolio/benchmarks", requireAuth, async (req, res): Promise<void>
     // contra o custo — só se resolve refazendo a conta à mão.
     baseLabel: labelOf(baseDate),
     baseValue: baseTwr.value,
+    dominantFlow,
   });
 });
 

@@ -1330,6 +1330,29 @@ O provedor de cotação já ficou fora do ar durante o desenvolvimento, e isso v
   a compra). Os dois cards ficam na mesma tela, e por isso não repetem a palavra
   "rentabilidade": um diz *Resultado*, o outro rotula a série como *Carteira (no período)*
   — dois números diferentes com o mesmo nome liam como contradição.
+
+  **Quando o resultado depende de um aporte só.** O TWR posiciona o fluxo no início do
+  subperíodo, então o fator daquele elo é `valor_final / (valor_anterior + fluxo)`. Num
+  aporte muito maior que o saldo anterior, o fluxo domina o denominador — e a fração
+  `fluxo/abertura` é exatamente o quanto um erro relativo no lançamento se transfere para o
+  retorno acumulado. Numa carteira real medida aqui, um aporte de R$ 686,54 sobre um saldo
+  de R$ 101,50 respondeu por **87% da base** daquele elo: errar 1% no valor ou no dia dele
+  desloca o total em 0,87 p.p. — mais que o próprio percentual exibido na janela.
+
+  Isso é frequente em carteira nova e some sozinho conforme os aportes ficam pequenos
+  diante do patrimônio. Por isso o app não corrige nada, só **declara**: acima de 50% de
+  domínio (`FLOW_DOMINANCE_THRESHOLD`), a nota do comparativo nomeia o dia e o peso. O
+  limiar não é menor porque um aviso que aparece em todo aporte de quem está começando
+  deixa de ser lido.
+
+  O diagnóstico sai da **mesma travessia** que calcula o TWR (`computeDailyTwr` recebe um
+  coletor opcional de elos) — uma segunda função que refizesse o encadeamento seria uma
+  segunda cópia dele, que é o que `computeTwr` existe para evitar. Elos anteriores a uma
+  quebra de cadeia são descartados junto com ela: pertencem a uma carteira que já não é
+  comparável. Só entram elos dentro da janela exibida, ou a nota apontaria para um dia fora
+  do desenho. Conferência: `harness/twr-fluxo-dominante-check.mts`, 11 casos — o último
+  perturba o lançamento em 1% e mede o deslocamento do TWR inteiro, para que a frase da
+  tela seja verificada e não apenas derivada no papel.
 - **Oscilação é medida sobre a composição de hoje, não sobre o histórico.** O card de
   oscilação aplica as quantidades atuais a um ano de fechamentos reais e calcula o
   desvio-padrão dos retornos diários anualizado (× √252), ao lado do IBOV medido nos
@@ -1507,7 +1530,8 @@ para decidir nada.
   aporte, não a hora, então ponderar pelo tempo dentro do período (Dietz modificado) não é
   possível. Com o snapshot diário por job, o subperíodo é de 24h e o erro dessa aproximação
   fica pequeno; nos dias anteriores ao job, em que só havia medição quando o app era aberto,
-  os subperíodos longos ainda carregam erro maior.
+  os subperíodos longos ainda carregam erro maior. **A tela agora declara esse limite quando
+  ele morde**: ver "Quando o resultado depende de um aporte só", abaixo.
 - **O TWR ainda deriva o fluxo da variação de custo, e por isso editar a posição conta como
   aporte.** Corrigir um preço médio errado é, para ele, indistinguível de dinheiro entrando.
   Os lançamentos (seção "Lançamentos", acima) já guardam o fluxo real e destravam a correção

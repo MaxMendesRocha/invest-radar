@@ -1076,7 +1076,12 @@ export const GetPortfolioBenchmarksResponse = zod.object({
   "ibovTotal": zod.number().nullable(),
   "ifixTotal": zod.number().nullable(),
   "baseLabel": zod.string().nullable(),
-  "baseValue": zod.number().nullable()
+  "baseValue": zod.number().nullable(),
+  "dominantFlow": zod.object({
+  "date": zod.string().describe('Dia do subperíodo em que o aporte entrou.'),
+  "share": zod.number().describe('Fração do denominador que veio do aporte (0 a 1). É também o fator de amplificação: um erro relativo de 1% no lançamento desloca o retorno acumulado em `share` p.p.'),
+  "timesPriorBalance": zod.number().nullable().describe('Quantas vezes o saldo anterior o aporte representou — o número que a frase usa. Null quando não havia saldo anterior, caso em que a razão seria infinita e `share` já diz o necessário.')
+}).nullish()
 })
 
 
