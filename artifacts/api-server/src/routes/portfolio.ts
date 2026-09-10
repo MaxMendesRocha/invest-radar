@@ -1169,7 +1169,11 @@ router.put("/portfolio/allocation/band", requireAuth, async (req, res): Promise<
     .values({ userId: req.session.userId!, bandPp: String(parsed.data.bandPp) })
     .onConflictDoUpdate({
       target: allocationSettingsTable.userId,
-      set: { bandPp: String(parsed.data.bandPp) },
+      // `updatedAt` explícito: o `$onUpdate` do schema só dispara em `.update()`, e o
+      // `set` de um upsert não passa por ele. Sem esta linha a coluna guardaria para
+      // sempre a hora do primeiro INSERT — uma coluna que afirma quando a banda mudou e
+      // responde outra coisa é pior que coluna nenhuma.
+      set: { bandPp: String(parsed.data.bandPp), updatedAt: new Date() },
     });
 
   res.json(await allocationOverview(req.session.userId!));
